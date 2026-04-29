@@ -1,4 +1,4 @@
-# Otto Reviewer
+# Otto Code
 
 Class-based wrapper for the Pi coding agent TypeScript SDK. Configure once, query multiple times, subscribe to streaming events.
 
@@ -274,6 +274,72 @@ When the API quota is exceeded, the examples can't run live. This file shows wha
 1. Ensure you have API quota (see Troubleshooting above)
 2. Run any example: `npm run example:basic`, `npm run example:pr`, etc.
 3. The real output will stream to your terminal instead
+
+## Local CI with GitHub Actions
+
+This project includes a GitHub Actions workflow that runs **locally only** using [act](https://github.com/nektos/act). This allows you to build and test the project using the Claude API on your local machine.
+
+### Prerequisites
+
+1. Install act:
+   ```bash
+   # macOS
+   brew install act
+   
+   # Linux
+   curl https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash
+   
+   # Windows (with Chocolatey)
+   choco install act-cli
+   ```
+
+2. Install Docker (required by act)
+
+3. Set up your API key:
+   ```bash
+   cp .env.example .env
+   # Edit .env and add your ANTHROPIC_API_KEY
+   ```
+
+### Running the CI
+
+Run the full CI pipeline locally:
+
+```bash
+act -j build-and-test --secret-file .env
+```
+
+This will:
+1. Install dependencies
+2. Build the TypeScript code (type checking)
+3. Run tests using the Claude API
+4. Display results
+
+### Run individual steps
+
+You can also run the build and test scripts directly:
+
+```bash
+# Type checking only
+npm run build
+
+# Run tests with Claude API
+npm test
+
+# Type checking (alias)
+npm run typecheck
+```
+
+### CI Workflow Details
+
+The workflow is configured in `.github/workflows/local-ci.yml` and includes:
+- Node.js 20 setup
+- Dependency installation via `npm ci`
+- TypeScript compilation and type checking
+- Automated testing using Claude API
+- Result reporting
+
+**Note:** The workflow is designed to run locally only and will not execute on GitHub's servers. This ensures your Claude API key stays on your machine and you have full control over API usage.
 
 ## License
 
