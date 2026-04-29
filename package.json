@@ -5,6 +5,9 @@
   "type": "module",
   "main": "pi-agent.ts",
   "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx test-simple.ts",
     "example:basic": "tsx examples.ts basic",
     "example:pr": "tsx examples.ts pr",
     "example:conversation": "tsx examples.ts conversation",

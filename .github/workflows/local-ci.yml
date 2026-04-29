@@ -1,0 +1,48 @@
+name: Local CI Build and Test
+
+# This workflow is designed to run LOCALLY using 'act'
+# It will not run on GitHub's servers
+# Install act: https://github.com/nektos/act
+#
+# Run locally with: act -j build-and-test --secret-file .env
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Run tests with Claude API
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: npm test
+
+      - name: Run type checking
+        run: npm run typecheck
+
+      - name: Display test results
+        if: always()
+        run: |
+          echo "Build completed!"
+          echo "Check the output above for any errors or warnings."
