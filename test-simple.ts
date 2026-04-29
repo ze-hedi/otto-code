@@ -1,6 +1,7 @@
 #!/usr/bin/env tsx
 // test-simple.ts - Simple test to debug Pi SDK
 
+import "dotenv/config";
 import {
   AuthStorage,
   createAgentSession,
@@ -15,6 +16,13 @@ async function test() {
   try {
     // Set up auth
     const authStorage = AuthStorage.create();
+    
+    // Set API key from environment if available
+    if (process.env.ANTHROPIC_API_KEY) {
+      authStorage.setRuntimeApiKey("anthropic", process.env.ANTHROPIC_API_KEY);
+      console.log("Anthropic API key loaded from .env");
+    }
+    
     const modelRegistry = ModelRegistry.create(authStorage);
 
     console.log("Auth storage created");
@@ -52,7 +60,14 @@ async function test() {
     console.log("Sending prompt...\n");
     await session.prompt("List all .ts files in the current directory");
     
-    console.log("\n\n✅ Done!");
+    console.log("\n\n--- Harness Response ---");
+    const assistantResponse = session.getLastAssistantText();
+    console.log(assistantResponse);
+    
+    console.log("\n--- All Messages ---");
+    console.log(JSON.stringify(session.state.messages, null, 2));
+    
+    console.log("\n✅ Done!");
   } catch (error) {
     console.error("ERROR:", error);
     process.exit(1);

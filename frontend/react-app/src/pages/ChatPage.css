@@ -1,0 +1,37 @@
+.chat-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background: #0f1117;
+  background-image: radial-gradient(circle, rgba(124, 140, 248, 0.12) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.chat-content {
+  text-align: center;
+  padding: 3rem;
+  background: #161b27;
+  border-radius: 10px;
+  border: 1px solid #2a3350;
+  box-shadow: 0 0 0 3px rgba(124, 140, 248, 0.08);
+}
+
+.chat-content h1 {
+  margin: 0 0 1rem 0;
+  font-size: 2.5rem;
+  color: #e2e8f0;
+  font-weight: 600;
+}
+
+.chat-content p {
+  margin: 0.5rem 0;
+  font-size: 1.25rem;
+  color: #cbd5e1;
+}
+
+.console-note {
+  font-size: 0.9rem;
+  color: #94a3b8;
+  font-style: italic;
+}
