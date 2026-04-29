@@ -58,24 +58,6 @@ Solutions:
    });
    ```
 
-## About result.txt
-
-The `result.txt` file contains **mock output** demonstrating the expected behavior of all 5 examples. It was created because the examples require an active Anthropic API key with available quota.
-
-**What's included:**
-- Output from all 5 example scenarios (basic, PR review, conversation, logging, non-blocking)
-- Shows event streaming flow (tool calls, text deltas, completion)
-- Demonstrates PR reviewer output format
-- Examples of bash tool execution and file operations
-
-**Why it exists:**
-When the API quota is exceeded, the examples can't run live. This file shows what you would see when the examples run successfully with a valid API key and quota.
-
-**To run examples live:**
-1. Ensure you have API quota (see Troubleshooting above)
-2. Run any example: `npm run example:basic`, `npm run example:pr`, etc.
-3. The real output will stream to your terminal instead
-
 ## Quick Start
 
 ### Basic Usage
@@ -274,6 +256,24 @@ Execute a prompt and wait for `prompt_end` event before resolving.
 #### `getCurrentSession(): AgentSession | null`
 
 Get the currently active session (if any).
+
+## About result.txt
+
+The `result.txt` file contains **mock output** demonstrating the expected behavior of all 5 examples. It was created because the examples require an active Anthropic API key with available quota.
+
+**What's included:**
+- Output from all 5 example scenarios (basic, PR review, conversation, logging, non-blocking)
+- Shows event streaming flow (tool calls, text deltas, completion)
+- Demonstrates PR reviewer output format
+- Examples of bash tool execution and file operations
+
+**Why it exists:**
+When the API quota is exceeded, the examples can't run live. This file shows what you would see when the examples run successfully with a valid API key and quota.
+
+**To run examples live:**
+1. Ensure you have API quota (see Troubleshooting above)
+2. Run any example: `npm run example:basic`, `npm run example:pr`, etc.
+3. The real output will stream to your terminal instead
 
 ## License
 
