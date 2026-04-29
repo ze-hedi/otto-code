@@ -56,7 +56,7 @@ export class PiAgent {
     if (config.apiKey) {
       this.authStorage.setRuntimeApiKey(provider, config.apiKey);
     }
-    this.modelRegistry = new ModelRegistry(this.authStorage);
+    this.modelRegistry = ModelRegistry.create(this.authStorage);
 
     // Get the model instance
     const model = getModel(provider, modelName);
@@ -77,15 +77,10 @@ export class PiAgent {
   }
 
   /**
-   * Execute a query and get back a session you can subscribe to
-   * @param query The prompt to send to the agent
-   * @param onEvent Optional callback for streaming events
-   * @returns AgentSession that you can subscribe to or await
+   * Create a session (without sending a prompt yet)
+   * @returns AgentSession that you can use to send prompts
    */
-  async query(
-    query: string,
-    onEvent?: EventCallback
-  ): Promise<AgentSession> {
+  private async createSession(): Promise<AgentSession> {
     // Create session manager based on config
     let sessionManager: SessionManager;
     switch (this.config.sessionMode) {
@@ -111,6 +106,20 @@ export class PiAgent {
     });
 
     this.currentSession = session;
+    return session;
+  }
+
+  /**
+   * Execute a query and get back a session you can subscribe to
+   * @param query The prompt to send to the agent
+   * @param onEvent Optional callback for streaming events
+   * @returns AgentSession that you can subscribe to or await
+   */
+  async query(
+    query: string,
+    onEvent?: EventCallback
+  ): Promise<AgentSession> {
+    const session = await this.createSession();
 
     // Attach event callback if provided
     if (onEvent) {
@@ -129,16 +138,15 @@ export class PiAgent {
    * @param onEvent Optional callback for streaming events
    */
   async execute(query: string, onEvent?: EventCallback): Promise<void> {
-    const session = await this.query(query, onEvent);
+    const session = await this.createSession();
 
-    // Wait for prompt_end event
-    return new Promise<void>((resolve) => {
-      session.subscribe((event) => {
-        if (event.type === "prompt_end") {
-          resolve();
-        }
-      });
-    });
+    // Attach event callback if provided
+    if (onEvent) {
+      session.subscribe(onEvent);
+    }
+
+    // Send prompt and wait for completion
+    await session.prompt(query);
   }
 
   /**

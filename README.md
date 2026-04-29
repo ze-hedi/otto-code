@@ -34,6 +34,30 @@ const agent = new PiAgent({
 });
 ```
 
+### Troubleshooting
+
+**API Quota Exceeded Error:**
+
+If you get an error like:
+```
+400 {"type":"error","error":{"type":"invalid_request_error","message":"Third-party apps now draw from your extra usage..."}}
+```
+
+Solutions:
+1. Add API quota at [claude.ai/settings/usage](https://claude.ai/settings/usage)
+2. Or use a different API key: 
+   ```bash
+   export ANTHROPIC_API_KEY=sk-ant-...
+   npx pi /login
+   ```
+3. Or provide the key programmatically:
+   ```typescript
+   const agent = new PiAgent({
+     model: "anthropic/claude-sonnet-4-5",
+     apiKey: process.env.ANTHROPIC_API_KEY,
+   });
+   ```
+
 ## Quick Start
 
 ### Basic Usage

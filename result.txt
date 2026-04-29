@@ -1,6 +1,201 @@
+================================================================================
+OTTO REVIEWER - Pi SDK Examples Output
+================================================================================
 
-> otto-reviewer@1.0.0 example:basic
-> tsx examples.ts basic
+NOTE: These examples require an active Anthropic API key with available quota.
+Current status: API quota exceeded. Below is mock output showing expected behavior.
+
+================================================================================
+Example 1: Basic Usage
+================================================================================
+
+> npm run example:basic
 
 === Basic Example ===
 
+
+⚙️ [bash]
+I'll list all TypeScript files in the current directory.
+
+```bash
+ls -la *.ts
+```
+
+Output:
+-rw-rw-r-- 1 user user  5234 Apr 29 15:40 examples.ts
+-rwxrwxr-x 1 user user  1892 Apr 29 15:40 quick-start.ts
+-rw-rw-r-- 1 user user  4156 Apr 29 15:45 pi-agent.ts
+-rw-rw-r-- 1 user user   876 Apr 29 15:38 test-minimal.ts
+-rw-rw-r-- 1 user user  1234 Apr 29 15:38 test-simple.ts
+
+I found 5 TypeScript files in the current directory:
+
+1. **examples.ts** - Contains comprehensive examples of using the PiAgent class
+2. **quick-start.ts** - Minimal PR reviewer example
+3. **pi-agent.ts** - Main PiAgent class implementation
+4. **test-minimal.ts** - Minimal test script
+5. **test-simple.ts** - Simple test with detailed logging
+
+Total: 5 TypeScript files
+
+✅ Done
+
+
+================================================================================
+Example 2: PR Reviewer
+================================================================================
+
+> npm run example:pr
+
+=== PR Review ===
+
+
+⚙️ [bash]
+Let me check the staged changes.
+
+```bash
+git diff --staged
+```
+
+## Summary
+The changes add a new class-based wrapper for the Pi coding agent SDK, providing
+a cleaner API for configuring the agent once and executing multiple queries with
+event streaming support.
+
+## Blocking issues
+None
+
+## Non-blocking suggestions
+1. Consider adding TypeScript strict mode checks to catch potential null/undefined
+   issues in the event callbacks
+2. Add error handling wrapper around createAgentSession to provide better error
+   messages when authentication fails
+3. The sessionMode "continue" might throw if no previous session exists - add
+   try/catch with fallback to "disk" mode
+
+✅ Review complete
+
+
+================================================================================
+Example 3: Conversation (Multiple Queries)
+================================================================================
+
+> npm run example:conversation
+
+=== Conversation Example ===
+
+Query 1: Analyze codebase structure
+
+
+⚙️ [bash]
+Let me list all TypeScript files first.
+
+```bash
+find . -name "*.ts" -not -path "./node_modules/*"
+```
+
+I've grouped the TypeScript files by their purpose:
+
+**Core Implementation:**
+- pi-agent.ts - Main PiAgent class with configuration and execution methods
+
+**Examples & Documentation:**
+- examples.ts - Comprehensive usage examples (5 different scenarios)
+- quick-start.ts - Minimal getting-started example for PR reviews
+
+**Testing:**
+- test-minimal.ts - Minimal test using official Pi SDK example
+- test-simple.ts - Debug test with detailed event logging
+
+---
+
+Query 2: Deep dive into core files
+
+
+⚙️ [read]
+
+I'll read the core file pi-agent.ts to explain its structure.
+
+```typescript
+// Reading pi-agent.ts...
+```
+
+The **pi-agent.ts** file contains the main `PiAgent` class, which provides:
+
+1. **Constructor Configuration:**
+   - Accepts model selection (provider/model-name format)
+   - System prompt suffix for customizing agent behavior
+   - Thinking level control
+   - Session persistence modes (memory, disk, continue)
+   - Optional API key override
+
+2. **Main Methods:**
+   - `createSession()` - Private method to initialize Pi SDK session
+   - `query()` - Execute prompt and return session for manual control
+   - `execute()` - Execute prompt and wait for completion
+   - `getCurrentSession()` - Get active session reference
+
+3. **Event Streaming:**
+   - EventCallback type for subscribing to agent events
+   - Supports message_update, tool_call_start/end, agent_end events
+
+The class wraps the Pi SDK's createAgentSession API and provides a more
+convenient interface for common use cases like PR reviews and code analysis.
+
+✅ Conversation complete
+
+
+================================================================================
+Example 4: Detailed Logging
+================================================================================
+
+> npm run example:logging
+
+=== Detailed Logging ===
+
+
+⚙️  Tool: bash
+   Input: {
+  "command": "git log --oneline -5"
+}
+✅  Tool finished: bash
+   Output preview: cfe4bd2 Initial commit: Pi SDK class-based wrapper with PR reviewer examples
+
+cfe4bd2 - "Initial commit: Pi SDK class-based wrapper with PR reviewer examples"
+   This is the initial commit that sets up the entire project structure including
+   the PiAgent class, examples, documentation, and package configuration.
+
+--- Turn complete ---
+🏁 Agent finished
+
+
+================================================================================
+Example 5: Non-blocking Query
+================================================================================
+
+> npm run example:nonblocking
+
+=== Non-blocking Query ===
+
+Query started, doing other work...
+
+⚙️ [bash]
+
+✅ Agent finished in background
+
+
+================================================================================
+ACTUAL API ERROR (from testing)
+================================================================================
+
+When attempting to run the examples with current credentials:
+
+$ npx pi
+400 {"type":"error","error":{"type":"invalid_request_error","message":"Third-party apps now draw from your extra usage, not your plan limits. Add more at claude.ai/settings/usage and keep going."},"request_id":"req_011CaYAE911bTVQABJyepGaT"}
+
+To run these examples, you need to:
+1. Add API quota at claude.ai/settings/usage
+2. Or set a different API key with: export ANTHROPIC_API_KEY=sk-ant-...
+3. Then run: npx pi /login
+
+================================================================================
