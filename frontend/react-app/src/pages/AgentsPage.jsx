@@ -8,6 +8,35 @@ function AgentsPage() {
   const [showForm, setShowForm] = useState(false);
   const [formName, setFormName] = useState('');
   const [formDescription, setFormDescription] = useState('');
+  const [model, setModel] = useState('');
+  const [skills, setSkills] = useState([]);
+  const [systemPrompt, setSystemPrompt] = useState(null);
+
+  const handleSkillsLoad = (e) => {
+    const files = Array.from(e.target.files);
+    files.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        setSkills((prev) => [
+          ...prev,
+          { name: file.name, content: ev.target.result },
+        ]);
+      };
+      reader.readAsText(file);
+    });
+    e.target.value = '';
+  };
+
+  const handleSystemPromptLoad = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setSystemPrompt({ name: file.name, content: ev.target.result });
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
 
   useEffect(() => {
     fetch('/api/agents')
@@ -66,8 +95,79 @@ function AgentsPage() {
                 rows={4}
               />
             </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="agent-model">Model</label>
+              <select
+                id="agent-model"
+                className="form-input form-select"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+              >
+                <option value="" disabled>Select a model...</option>
+                <option value="claude-haiku-4-5">Claude Haiku 4.5</option>
+                <option value="claude-sonnet-4-5">Claude Sonnet 4.5</option>
+                <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
+                <option value="claude-opus-4-6">Claude Opus 4.6</option>
+                <option value="gpt-5.1">GPT-5.1</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">System Prompt</label>
+              {!systemPrompt ? (
+                <label className="skills-upload-btn">
+                  + Load System Prompt
+                  <input
+                    type="file"
+                    accept=".md"
+                    style={{ display: 'none' }}
+                    onChange={handleSystemPromptLoad}
+                  />
+                </label>
+              ) : (
+                <div className="skills-list">
+                  <div className="skill-item">
+                    <div className="skill-item-header">
+                      <span className="skill-icon">⌗</span>
+                      <span className="skill-name">{systemPrompt.name}</span>
+                      <button className="skill-remove-btn" onClick={() => setSystemPrompt(null)}>✕</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="form-group">
+              <label className="form-label">Skills</label>
+              <label className="skills-upload-btn">
+                + Load Skills
+                <input
+                  type="file"
+                  accept=".md"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={handleSkillsLoad}
+                />
+              </label>
+              {skills.length > 0 && (
+                <div className="skills-list">
+                  {skills.map((skill, i) => (
+                    <div key={i} className="skill-item">
+                      <div className="skill-item-header">
+                        <span className="skill-icon">⌗</span>
+                        <span className="skill-name">{skill.name}</span>
+                        <button
+                          className="skill-remove-btn"
+                          onClick={() => setSkills((prev) => prev.filter((_, idx) => idx !== i))}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
             <div className="form-actions">
-              <button className="agent-action-btn view-btn" onClick={() => { setShowForm(false); setFormName(''); setFormDescription(''); }}>
+              <button className="agent-action-btn view-btn" onClick={() => { setShowForm(false); setFormName(''); setFormDescription(''); setModel(''); setSkills([]); setSystemPrompt(null); }}>
                 Cancel
               </button>
               <button className="agent-action-btn edit-btn create-agent-submit-btn">

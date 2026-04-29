@@ -240,6 +240,20 @@
   resize: none;
 }
 
+.form-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%237c8cf8' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 1rem center;
+  padding-right: 2.5rem;
+  cursor: pointer;
+}
+
+.form-select option {
+  background: #1e2637;
+  color: #e2e8f0;
+}
+
 .form-input::placeholder,
 .form-textarea::placeholder {
   color: #4a5568;
@@ -259,6 +273,83 @@
 .create-agent-submit-btn {
   flex: none;
   padding: 0.65rem 1.5rem;
+}
+
+.skills-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.65rem 1.25rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  background: rgba(124, 140, 248, 0.1);
+  color: #7c8cf8;
+  border: 1px dashed #7c8cf8;
+  transition: all 0.2s ease;
+  width: fit-content;
+}
+
+.skills-upload-btn:hover {
+  background: rgba(124, 140, 248, 0.2);
+  box-shadow: 0 0 0 2px rgba(124, 140, 248, 0.15);
+}
+
+.skills-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  animation: fadeSlideIn 0.25s ease forwards;
+}
+
+.skill-item {
+  background: #1e2637;
+  border: 1px solid #2a3350;
+  border-radius: 6px;
+  padding: 0.65rem 1rem;
+  transition: border-color 0.2s ease;
+}
+
+.skill-item:hover {
+  border-color: #7c8cf8;
+}
+
+.skill-item-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.skill-icon {
+  color: #7c8cf8;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.skill-name {
+  flex: 1;
+  font-size: 0.9rem;
+  color: #cbd5e1;
+  font-family: 'Courier New', monospace;
+}
+
+.skill-remove-btn {
+  background: none;
+  border: none;
+  color: #4a5568;
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+  line-height: 1;
+}
+
+.skill-remove-btn:hover {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
 }
 
 @media (max-width: 768px) {
