@@ -17,7 +17,8 @@
   "dependencies": {
     "@mariozechner/pi-ai": "latest",
     "@mariozechner/pi-coding-agent": "latest",
-    "dotenv": "^17.4.2"
+    "dotenv": "^17.4.2",
+    "mem0ai": "latest"
   },
   "devDependencies": {
     "tsx": "^4.0.0",
