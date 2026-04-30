@@ -5,6 +5,106 @@ import "dotenv/config";
 import { PiAgent, AgentEvent } from "../pi-agent";
 
 // ============================================================================
+// Shared event handler
+// ============================================================================
+
+function handleEvent(event: AgentEvent) {
+  switch (event.type) {
+    case "agent_start":
+      console.log("--- agent start ---");
+      break;
+
+    case "agent_end":
+      console.log("--- agent end ---");
+      break;
+
+    case "turn_start":
+      console.log("\n--- turn start ---");
+      break;
+
+    case "turn_end":
+      console.log("\n--- turn end ---");
+      break;
+
+    case "message_start":
+      console.log("\n--- message start ---");
+      break;
+
+    case "message_end":
+      console.log("\n--- message end ---");
+      break;
+
+    case "message_update":
+      switch (event.assistantMessageEvent.type) {
+        case "thinking_delta":
+          process.stdout.write(event.assistantMessageEvent.delta);
+          break;
+        case "thinking_end":
+          console.log("\n--- end of thinking ---\n");
+          break;
+        case "text_delta":
+          process.stdout.write(event.assistantMessageEvent.delta);
+          break;
+        case "toolcall_end":
+          console.log(`\n🔧 [tool call] ${event.assistantMessageEvent.toolCall.name} ${JSON.stringify(event.assistantMessageEvent.toolCall.arguments)}`);
+          break;
+        case "text_end":
+          console.log(`\n--- text block end ---`);
+          break;
+        case "done":
+          console.log(`\n--- stream done (${event.assistantMessageEvent.reason}) ---`);
+          break;
+        case "error":
+          console.log(`\n--- stream error (${event.assistantMessageEvent.reason}) ---`);
+          break;
+      }
+      break;
+
+    case "tool_execution_start":
+      console.log(`\n⚙️  [${event.toolName}] ${JSON.stringify(event.args)}`);
+      break;
+
+    case "tool_execution_update":
+      process.stdout.write(String(event.partialResult));
+      break;
+
+    case "tool_execution_end": {
+      const result = String(event.result);
+      if (event.isError) {
+        console.log(`\n❌ [${event.toolName}] error: ${result}`);
+      } else {
+        console.log(`\n✅ [${event.toolName}]:\n${result}`);
+      }
+      break;
+    }
+
+    case "queue_update":
+      console.log(`\n--- queue update (steering: ${event.steering.length}, followUp: ${event.followUp.length}) ---`);
+      break;
+
+    case "compaction_start":
+      console.log(`\n--- compaction start (${event.reason}) ---`);
+      break;
+
+    case "compaction_end":
+      console.log(`\n--- compaction end (${event.reason}, aborted: ${event.aborted}) ---`);
+      break;
+
+    case "session_info_changed":
+      console.log(`\n--- session name: ${event.name} ---`);
+      break;
+
+    case "auto_retry_start":
+      console.log(`\n--- retry ${event.attempt}/${event.maxAttempts} in ${event.delayMs}ms: ${event.errorMessage} ---`);
+      break;
+
+    case "auto_retry_end":
+      console.log(`\n--- retry end (success: ${event.success}, attempt: ${event.attempt}${event.finalError ? `, error: ${event.finalError}` : ""}) ---`);
+      break;
+  }
+}
+
+// ============================================================================
 // Example 1: Basic usage with event streaming
 // ============================================================================
 
@@ -22,21 +122,7 @@ async function basicExample() {
 
   await agent.execute(
     "List all .ts files in the current directory and count them",
-    (event) => {
-      // Stream text deltas to stdout
-      // console.log(JSON.stringify(event, null, 2))
-      if (
-        event.type === "message_update" &&
-        event.assistantMessageEvent.type === "text_delta"
-      ) {
-        process.stdout.write(event.assistantMessageEvent.delta);
-      }
-
-      // Log tool calls
-      if (event.type === "tool_execution_start") {
-        console.error(`\n⚙️  [${event.toolName}]`);
-      }
-    }
+    handleEvent
   );
 
   console.log("\n\n✅ Done\n");
@@ -77,40 +163,7 @@ When reviewing code changes:
 
   await prReviewer.execute(
     `Run git diff --staged, then review all changes and provide feedback in the format specified in your system prompt.`,
-    (event) => {
-      if (event.type === "message_update" && event.assistantMessageEvent.type === "thinking_delta") {
-        process.stdout.write(event.assistantMessageEvent.delta);
-      }
-
-      if (event.type === "message_update" && event.assistantMessageEvent.type === "thinking_end") {
-        console.log("\n--- end of thinking ---\n");
-      }
-
-      if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
-        process.stdout.write(event.assistantMessageEvent.delta);
-      }
-
-      if (event.type === "message_update" && event.assistantMessageEvent.type === "toolcall_end") {
-        console.log(`\n🔧 [tool call] ${event.assistantMessageEvent.toolCall.name} ${JSON.stringify(event.assistantMessageEvent.toolCall.arguments)}`);
-      }
-
-      if (event.type === "tool_execution_start") {
-        console.log(`\n⚙️  [${event.toolName}] ${JSON.stringify(event.args)}`);
-      }
-
-      if (event.type === "tool_execution_update") {
-        process.stdout.write(String(event.partialResult));
-      }
-
-      if (event.type === "tool_execution_end") {
-        const result = String(event.result);
-        if (event.isError) {
-          console.log(`\n❌ [${event.toolName}] error: ${result}`);
-        } else {
-          console.log(`\n✅ [${event.toolName}]:\n${result}`);
-        }
-      }
-    }
+    handleEvent
   );
 
   console.log("\n\n✅ Review complete\n");
@@ -133,7 +186,7 @@ async function conversationExample() {
   console.log("Query 1: Analyze codebase structure\n");
   await agent.execute(
     "List all TypeScript files and group them by their apparent purpose (e.g., examples, core, utils)",
-    streamToStdout
+    handleEvent
   );
 
   console.log("\n---\n");
@@ -142,7 +195,7 @@ async function conversationExample() {
   console.log("Query 2: Deep dive into core files\n");
   await agent.execute(
     "Now read the core files and explain the main class or function in each",
-    streamToStdout
+    handleEvent
   );
 
   console.log("\n\n✅ Conversation complete\n");
@@ -170,7 +223,7 @@ async function detailedLoggingExample() {
 
   console.log("=== Detailed Logging ===\n");
 
-  await agent.execute("Run git log --oneline -5 and explain what each commit does");
+  await agent.execute("Run git log --oneline -5 and explain what each commit does", handleEvent);
 
   console.log("\n");
 }
@@ -190,7 +243,7 @@ async function nonBlockingExample() {
   // Start query but don't await
   const session = await agent.query(
     "Count all lines of code in .ts files",
-    streamToStdout
+    handleEvent
   );
 
   console.log("Query started, doing other work...\n");
@@ -209,44 +262,15 @@ async function nonBlockingExample() {
 }
 
 // ============================================================================
-// Helper: Stream text deltas to stdout
-// ============================================================================
-
-function streamToStdout(event: AgentEvent) {
-  if (
-    event.type === "message_update" &&
-    event.assistantMessageEvent.type === "text_delta"
-  ) {
-    process.stdout.write(event.assistantMessageEvent.delta);
-  }
-}
-
-// ============================================================================
 // Run examples
 // ============================================================================
 
 async function main() {
-  const example = process.argv[2] || "basic";
-
-  switch (example) {
-    case "basic":
-      await basicExample();
-      break;
-    case "pr":
-      await prReviewerExample();
-      break;
-    case "conversation":
-      await conversationExample();
-      break;
-    case "logging":
-      await detailedLoggingExample();
-      break;
-    case "nonblocking":
-      await nonBlockingExample();
-      break;
-    default:
-      console.log("Usage: tsx examples.ts [basic|pr|conversation|logging|nonblocking]");
-  }
+  await basicExample();
+  await prReviewerExample();
+  await conversationExample();
+  await detailedLoggingExample();
+  await nonBlockingExample();
 }
 
 main().catch(console.error);
