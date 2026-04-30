@@ -1,8 +1,8 @@
-// examples.ts
+// test-pi-agent-2.ts
 // Examples using the PiAgent class
 
-import { PiAgent } from "./pi-agent";
-import { AgentEvent } from "@mariozechner/pi-coding-agent";
+import "dotenv/config";
+import { PiAgent, AgentEvent } from "../pi-agent";
 
 // ============================================================================
 // Example 1: Basic usage with event streaming
@@ -11,16 +11,20 @@ import { AgentEvent } from "@mariozechner/pi-coding-agent";
 async function basicExample() {
   const agent = new PiAgent({
     model: "anthropic/claude-sonnet-4-5",
+    apiKey: process.env.ANTHROPIC_API_KEY,
     thinkingLevel: "medium",
     sessionMode: "memory",
   });
 
   console.log("=== Basic Example ===\n");
+  console.log("Agent parameters:", JSON.stringify(agent.getConfig(), null, 2));
+  console.log();
 
   await agent.execute(
     "List all .ts files in the current directory and count them",
     (event) => {
       // Stream text deltas to stdout
+      // console.log(JSON.stringify(event, null, 2))
       if (
         event.type === "message_update" &&
         event.assistantMessageEvent.type === "text_delta"
@@ -29,7 +33,7 @@ async function basicExample() {
       }
 
       // Log tool calls
-      if (event.type === "tool_call_start") {
+      if (event.type === "tool_execution_start") {
         console.error(`\n⚙️  [${event.toolName}]`);
       }
     }
@@ -45,6 +49,7 @@ async function basicExample() {
 async function prReviewerExample() {
   const prReviewer = new PiAgent({
     model: "anthropic/claude-sonnet-4-5",
+    apiKey: process.env.ANTHROPIC_API_KEY,
     thinkingLevel: "high",
     sessionMode: "memory",
     systemPromptSuffix: `
@@ -73,11 +78,37 @@ When reviewing code changes:
   await prReviewer.execute(
     `Run git diff --staged, then review all changes and provide feedback in the format specified in your system prompt.`,
     (event) => {
-      if (
-        event.type === "message_update" &&
-        event.assistantMessageEvent.type === "text_delta"
-      ) {
+      if (event.type === "message_update" && event.assistantMessageEvent.type === "thinking_delta") {
         process.stdout.write(event.assistantMessageEvent.delta);
+      }
+
+      if (event.type === "message_update" && event.assistantMessageEvent.type === "thinking_end") {
+        console.log("\n--- end of thinking ---\n");
+      }
+
+      if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
+        process.stdout.write(event.assistantMessageEvent.delta);
+      }
+
+      if (event.type === "message_update" && event.assistantMessageEvent.type === "toolcall_end") {
+        console.log(`\n🔧 [tool call] ${event.assistantMessageEvent.toolCall.name} ${JSON.stringify(event.assistantMessageEvent.toolCall.arguments)}`);
+      }
+
+      if (event.type === "tool_execution_start") {
+        console.log(`\n⚙️  [${event.toolName}] ${JSON.stringify(event.args)}`);
+      }
+
+      if (event.type === "tool_execution_update") {
+        process.stdout.write(String(event.partialResult));
+      }
+
+      if (event.type === "tool_execution_end") {
+        const result = String(event.result);
+        if (event.isError) {
+          console.log(`\n❌ [${event.toolName}] error: ${result}`);
+        } else {
+          console.log(`\n✅ [${event.toolName}]:\n${result}`);
+        }
       }
     }
   );
@@ -92,6 +123,7 @@ When reviewing code changes:
 async function conversationExample() {
   const agent = new PiAgent({
     model: "anthropic/claude-sonnet-4-5",
+    apiKey: process.env.ANTHROPIC_API_KEY,
     sessionMode: "disk", // Persist to disk so we can continue
   });
 
@@ -123,48 +155,22 @@ async function conversationExample() {
 async function detailedLoggingExample() {
   const agent = new PiAgent({
     model: "anthropic/claude-sonnet-4-5",
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    handlers: {
+      onTextDelta: (delta) => process.stdout.write(delta),
+      onToolStart: (_, toolName, args) =>
+        console.log(`\n\n⚙️  Tool: ${toolName}\n   Input: ${JSON.stringify(args, null, 2)}`),
+      onToolEnd: (_, toolName, result) =>
+        console.log(`✅  Tool finished: ${toolName}\n   Output preview: ${String(result).slice(0, 100)}...`),
+      onMessageEnd: () => console.log("\n--- Turn complete ---"),
+      onAgentEnd: () => console.log("\n🏁 Agent finished"),
+      onCompactionStart: () => console.log("\n⚠️  Context compacted (approaching token limit)"),
+    },
   });
 
   console.log("=== Detailed Logging ===\n");
 
-  const logEvent = (event: AgentEvent) => {
-    switch (event.type) {
-      case "message_update":
-        if (event.assistantMessageEvent.type === "text_delta") {
-          process.stdout.write(event.assistantMessageEvent.delta);
-        }
-        break;
-
-      case "tool_call_start":
-        console.log(
-          `\n\n⚙️  Tool: ${event.toolName}\n   Input: ${JSON.stringify(event.input, null, 2)}`
-        );
-        break;
-
-      case "tool_call_end":
-        console.log(
-          `✅  Tool finished: ${event.toolName}\n   Output preview: ${event.output.slice(0, 100)}...`
-        );
-        break;
-
-      case "message_end":
-        console.log("\n--- Turn complete ---");
-        break;
-
-      case "prompt_end":
-        console.log("\n🏁 Agent finished");
-        break;
-
-      case "compaction":
-        console.log("\n⚠️  Context compacted (approaching token limit)");
-        break;
-    }
-  };
-
-  await agent.execute(
-    "Run git log --oneline -5 and explain what each commit does",
-    logEvent
-  );
+  await agent.execute("Run git log --oneline -5 and explain what each commit does");
 
   console.log("\n");
 }
@@ -176,6 +182,7 @@ async function detailedLoggingExample() {
 async function nonBlockingExample() {
   const agent = new PiAgent({
     model: "anthropic/claude-sonnet-4-5",
+    apiKey: process.env.ANTHROPIC_API_KEY,
   });
 
   console.log("=== Non-blocking Query ===\n");
@@ -193,7 +200,7 @@ async function nonBlockingExample() {
   // Later, subscribe to know when it's done
   return new Promise<void>((resolve) => {
     session.subscribe((event) => {
-      if (event.type === "prompt_end") {
+      if (event.type === "agent_end") {
         console.log("\n✅ Agent finished in background");
         resolve();
       }
