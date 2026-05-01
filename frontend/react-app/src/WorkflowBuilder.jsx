@@ -1,8 +1,7 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import Canvas from './components/Canvas';
-import { VALID_TYPES, NODE_META } from './constants';
 import { generateNodeId } from './utils';
 import './WorkflowBuilder.css';
 
@@ -14,24 +13,46 @@ const WorkflowBuilder = () => {
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [undoStack, setUndoStack] = useState([]);
   const [deleteConnBtnPos, setDeleteConnBtnPos] = useState(null);
+  const [agents, setAgents] = useState([]);
+  const [loadingAgents, setLoadingAgents] = useState(true);
+  const [agentsError, setAgentsError] = useState(null);
   const draggedType = useRef(null);
 
+  // Fetch agents from database on mount
+  useEffect(() => {
+    setLoadingAgents(true);
+    fetch('http://localhost:4000/api/agents')
+      .then(res => {
+        if (!res.ok) throw new Error('Failed to fetch agents');
+        return res.json();
+      })
+      .then(data => {
+        setAgents(data);
+        setLoadingAgents(false);
+      })
+      .catch(err => {
+        console.error('Error fetching agents:', err);
+        setAgentsError(err.message);
+        setLoadingAgents(false);
+      });
+  }, []);
+
   // Sidebar drag start
-  const handleSidebarDragStart = useCallback((type) => {
-    draggedType.current = type;
+  const handleSidebarDragStart = useCallback((agent) => {
+    draggedType.current = agent;
   }, []);
 
   // Canvas drop - create new node
-  const handleDrop = useCallback((type, x, y) => {
-    console.log("valid types ")
-    if (!VALID_TYPES.includes(type)) {
+  const handleDrop = useCallback((agentId, agentName, x, y) => {
+    if (!agentId || !agentName) {
       draggedType.current = null;
       return;
     }
 
     const newNode = {
       id: generateNodeId(),
-      type,
+      agentId,
+      agentName,
       x: x - 55, // Center the node on drop position
       y: y - 40,
     };
@@ -173,96 +194,16 @@ const WorkflowBuilder = () => {
     }
   }, [undoStack, handleDeleteNode, handleDeleteConnection]);
 
-  // Export schema
+  // Export schema (disabled - functionality removed)
   const handleExport = useCallback(() => {
-    const schema = {
-      components: nodes.map((n) => ({
-        id: n.id,
-        type: n.type,
-        x: n.x,
-        y: n.y,
-      })),
-      connections: connections.map((c) => ({
-        from: c.from,
-        fromSide: c.fromSide,
-        to: c.to,
-        toSide: c.toSide,
-      })),
-    };
+    // Export functionality disabled
+    console.log('Export functionality is currently disabled');
+  }, []);
 
-    const blob = new Blob([JSON.stringify(schema, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'workflow-schema.json';
-    a.click();
-    URL.revokeObjectURL(a.href);
-  }, [nodes, connections]);
-
-  // Import schema
-  const handleImport = useCallback((schema) => {
-    // Validation
-    if (
-      typeof schema !== 'object' ||
-      schema === null ||
-      !Array.isArray(schema.components) ||
-      !Array.isArray(schema.connections)
-    ) {
-      alert('Invalid workflow file: must contain "components" and "connections" arrays.');
-      return;
-    }
-
-    const SIDES = ['left', 'right'];
-
-    // Validate components
-    for (const comp of schema.components) {
-      if (
-        typeof comp.id !== 'string' ||
-        typeof comp.type !== 'string' ||
-        typeof comp.x !== 'number' ||
-        typeof comp.y !== 'number'
-      ) {
-        alert(
-          'Invalid workflow file: each component must have string "id", string "type", number "x", and number "y".'
-        );
-        return;
-      }
-      if (!VALID_TYPES.includes(comp.type)) {
-        alert(`Invalid workflow file: unknown component type "${comp.type}".`);
-        return;
-      }
-    }
-
-    // Validate connections
-    const compIds = new Set(schema.components.map((c) => c.id));
-    for (const conn of schema.connections) {
-      if (
-        typeof conn.from !== 'string' ||
-        typeof conn.fromSide !== 'string' ||
-        typeof conn.to !== 'string' ||
-        typeof conn.toSide !== 'string'
-      ) {
-        alert(
-          'Invalid workflow file: each connection must have string "from", "fromSide", "to", and "toSide".'
-        );
-        return;
-      }
-      if (!SIDES.includes(conn.fromSide) || !SIDES.includes(conn.toSide)) {
-        alert('Invalid workflow file: connection sides must be "left" or "right".');
-        return;
-      }
-      if (!compIds.has(conn.from) || !compIds.has(conn.to)) {
-        alert('Invalid workflow file: connection references an unknown component id.');
-        return;
-      }
-    }
-
-    // Clear and load
-    setNodes(schema.components);
-    setConnections(schema.connections);
-    setUndoStack([]);
-    setSelectedNodeId(null);
-    setSelectedConnection(null);
-    setDeleteConnBtnPos(null);
+  // Import schema (disabled - functionality removed)
+  const handleImport = useCallback(() => {
+    // Import functionality disabled
+    console.log('Import functionality is currently disabled');
   }, []);
 
   // Clear canvas
@@ -287,7 +228,12 @@ const WorkflowBuilder = () => {
         onClear={handleClear}
       />
       <div className="wf-body">
-        <Sidebar onDragStart={handleSidebarDragStart} />
+        <Sidebar 
+          agents={agents}
+          loadingAgents={loadingAgents}
+          agentsError={agentsError}
+          onDragStart={handleSidebarDragStart} 
+        />
         <Canvas
           nodes={nodes}
           connections={connections}

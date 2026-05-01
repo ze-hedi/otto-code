@@ -70,7 +70,8 @@ const Header = ({
         <button
           className="tb-btn"
           onClick={onExport}
-          title="Export schema as JSON"
+          disabled
+          title="Export feature is currently disabled"
         >
           <i className="bi bi-download"></i>
           <span>Export</span>
@@ -79,7 +80,8 @@ const Header = ({
         <button
           className="tb-btn"
           onClick={handleUploadClick}
-          title="Upload workflow JSON"
+          disabled
+          title="Upload feature is currently disabled"
         >
           <i className="bi bi-upload"></i>
           <span>Upload</span>

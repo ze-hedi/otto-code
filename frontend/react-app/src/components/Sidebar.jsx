@@ -1,33 +1,59 @@
 import React from 'react';
-import { COMPONENT_CATEGORIES } from '../constants';
 
-const Sidebar = ({ onDragStart }) => {
-  const handleDragStart = (e, type) => {
-    e.dataTransfer.setData('text/plain', type);
-    onDragStart(type);
+const Sidebar = ({ agents, loadingAgents, agentsError, onDragStart }) => {
+  const handleDragStart = (e, agent) => {
+    e.dataTransfer.setData('application/json', JSON.stringify({
+      agentId: agent._id,
+      agentName: agent.name
+    }));
+    onDragStart(agent);
   };
 
   return (
     <aside className="wf-sidebar">
-      <div className="wf-sidebar-header">Components</div>
+      <div className="wf-sidebar-header">
+        Agents
+        {!loadingAgents && !agentsError && (
+          <span className="agent-count">{agents.length}</span>
+        )}
+      </div>
       <div className="wf-palette">
-        {COMPONENT_CATEGORIES.map((category) => (
-          <div key={category.title} className="wf-category">
-            <div className="wf-category-title">{category.title}</div>
-            {category.components.map((component) => (
+        {loadingAgents && (
+          <div className="loading-spinner">
+            <div className="spinner"></div>
+            <p>Loading agents...</p>
+          </div>
+        )}
+        
+        {agentsError && (
+          <div className="error-state">
+            <p>Failed to load agents</p>
+            <small>{agentsError}</small>
+          </div>
+        )}
+        
+        {!loadingAgents && !agentsError && agents.length === 0 && (
+          <div className="empty-state">
+            <p>No agents available</p>
+            <a href="/agents">Create an agent</a>
+          </div>
+        )}
+        
+        {!loadingAgents && !agentsError && agents.length > 0 && (
+          <div className="wf-category">
+            {agents.map(agent => (
               <div
-                key={component.type}
+                key={agent._id}
                 className="wf-component"
                 draggable="true"
-                data-type={component.type}
-                onDragStart={(e) => handleDragStart(e, component.type)}
+                onDragStart={(e) => handleDragStart(e, agent)}
               >
-                <div className="wf-component-icon">{component.icon}</div>
-                <span>{component.label}</span>
+                <div className="wf-component-icon">🤖</div>
+                <span>{agent.name}</span>
               </div>
             ))}
           </div>
-        ))}
+        )}
       </div>
     </aside>
   );

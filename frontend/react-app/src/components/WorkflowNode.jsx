@@ -1,5 +1,4 @@
 import React, { useRef, useCallback } from 'react';
-import { NODE_META } from '../constants';
 
 const WorkflowNode = ({
   node,
@@ -12,8 +11,6 @@ const WorkflowNode = ({
 }) => {
   const nodeRef = useRef(null);
   const dragState = useRef({ isDragging: false, startX: 0, startY: 0, initLeft: 0, initTop: 0 });
-
-  const meta = NODE_META[node.type] || { icon: '📦', label: node.type };
 
   const handleMouseDown = useCallback((e) => {
     // Ignore if clicking delete button or handle
@@ -68,7 +65,7 @@ const WorkflowNode = ({
       className={`wf-node ${isSelected ? 'selected' : ''}`}
       style={{ left: `${node.x}px`, top: `${node.y}px` }}
       data-id={node.id}
-      data-type={node.type}
+      data-agent-id={node.agentId}
       onMouseDown={handleMouseDown}
     >
       <button
@@ -81,8 +78,8 @@ const WorkflowNode = ({
       >
         ×
       </button>
-      <div className="wf-node-icon">{meta.icon}</div>
-      <div className="wf-node-label">{meta.label}</div>
+      <div className="wf-node-icon">🤖</div>
+      <div className="wf-node-label">{node.agentName}</div>
       <div
         className="wf-handle left"
         data-side="left"

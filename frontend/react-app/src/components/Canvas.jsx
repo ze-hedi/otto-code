@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import WorkflowNode from './WorkflowNode';
-import { ensureSVGDefs, getHandlePos, bezierPath, pathMidpoint } from '../utils';
+import { ensureSVGDefs, getHandlePos, bezierPath } from '../utils';
 
 const Canvas = ({
   nodes,
@@ -20,8 +20,7 @@ const Canvas = ({
   const canvasRef = useRef(null);
   const svgRef = useRef(null);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [linkingState, setLinkingState] = useState(null);
-  const [deleteConnBtn, setDeleteConnBtn] = useState(null);
+  const [, setLinkingState] = useState(null);
 
   // Initialize SVG defs on mount
   useEffect(() => {
@@ -43,11 +42,19 @@ const Canvas = ({
   const handleDropInternal = (e) => {
     e.preventDefault();
     setIsDragOver(false);
-    const type = e.dataTransfer.getData('text/plain');
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    onDrop(type, x, y);
+    
+    try {
+      const agentData = JSON.parse(e.dataTransfer.getData('application/json'));
+      const rect = canvasRef.current.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      
+      if (agentData.agentId && agentData.agentName) {
+        onDrop(agentData.agentId, agentData.agentName, x, y);
+      }
+    } catch (error) {
+      console.error('Invalid drop data:', error);
+    }
   };
 
   // Handle canvas background click
@@ -183,7 +190,7 @@ const Canvas = ({
         {nodes.length === 0 && (
           <div className="wf-empty-hint">
             <i className="bi bi-diagram-3"></i>
-            <span>Drag components from the left to start</span>
+            <span>Drag agents from the left to start</span>
           </div>
         )}
       </div>
