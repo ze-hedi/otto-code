@@ -698,33 +698,6 @@ export class PiAgent {
   }
 
   /**
-   * Send a message to the persistent session and stream events back.
-   * Creates the session on first call; reuses it on subsequent calls.
-   * The event listeners are automatically removed after the prompt resolves.
-   */
-  async chat(message: string, onEvent?: EventCallback): Promise<void> {
-    const session = await this.getSession();
-    const unsubscribe = this._subscribe(session, onEvent);
-    try {
-      await session.prompt(message);
-    } finally {
-      unsubscribe();
-    }
-  }
-
-  /**
-   * Execute a query on a fresh session and return it for further interaction.
-   * Fires-and-forgets the prompt; subscribe before calling session.prompt() yourself
-   * if you need to await completion.
-   */
-  async query(query: string, onEvent?: EventCallback): Promise<AgentSession> {
-    const session = await this._createSession();
-    this._subscribe(session, onEvent);
-    session.prompt(query);
-    return session;
-  }
-
-  /**
    * Execute a query on a fresh session and wait for completion.
    * Throws if the stream ends with an error (e.g. API quota exceeded).
    */
