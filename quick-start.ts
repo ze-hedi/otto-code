@@ -31,7 +31,7 @@ await agent.execute(
     }
 
     // Show tool invocations
-    if (event.type === "tool_call_start") {
+    if (event.type === "tool_execution_start") {
       console.error(`\n⚙️  [${event.toolName}]\n`);
     }
   }

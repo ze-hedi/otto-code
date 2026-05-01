@@ -130,36 +130,20 @@ async function detailedLoggingExample() {
 }
 
 // ============================================================================
-// Example 5: Non-blocking query (don't wait for completion)
+// Example 5: Line count query
 // ============================================================================
 
-async function nonBlockingExample() {
+async function lineCountExample() {
   const agent = new PiAgent({
     model: "anthropic/claude-sonnet-4-5",
     apiKey: process.env.ANTHROPIC_API_KEY,
   });
 
-  console.log("=== Non-blocking Query ===\n");
+  console.log("=== Line Count Example ===\n");
 
-  // Start query but don't await
-  const session = await agent.query(
-    "Count all lines of code in .ts files",
-    handleEvent
-  );
+  await agent.execute("Count all lines of code in .ts files", handleEvent);
 
-  console.log("Query started, doing other work...\n");
-
-  // You can do other work here while the agent runs
-
-  // Later, subscribe to know when it's done
-  return new Promise<void>((resolve) => {
-    session.subscribe((event) => {
-      if (event.type === "agent_end") {
-        console.log("\n✅ Agent finished in background");
-        resolve();
-      }
-    });
-  });
+  console.log("\n✅ Done\n");
 }
 
 // ============================================================================
@@ -171,7 +155,7 @@ async function main() {
   await prReviewerExample();
   await conversationExample();
   await detailedLoggingExample();
-  await nonBlockingExample();
+  await lineCountExample();
 }
 
 main().catch(console.error);

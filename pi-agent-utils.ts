@@ -1,7 +1,7 @@
 // runtime/pi-agent-utils.ts
 // Shared utilities for handling PiAgent events.
 
-import { AgentEvent } from '../pi-agent.js';
+import { AgentEvent } from './pi-agent';
 
 /**
  * Logs every AgentEvent to stdout in a human-readable format.

@@ -35,8 +35,8 @@ async function main() {
   });
   console.log("\n");
 
-  console.log("=== Test 2: chat (stateful, turn 1) ===");
-  await agent.chat("My name is Alice. Remember it.", (event) => {
+  console.log("=== Test 2: execute (list files via skill) ===");
+  await agent.execute("List the files in the current directory.", (event) => {
     if (
       event.type === "message_update" &&
       event.assistantMessageEvent.type === "text_delta"
@@ -46,8 +46,8 @@ async function main() {
   });
   console.log("\n");
 
-  console.log("=== Test 3: chat (stateful, turn 2 — should recall name) ===");
-  await agent.chat("What is my name?", (event) => {
+  console.log("=== Test 3: execute (system prompt check) ===");
+  await agent.execute("What are you here to help with?", (event) => {
     if (
       event.type === "message_update" &&
       event.assistantMessageEvent.type === "text_delta"

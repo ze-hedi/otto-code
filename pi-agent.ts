@@ -15,7 +15,7 @@ import {
   type AgentSessionEvent,
   type ToolDefinition,
 } from "@mariozechner/pi-coding-agent";
-import { getModel, Model } from "@mariozechner/pi-ai";
+import { getModel, Model, type Api, type KnownProvider } from "@mariozechner/pi-ai";
 import type { Skill } from "@mariozechner/pi-coding-agent";
 import type { TSchema } from "typebox";
 
@@ -206,7 +206,7 @@ export type AgentEvent = AgentSessionEvent;
 export class PiAgent {
   private authStorage: AuthStorage;
   private modelRegistry: ModelRegistry;
-  private model: Model;
+  private model: Model<Api>;
   private config: Required<
     Omit<PiAgentConfig, "apiKey" | "workingDir" | "model" | "skills" | "handlers" | "tools" | "onToolExecute">
   > & { 
@@ -234,7 +234,7 @@ export class PiAgent {
     }
     this.modelRegistry = ModelRegistry.create(this.authStorage);
 
-    const model = getModel(provider, modelName);
+    const model = getModel(provider as any, modelName as any);
     if (!model) {
       throw new Error(
         `Model not found: ${config.model}. Check provider and model name.`
