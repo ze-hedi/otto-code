@@ -7,6 +7,24 @@ const agentSchema = new mongoose.Schema(
     description: { type: String, required: true },
     model: { type: String, required: true },
     status: { type: String, enum: ['Active', 'Inactive'], default: 'Active' },
+    thinkingLevel: { 
+      type: String, 
+      enum: ['off', 'low', 'medium', 'high', 'xhigh'], 
+      default: 'medium' 
+    },
+    sessionMode: { 
+      type: String, 
+      enum: ['memory', 'disk', 'continue'], 
+      default: 'memory' 
+    },
+    workingDir: { 
+      type: String, 
+      default: '' 
+    },
+    apiKey: { 
+      type: String, 
+      default: null 
+    },
   },
   { timestamps: true }
 );

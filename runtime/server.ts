@@ -25,6 +25,11 @@ interface AgentData {
   description: string;
   type?: string;
   status?: string;
+  // New fields from database schema
+  thinkingLevel?: 'off' | 'low' | 'medium' | 'high' | 'xhigh';
+  sessionMode?: 'memory' | 'disk' | 'continue';
+  workingDir?: string;
+  apiKey?: string;
 }
 
 interface AgentFile {
@@ -86,6 +91,16 @@ app.post('/runtime/run', (req, res) => {
     return;
   }
 
+  // Validate session mode requirements
+  if (agent.sessionMode === 'disk' || agent.sessionMode === 'continue') {
+    if (!agent.workingDir || agent.workingDir.trim() === '') {
+      res.status(400).json({ 
+        error: `workingDir is required when sessionMode is "${agent.sessionMode}"` 
+      });
+      return;
+    }
+  }
+
   // Build config from DB files
   const soulFile   = files.find((f) => f.type === 'soul');
   const skillsFile = files.find((f) => f.type === 'skills');
@@ -100,7 +115,11 @@ app.post('/runtime/run', (req, res) => {
     model: resolveModel(agent.model),
     systemPromptSuffix: soulFile?.content?.trim() || undefined,
     skills,
-    sessionMode: 'memory',
+    // Use agent's configured values with database defaults as fallback
+    sessionMode: agent.sessionMode || 'memory',
+    thinkingLevel: agent.thinkingLevel || 'medium',
+    workingDir: agent.workingDir?.trim() || undefined,
+    apiKey: agent.apiKey || undefined,
   };
 
   try {
@@ -112,18 +131,42 @@ app.post('/runtime/run', (req, res) => {
     global.activeAgent    = piAgent;
     global.activeAgentId  = agent._id;
 
-    console.log(`[runtime] Agent "${agent.name}" (${agent._id}) started — model: ${config.model}`);
-    console.log(`[runtime]   description : ${agent.description}`);
+    console.log(`[runtime] Agent "${agent.name}" (${agent._id}) started`);
+    console.log(`[runtime]   model          : ${config.model}`);
+    console.log(`[runtime]   description    : ${agent.description}`);
+    console.log(`[runtime]   sessionMode    : ${config.sessionMode}`);
+    console.log(`[runtime]   thinkingLevel  : ${config.thinkingLevel}`);
+    
+    if (config.workingDir) {
+      console.log(`[runtime]   workingDir     : ${config.workingDir}`);
+    }
+    
+    if (config.apiKey) {
+      const masked = config.apiKey.length > 12 
+        ? config.apiKey.slice(0, 8) + '...' + config.apiKey.slice(-4)
+        : '***';
+      console.log(`[runtime]   apiKey         : ${masked}`);
+    }
+    
     if (soulFile) {
-      console.log(`[runtime]   system prompt:`);
+      console.log(`[runtime]   system prompt  :`);
       console.log(`[runtime]   ──────────────────────────────────`);
       console.log(soulFile.content.trim().split('\n').map(l => `[runtime]   ${l}`).join('\n'));
       console.log(`[runtime]   ──────────────────────────────────`);
     } else {
-      console.log(`[runtime]   system prompt : (none)`);
+      console.log(`[runtime]   system prompt  : (none)`);
     }
 
-    res.json({ success: true, agentId: agent._id, model: config.model });
+    res.json({ 
+      success: true, 
+      agentId: agent._id,
+      name: agent.name,
+      model: config.model,
+      sessionMode: config.sessionMode,
+      thinkingLevel: config.thinkingLevel,
+      workingDir: config.workingDir || null,
+      hasCustomApiKey: !!config.apiKey,
+    });
   } catch (err: any) {
     console.error(`[runtime] Failed to instantiate agent: ${err.message}`);
     res.status(500).json({ error: err.message });
