@@ -13,9 +13,11 @@ import {
   SessionManager,
   AgentSession,
   type AgentSessionEvent,
+  type ToolDefinition,
 } from "@mariozechner/pi-coding-agent";
 import { getModel, Model } from "@mariozechner/pi-ai";
 import type { Skill } from "@mariozechner/pi-coding-agent";
+import type { TSchema } from "typebox";
 
 // ── Types extracted from AgentSessionEvent union ───────────────────────────────
 // This avoids importing from sub-packages (@mariozechner/pi-agent-core, @mariozechner/pi-ai)
@@ -141,6 +143,24 @@ export interface SkillInput {
   content: string;
 }
 
+/** Simplified tool input for users of PiAgent wrapper */
+export interface ToolInput {
+  /** Tool name for LLM calls (e.g., "search_database") */
+  name: string;
+  /** Human-readable label for UI */
+  label: string;
+  /** Description for the LLM to understand when to use this tool */
+  description: string;
+  /** TypeBox schema for tool parameters */
+  parameters: TSchema;
+  /** Optional: One-line snippet for "Available tools" section in system prompt */
+  promptSnippet?: string;
+  /** Optional: Guidelines appended to system prompt */
+  promptGuidelines?: string[];
+  /** Optional: Execution mode override */
+  executionMode?: "sequential" | "parallel";
+}
+
 export interface PiAgentConfig {
   /** Model provider and name, e.g., "anthropic/claude-sonnet-4-5" */
   model: string;
@@ -162,6 +182,18 @@ export interface PiAgentConfig {
    * Per-call EventCallback passed to those methods fires alongside these.
    */
   handlers?: PiAgentEventHandlers;
+  /** Custom tools to register at construction time */
+  tools?: ToolInput[];
+  /**
+   * External tool execution handler.
+   * Called when a custom tool needs to execute.
+   */
+  onToolExecute?: (
+    toolCallId: string,
+    toolName: string,
+    params: any,
+    signal?: AbortSignal
+  ) => Promise<{ content: any[]; details?: any }>;
 }
 
 /** Raw event callback — receives the full AgentSessionEvent union. */
@@ -176,10 +208,17 @@ export class PiAgent {
   private modelRegistry: ModelRegistry;
   private model: Model;
   private config: Required<
-    Omit<PiAgentConfig, "apiKey" | "workingDir" | "model" | "skills" | "handlers">
-  > & { workingDir: string; skills: SkillInput[]; handlers: PiAgentEventHandlers };
+    Omit<PiAgentConfig, "apiKey" | "workingDir" | "model" | "skills" | "handlers" | "tools" | "onToolExecute">
+  > & { 
+    workingDir: string; 
+    skills: SkillInput[]; 
+    handlers: PiAgentEventHandlers;
+    onToolExecute?: PiAgentConfig["onToolExecute"];
+  };
   private currentSession: AgentSession | null = null;
   private skillsTmpDir: string | null = null;
+  private customTools: ToolInput[] = [];
+  private toolDefinitions: Map<string, ToolDefinition> = new Map();
 
   constructor(config: PiAgentConfig) {
     const [provider, modelName] = config.model.split("/");
@@ -210,7 +249,68 @@ export class PiAgent {
       workingDir: config.workingDir ?? process.cwd(),
       skills: config.skills ?? [],
       handlers: config.handlers ?? {},
+      onToolExecute: config.onToolExecute,
     };
+
+    // Initialize custom tools from config
+    this.customTools = config.tools ?? [];
+    this._registerToolsFromConfig();
+  }
+
+  // ── Tool Management ────────────────────────────────────────────────────────
+
+  /**
+   * Convert ToolInput to ToolDefinition.
+   * The execute function delegates to the external handler.
+   */
+  private _createToolDefinition(toolInput: ToolInput): ToolDefinition {
+    const onToolExecute = this.config.onToolExecute;
+
+    return {
+      name: toolInput.name,
+      label: toolInput.label,
+      description: toolInput.description,
+      parameters: toolInput.parameters,
+      promptSnippet: toolInput.promptSnippet,
+      promptGuidelines: toolInput.promptGuidelines,
+      executionMode: toolInput.executionMode,
+
+      // Execute function delegates to external handler
+      async execute(toolCallId, params, signal, _onUpdate, _ctx) {
+        if (!onToolExecute) {
+          throw new Error(
+            `Tool "${toolInput.name}" was called but no onToolExecute handler is configured`
+          );
+        }
+
+        try {
+          const result = await onToolExecute(toolCallId, toolInput.name, params, signal);
+          return {
+            content: result.content,
+            details: result.details ?? {},
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `Error executing tool: ${error instanceof Error ? error.message : String(error)}`
+            }],
+            details: { error: true },
+            isError: true,
+          };
+        }
+      },
+    };
+  }
+
+  /**
+   * Register all tools from config by converting ToolInput to ToolDefinition.
+   */
+  private _registerToolsFromConfig(): void {
+    for (const toolInput of this.customTools) {
+      const toolDef = this._createToolDefinition(toolInput);
+      this.toolDefinitions.set(toolInput.name, toolDef);
+    }
   }
 
   // ── Event loop ──────────────────────────────────────────────────────────────
@@ -464,6 +564,8 @@ export class PiAgent {
       modelRegistry: this.modelRegistry,
       thinkingLevel: this.config.thinkingLevel,
       ...(resourceLoader ? { resourceLoader } : {}),
+      // Add custom tools if any are registered
+      ...(this.toolDefinitions.size > 0 ? { customTools: Array.from(this.toolDefinitions.values()) } : {}),
     });
 
     this.currentSession = session;
@@ -496,6 +598,92 @@ export class PiAgent {
   /** Returns the resolved config (including all defaults). */
   getConfig() {
     return { model: this.model.id, ...this.config };
+  }
+
+  /**
+   * Register a custom tool with the agent.
+   *
+   * Tools registered after session creation will be available in the next session
+   * created by query() or execute(). For the current chat() session, tools are
+   * available immediately if the session hasn't been created yet.
+   *
+   * @param tool - Tool definition with name, description, and TypeBox parameter schema
+   *
+   * @example
+   * ```typescript
+   * import { Type } from "@typebox/typebox";
+   *
+   * agent.addTool({
+   *   name: "search_database",
+   *   label: "Search Database",
+   *   description: "Search the user database by name or email",
+   *   parameters: Type.Object({
+   *     query: Type.String({ description: "Search query" }),
+   *     limit: Type.Optional(Type.Number({ description: "Max results" })),
+   *   }),
+   * });
+   * ```
+   */
+  addTool(tool: ToolInput): void {
+    // Validate tool doesn't already exist
+    if (this.toolDefinitions.has(tool.name)) {
+      throw new Error(`Tool "${tool.name}" is already registered`);
+    }
+
+    // Store tool input
+    this.customTools.push(tool);
+
+    // Create tool definition
+    const toolDef = this._createToolDefinition(tool);
+    this.toolDefinitions.set(tool.name, toolDef);
+
+    // If session already exists, warn about recreation
+    if (this.currentSession) {
+      console.warn(
+        `Tool "${tool.name}" registered but will only be available in new sessions. ` +
+        `Current session must be recreated to use this tool.`
+      );
+    }
+  }
+
+  /**
+   * Get all registered custom tool names.
+   * @returns Array of tool names
+   */
+  getRegisteredTools(): string[] {
+    return Array.from(this.toolDefinitions.keys());
+  }
+
+  /**
+   * Check if a tool is registered.
+   * @param toolName - Name of the tool to check
+   * @returns True if the tool is registered
+   */
+  hasTool(toolName: string): boolean {
+    return this.toolDefinitions.has(toolName);
+  }
+
+  /**
+   * Remove a custom tool.
+   * @param toolName - Name of the tool to remove
+   * @returns True if the tool was removed, false if it didn't exist
+   */
+  removeTool(toolName: string): boolean {
+    if (!this.toolDefinitions.has(toolName)) {
+      return false;
+    }
+
+    this.toolDefinitions.delete(toolName);
+    this.customTools = this.customTools.filter(t => t.name !== toolName);
+
+    if (this.currentSession) {
+      console.warn(
+        `Tool "${toolName}" removed but is still available in current session. ` +
+        `Create a new session to reflect this change.`
+      );
+    }
+
+    return true;
   }
 
   /**

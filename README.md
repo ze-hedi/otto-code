@@ -148,6 +148,17 @@ interface PiAgentConfig {
 
   /** Working directory for disk-based sessions */
   workingDir?: string;
+
+  /** Custom tools to register at construction time */
+  tools?: ToolInput[];
+
+  /** External tool execution handler */
+  onToolExecute?: (
+    toolCallId: string,
+    toolName: string,
+    params: any,
+    signal?: AbortSignal
+  ) => Promise<{ content: any[]; details?: any }>;
 }
 ```
 
@@ -186,6 +197,103 @@ The agent has four built-in tools (no MCP server needed):
 | read  | Read file contents                        | "Read src/main.ts and explain it"           |
 | write | Write new files                           | "Create a test file for src/utils.ts"       |
 | edit  | Edit existing files (find/replace)        | "Fix the bug in line 42 of src/parser.ts"   |
+
+## Custom Tools
+
+You can register custom tools to extend the agent's capabilities. Tools are defined using TypeBox schemas and executed via an external handler.
+
+### Define Tools at Construction
+
+```typescript
+import { PiAgent } from "./pi-agent";
+import { Type } from "typebox";
+
+const agent = new PiAgent({
+  model: "anthropic/claude-sonnet-4-5",
+  
+  // Define custom tools
+  tools: [
+    {
+      name: "search_database",
+      label: "Search Database",
+      description: "Search the user database by name or email",
+      parameters: Type.Object({
+        query: Type.String({ description: "Search query" }),
+        limit: Type.Optional(Type.Number({ description: "Max results", default: 10 })),
+      }),
+    },
+  ],
+  
+  // Handle tool execution
+  onToolExecute: async (toolCallId, toolName, params) => {
+    if (toolName === "search_database") {
+      const results = await searchDB(params.query, params.limit);
+      return {
+        content: [{ type: "text", text: JSON.stringify(results) }],
+        details: { count: results.length },
+      };
+    }
+    throw new Error(`Unknown tool: ${toolName}`);
+  },
+});
+```
+
+### Add Tools Dynamically
+
+```typescript
+// Add a tool after agent creation
+agent.addTool({
+  name: "get_weather",
+  label: "Get Weather",
+  description: "Get current weather for a location",
+  parameters: Type.Object({
+    location: Type.String({ description: "City name" }),
+  }),
+});
+
+// Check if a tool is registered
+console.log(agent.hasTool("get_weather")); // true
+
+// List all registered tools
+console.log(agent.getRegisteredTools()); // ["search_database", "get_weather"]
+
+// Remove a tool
+agent.removeTool("get_weather");
+```
+
+### Tool Input Interface
+
+```typescript
+interface ToolInput {
+  name: string;                      // Tool name for LLM calls
+  label: string;                     // Human-readable label
+  description: string;               // What the tool does (for LLM)
+  parameters: TSchema;               // TypeBox schema for parameters
+  promptSnippet?: string;            // One-line description for system prompt
+  promptGuidelines?: string[];       // Usage guidelines for system prompt
+  executionMode?: "sequential" | "parallel";  // Execution mode
+}
+```
+
+### Tool Execution Handler
+
+The `onToolExecute` handler receives:
+- `toolCallId`: Unique ID for this tool call
+- `toolName`: Name of the tool being called
+- `params`: Parsed parameters (validated against schema)
+- `signal`: Optional AbortSignal for cancellation
+
+It must return:
+```typescript
+{
+  content: Array<{ type: "text", text: string }>,  // Tool output
+  details?: any,                                   // Optional metadata
+}
+```
+
+### Complete Example
+
+See `examples/custom-tools.ts` for a complete working example with database search and weather tools.
 
 ## Use Cases
 
