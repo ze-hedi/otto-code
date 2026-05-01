@@ -9,7 +9,8 @@ const WorkflowNode = ({
   onDragStart,
   onDragMove,
   onHandleDragStart,
-  onNodeClick
+  onNodeClick,
+  getScale
 }) => {
   const nodeRef  = useRef(null);
   const dragState = useRef({ isDragging: false, startX: 0, startY: 0, initLeft: 0, initTop: 0, snapshotSaved: false });
@@ -40,7 +41,12 @@ const WorkflowNode = ({
         state.snapshotSaved = true;
         onDragStart?.(node.id);
       }
-      onDragMove(node.id, state.initLeft + (ev.clientX - state.startX), state.initTop + (ev.clientY - state.startY));
+      const scale = getScale?.() ?? 1;
+      onDragMove(
+        node.id,
+        state.initLeft + (ev.clientX - state.startX) / scale,
+        state.initTop  + (ev.clientY - state.startY) / scale
+      );
     };
 
     const handleMouseUp = () => {
@@ -51,7 +57,7 @@ const WorkflowNode = ({
 
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup',   handleMouseUp);
-  }, [node.id, connectionMode, onNodeClick, onDragStart, onDragMove]);
+  }, [node.id, connectionMode, onNodeClick, onDragStart, onDragMove, getScale]);
 
   const handleHandleMouseDown = useCallback((e, side) => {
     e.stopPropagation();

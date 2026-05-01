@@ -21,7 +21,7 @@ const Canvas = ({
   const canvasRef = useRef(null);
   const svgRef = useRef(null);
   const viewportRef = useRef(null);
-  const panRef = useRef({ x: 0, y: 0 });
+  const viewRef = useRef({ x: 0, y: 0, scale: 1 });
   const [isDragOver, setIsDragOver] = useState(false);
   const [, setLinkingState] = useState(null);
 
@@ -31,6 +31,36 @@ const Canvas = ({
       ensureSVGDefs(svgRef.current);
     }
   }, []);
+
+  // Wheel zoom — zoom toward cursor
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const onWheel = (e) => {
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const cursorX = e.clientX - rect.left;
+      const cursorY = e.clientY - rect.top;
+
+      const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+      const oldScale = viewRef.current.scale;
+      const newScale = Math.min(3, Math.max(0.15, oldScale * factor));
+      const ratio = newScale / oldScale;
+
+      viewRef.current.scale = newScale;
+      viewRef.current.x = cursorX + (viewRef.current.x - cursorX) * ratio;
+      viewRef.current.y = cursorY + (viewRef.current.y - cursorY) * ratio;
+
+      viewportRef.current.style.transform =
+        `translate(${viewRef.current.x}px, ${viewRef.current.y}px) scale(${newScale})`;
+    };
+
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', onWheel);
+  }, []);
+
+  const getScale = useCallback(() => viewRef.current.scale, []);
 
   // Handle drop zone events
   const handleDragOver = (e) => {
@@ -49,9 +79,8 @@ const Canvas = ({
     try {
       const data = JSON.parse(e.dataTransfer.getData('application/json'));
       const rect = canvasRef.current.getBoundingClientRect();
-      // Subtract pan offset so the node lands at the correct logical position
-      const x = e.clientX - rect.left - panRef.current.x;
-      const y = e.clientY - rect.top - panRef.current.y;
+      const x = (e.clientX - rect.left - viewRef.current.x) / viewRef.current.scale;
+      const y = (e.clientY - rect.top  - viewRef.current.y) / viewRef.current.scale;
 
       if (data.nodeType === 'artefact' && data.artefactType) {
         onDrop(data, x, y);
@@ -79,8 +108,8 @@ const Canvas = ({
 
     const startX = e.clientX;
     const startY = e.clientY;
-    const startPanX = panRef.current.x;
-    const startPanY = panRef.current.y;
+    const startPanX = viewRef.current.x;
+    const startPanY = viewRef.current.y;
     let hasMoved = false;
 
     canvasRef.current.classList.add('is-panning');
@@ -90,9 +119,10 @@ const Canvas = ({
       const dy = ev.clientY - startY;
       if (!hasMoved && Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
       hasMoved = true;
-      panRef.current.x = startPanX + dx;
-      panRef.current.y = startPanY + dy;
-      viewportRef.current.style.transform = `translate(${panRef.current.x}px, ${panRef.current.y}px)`;
+      viewRef.current.x = startPanX + dx;
+      viewRef.current.y = startPanY + dy;
+      viewportRef.current.style.transform =
+        `translate(${viewRef.current.x}px, ${viewRef.current.y}px) scale(${viewRef.current.scale})`;
     };
 
     const onMouseUp = () => {
@@ -221,7 +251,6 @@ const Canvas = ({
     <div className="wf-canvas" ref={canvasRef} onMouseDown={handleCanvasMouseDown}>
       <div className="wf-viewport" ref={viewportRef}>
         <div className="wf-grid"></div>
-        <svg className="wf-svg" ref={svgRef}></svg>
         <div
           className={`wf-drop-zone ${isDragOver ? 'drag-over' : ''}`}
           onDragOver={handleDragOver}
@@ -247,9 +276,13 @@ const Canvas = ({
             onDragMove={onNodeDragMove}
             onHandleDragStart={handleHandleDragStartInternal}
             onNodeClick={onNodeClick}
+            getScale={getScale}
           />
         ))}
       </div>
+
+      {/* SVG lives outside the viewport so its coordinate space is never scaled */}
+      <svg className="wf-svg" ref={svgRef}></svg>
     </div>
   );
 };
