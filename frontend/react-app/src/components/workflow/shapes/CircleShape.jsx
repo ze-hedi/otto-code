@@ -12,8 +12,8 @@ const CircleShape = ({ node, onDelete, onHandleMouseDown }) => (
         ×
       </button>
       <div className="wf-node-icon">{node.toolIcon || '🔧'}</div>
-      <div className="wf-handle left"  data-side="left"  onMouseDown={(e) => onHandleMouseDown(e, 'left')}  />
-      <div className="wf-handle right" data-side="right" onMouseDown={(e) => onHandleMouseDown(e, 'right')} />
+      <div className="wf-handle top"    data-side="top"    onMouseDown={(e) => onHandleMouseDown(e, 'top')}    />
+      <div className="wf-handle bottom" data-side="bottom" onMouseDown={(e) => onHandleMouseDown(e, 'bottom')} />
     </div>
     <div className="wf-node-label wf-node-label--below">{node.toolName}</div>
   </>

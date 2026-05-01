@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import WorkflowNode from './WorkflowNode';
-import { ensureSVGDefs, getHandlePos, bezierPath } from '../utils';
+import { ensureSVGDefs, getHandlePosFromState, bezierPath } from '../utils';
 
 const Canvas = ({
   nodes,
@@ -145,13 +145,14 @@ const Canvas = ({
 
     const handleMouseMove = (ev) => {
       if (svgRef.current && canvasRef.current) {
-        const nodeEl = canvasRef.current.querySelector(`[data-id="${nodeId}"]`);
-        if (!nodeEl) return;
+        // Source position: pure state math, no DOM query
+        const { x: fx, y: fy } = getHandlePosFromState(node, side);
 
+        // Cursor position: convert screen → viewport space
         const canvasRect = canvasRef.current.getBoundingClientRect();
-        const { x: fx, y: fy } = getHandlePos(nodeEl, side, canvasRect);
-        const tx = ev.clientX - canvasRect.left;
-        const ty = ev.clientY - canvasRect.top;
+        const { x: vx, y: vy, scale } = viewRef.current;
+        const tx = (ev.clientX - canvasRect.left - vx) / scale;
+        const ty = (ev.clientY - canvasRect.top  - vy) / scale;
 
         // Draw temp line
         let tempLine = svgRef.current.querySelector('.wf-arrow-temp');
@@ -196,7 +197,17 @@ const Canvas = ({
       }
 
       if (toNodeId && toNodeId !== nodeId) {
-        onHandleDragStart(nodeId, side, toNodeId, toSide);
+        // Top and bottom handles on agents are tool-link ports — only connect to tool nodes
+        if (side === 'top' || side === 'bottom') {
+          const toNode = nodes.find(n => n.id === toNodeId);
+          if (!toNode || toNode.type !== 'tool') {
+            setLinkingState(null);
+            return;
+          }
+          onHandleDragStart(nodeId, side, toNodeId, toSide, 'tool-link');
+        } else {
+          onHandleDragStart(nodeId, side, toNodeId, toSide);
+        }
       }
 
       setLinkingState(null);
@@ -208,28 +219,24 @@ const Canvas = ({
 
   // Draw connections
   useEffect(() => {
-    if (!svgRef.current || !canvasRef.current) return;
+    if (!svgRef.current) return;
 
     // Clear existing arrows (except temp)
     const existingArrows = svgRef.current.querySelectorAll('.wf-arrow:not(.wf-arrow-temp)');
     existingArrows.forEach(arrow => arrow.remove());
 
-    // Draw all connections
+    // Draw all connections — positions computed from state, no DOM queries
     connections.forEach((conn) => {
       const fromNode = nodes.find(n => n.id === conn.from);
       const toNode = nodes.find(n => n.id === conn.to);
       if (!fromNode || !toNode) return;
 
-      const fromEl = canvasRef.current.querySelector(`[data-id="${conn.from}"]`);
-      const toEl = canvasRef.current.querySelector(`[data-id="${conn.to}"]`);
-      if (!fromEl || !toEl) return;
-
-      const canvasRect = canvasRef.current.getBoundingClientRect();
-      const { x: fx, y: fy } = getHandlePos(fromEl, conn.fromSide, canvasRect);
-      const { x: tx, y: ty } = getHandlePos(toEl, conn.toSide, canvasRect);
+      const { x: fx, y: fy } = getHandlePosFromState(fromNode, conn.fromSide);
+      const { x: tx, y: ty } = getHandlePosFromState(toNode, conn.toSide);
 
       const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      path.setAttribute('class', 'wf-arrow');
+      const arrowClass = conn.linkType === 'tool-link' ? 'wf-arrow wf-arrow--tool-link' : 'wf-arrow';
+      path.setAttribute('class', arrowClass);
       path.setAttribute('data-from', conn.from);
       path.setAttribute('data-fside', conn.fromSide);
       path.setAttribute('data-to', conn.to);
@@ -240,7 +247,11 @@ const Canvas = ({
       path.addEventListener('mousedown', (e) => {
         e.stopPropagation();
         e.preventDefault();
-        onConnectionClick(conn, { x: (fx + tx) / 2, y: (fy + ty) / 2 });
+        // Convert viewport-space midpoint to canvas space for delete button positioning
+        const { x: vx, y: vy, scale } = viewRef.current;
+        const midCanvasX = (fx + tx) / 2 * scale + vx;
+        const midCanvasY = (fy + ty) / 2 * scale + vy;
+        onConnectionClick(conn, { x: midCanvasX, y: midCanvasY });
       });
 
       svgRef.current.appendChild(path);
@@ -279,10 +290,10 @@ const Canvas = ({
             getScale={getScale}
           />
         ))}
-      </div>
 
-      {/* SVG lives outside the viewport so its coordinate space is never scaled */}
-      <svg className="wf-svg" ref={svgRef}></svg>
+        {/* SVG is inside the viewport so it shares the same coordinate space as nodes */}
+        <svg className="wf-svg" ref={svgRef}></svg>
+      </div>
     </div>
   );
 };

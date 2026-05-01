@@ -364,12 +364,13 @@ html, body {
   outline-offset: -6px;
 }
 
-/* SVG connections layer */
+/* SVG connections layer — lives inside .wf-viewport, same coordinate space as nodes */
 .wf-svg {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
+  overflow: visible;   /* arrows can extend beyond the viewport layout bounds */
   pointer-events: none;
   z-index: 1;
 }
@@ -529,8 +530,12 @@ html, body {
   border-color: #7c8cf8;
 }
 
-.wf-handle.left  { left: -9px;  top: 50%; transform: translateY(-50%); }
-.wf-handle.right { right: -9px; top: 50%; transform: translateY(-50%); }
+.wf-handle.left   { left: -9px;  top: 50%; transform: translateY(-50%); }
+.wf-handle.right  { right: -9px; top: 50%; transform: translateY(-50%); }
+.wf-handle.top    { top: -9px;    left: 50%; transform: translateX(-50%); border-color: #0891b2; }
+.wf-handle.bottom { bottom: -9px; left: 50%; transform: translateX(-50%); border-color: #0891b2; }
+.wf-handle.top:hover,    .wf-handle.top.active    { background: #0891b2; border-color: #06b6d4; }
+.wf-handle.bottom:hover, .wf-handle.bottom.active { background: #0891b2; border-color: #06b6d4; }
 
 .wf-node:hover .wf-handle,
 .wf-node .wf-handle.active {
@@ -553,6 +558,14 @@ html, body {
   stroke: #f87171;
   filter: drop-shadow(0 0 5px rgba(248, 113, 113, 0.5));
 }
+
+/* Tool-link edges — dashed cyan arrows from agent bottom handle to tool nodes */
+.wf-arrow--tool-link {
+  stroke: #0891b2;
+  stroke-dasharray: 6 4;
+  marker-end: url(#wf-arrowhead-tool);
+}
+.wf-arrow--tool-link:hover { stroke: #06b6d4; }
 
 /* ── Delete connection button ────────────────────────────────── */
 .wf-delete-conn {

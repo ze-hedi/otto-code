@@ -175,12 +175,13 @@ const WorkflowBuilder = () => {
   }, [connectionMode, selectedNodeId, connections, saveSnapshot]);
 
   // Handle drag start (for connections via handles)
-  const handleHandleDragStart = useCallback((fromNodeId, fromSide, toNodeId, toSide) => {
+  const handleHandleDragStart = useCallback((fromNodeId, fromSide, toNodeId, toSide, linkType) => {
     const newConn = {
       from: fromNodeId,
       fromSide,
       to: toNodeId,
       toSide,
+      ...(linkType ? { linkType } : {}),
     };
 
     // Check if connection already exists
@@ -189,7 +190,8 @@ const WorkflowBuilder = () => {
         c.from === newConn.from &&
         c.fromSide === newConn.fromSide &&
         c.to === newConn.to &&
-        c.toSide === newConn.toSide
+        c.toSide === newConn.toSide &&
+        (c.linkType ?? undefined) === (newConn.linkType ?? undefined)
     );
 
     if (!exists) {
