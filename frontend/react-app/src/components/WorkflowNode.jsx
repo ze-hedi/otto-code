@@ -59,10 +59,16 @@ const WorkflowNode = ({
     onHandleDragStart(node.id, side);
   }, [node.id, onHandleDragStart]);
 
+  const isArtefact = node.type === 'artefact';
+  const nodeIcon = isArtefact
+    ? (node.artefactType === 'if' ? '◇' : '☰')
+    : '🤖';
+  const nodeLabel = isArtefact ? node.label : node.agentName;
+
   return (
     <div
       ref={nodeRef}
-      className={`wf-node ${isSelected ? 'selected' : ''}`}
+      className={`wf-node ${isArtefact ? `wf-node--artefact wf-node--${node.artefactType}` : ''} ${isSelected ? 'selected' : ''}`}
       style={{ left: `${node.x}px`, top: `${node.y}px` }}
       data-id={node.id}
       data-agent-id={node.agentId}
@@ -78,8 +84,10 @@ const WorkflowNode = ({
       >
         ×
       </button>
-      <div className="wf-node-icon">🤖</div>
-      <div className="wf-node-label">{node.agentName}</div>
+      <div className={`wf-node-icon ${isArtefact ? 'wf-node-icon--artefact' : ''}`}>
+        {nodeIcon}
+      </div>
+      <div className="wf-node-label">{nodeLabel}</div>
       <div
         className="wf-handle left"
         data-side="left"

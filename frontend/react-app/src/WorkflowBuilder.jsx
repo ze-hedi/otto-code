@@ -43,19 +43,32 @@ const WorkflowBuilder = () => {
   }, []);
 
   // Canvas drop - create new node
-  const handleDrop = useCallback((agentId, agentName, x, y) => {
-    if (!agentId || !agentName) {
-      draggedType.current = null;
-      return;
-    }
+  const handleDrop = useCallback((data, x, y) => {
+    let newNode;
 
-    const newNode = {
-      id: generateNodeId(),
-      agentId,
-      agentName,
-      x: x - 55, // Center the node on drop position
-      y: y - 40,
-    };
+    if (data.nodeType === 'artefact') {
+      newNode = {
+        id: generateNodeId(),
+        type: 'artefact',
+        artefactType: data.artefactType,
+        label: data.label,
+        x: x - 55,
+        y: y - 40,
+      };
+    } else {
+      if (!data.agentId || !data.agentName) {
+        draggedType.current = null;
+        return;
+      }
+      newNode = {
+        id: generateNodeId(),
+        type: 'agent',
+        agentId: data.agentId,
+        agentName: data.agentName,
+        x: x - 55,
+        y: y - 40,
+      };
+    }
 
     setNodes((prev) => [...prev, newNode]);
     setUndoStack((prev) => [...prev, { action: 'add-node', nodeId: newNode.id }]);

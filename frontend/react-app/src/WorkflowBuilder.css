@@ -199,6 +199,24 @@ html, body {
   flex-shrink: 0;
 }
 
+/* Artefacts section header inside palette */
+.wf-sidebar-header--artefacts {
+  margin-top: 0.5rem;
+  border-top: 1px solid #1e2637;
+  border-bottom: 1px solid #1e2637;
+}
+
+/* Artefact draggable pill */
+.wf-component--artefact:hover {
+  border-color: #f59e0b;
+}
+
+.wf-component-icon--artefact {
+  background: #2d2a1a;
+  color: #f59e0b;
+  font-size: 1rem;
+}
+
 /* Loading Spinner */
 .loading-spinner {
   display: flex;
@@ -362,6 +380,26 @@ html, body {
   font-weight: 600;
   color: #cbd5e1;
   white-space: nowrap;
+}
+
+/* Artefact nodes on canvas */
+.wf-node--artefact {
+  border-color: #44391a;
+}
+
+.wf-node--artefact:hover {
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.12);
+}
+
+.wf-node--artefact.selected {
+  border-color: #d97706;
+  box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.25);
+}
+
+.wf-node-icon--artefact {
+  color: #f59e0b;
+  font-size: 1.5rem;
 }
 
 /* Delete button on node */

@@ -44,13 +44,15 @@ const Canvas = ({
     setIsDragOver(false);
     
     try {
-      const agentData = JSON.parse(e.dataTransfer.getData('application/json'));
+      const data = JSON.parse(e.dataTransfer.getData('application/json'));
       const rect = canvasRef.current.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
-      
-      if (agentData.agentId && agentData.agentName) {
-        onDrop(agentData.agentId, agentData.agentName, x, y);
+
+      if (data.nodeType === 'artefact' && data.artefactType) {
+        onDrop(data, x, y);
+      } else if (data.agentId && data.agentName) {
+        onDrop(data, x, y);
       }
     } catch (error) {
       console.error('Invalid drop data:', error);
