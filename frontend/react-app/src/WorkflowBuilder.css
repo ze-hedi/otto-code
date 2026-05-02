@@ -331,6 +331,40 @@ html, body {
   font-size: 1rem;
 }
 
+/* Build Agent button in sidebar */
+.wf-build-agent-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 0.45rem 0.75rem;
+  margin-top: 0.25rem;
+  margin-bottom: 0.5rem;
+  background: transparent;
+  border: 1px dashed #2a3350;
+  border-radius: 8px;
+  color: #7c8cf8;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.wf-build-agent-btn:hover {
+  background: #1e2637;
+  border-color: #7c8cf8;
+  color: #a5b4fc;
+}
+
+.wf-build-agent-btn--cc {
+  color: #10b981;
+}
+
+.wf-build-agent-btn--cc:hover {
+  border-color: #10b981;
+  color: #34d399;
+}
+
 /* Loading Spinner */
 .loading-spinner {
   display: flex;

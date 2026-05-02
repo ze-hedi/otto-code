@@ -4,6 +4,8 @@ import Sidebar from './components/Sidebar';
 import Canvas from './components/Canvas';
 import AgentDetailPanel from './components/AgentDetailPanel';
 import ClaudeCodeDetailPanel from './components/ClaudeCodeDetailPanel';
+import PiAgentFormContainer from './components/agents/PiAgentFormContainer';
+import ClaudeCodeAgentForm from './components/agents/ClaudeCodeAgentForm';
 import { generateNodeId, NODE_DEFAULT_SIDES } from './utils';
 import './WorkflowBuilder.css';
 
@@ -26,6 +28,8 @@ const WorkflowBuilder = () => {
   const [ccAgentsError, setCCAgentsError] = useState(null);
   const [selectedAgentId, setSelectedAgentId] = useState(null);
   const [selectedCCAgentId, setSelectedCCAgentId] = useState(null);
+  const [creatingPiAgent, setCreatingPiAgent] = useState(false);
+  const [creatingCCAgent, setCreatingCCAgent] = useState(false);
   const draggedType = useRef(null);
   const snapshotRef = useRef({ nodes, connections });
   const agentsRef   = useRef(agents);
@@ -102,8 +106,7 @@ const WorkflowBuilder = () => {
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
-        setSelectedAgentId(null);
-        setSelectedCCAgentId(null);
+        closeAllPanels();
       }
     };
     document.addEventListener('keydown', handleKeyDown);
@@ -132,6 +135,38 @@ const WorkflowBuilder = () => {
           : n
       )
     );
+  }, []);
+
+  // Close all right-side panels
+  const closeAllPanels = useCallback(() => {
+    setSelectedAgentId(null);
+    setSelectedCCAgentId(null);
+    setCreatingPiAgent(false);
+    setCreatingCCAgent(false);
+  }, []);
+
+  // Open empty PI agent creation form in the right panel
+  const handleBuildPiAgent = useCallback(() => {
+    closeAllPanels();
+    setCreatingPiAgent(true);
+  }, [closeAllPanels]);
+
+  // Open empty Claude Code agent creation form in the right panel
+  const handleBuildCCAgent = useCallback(() => {
+    closeAllPanels();
+    setCreatingCCAgent(true);
+  }, [closeAllPanels]);
+
+  // Handle newly created PI agent — append to sidebar list and close panel
+  const handlePiAgentCreated = useCallback((newAgent) => {
+    setAgents((prev) => [...prev, newAgent]);
+    setCreatingPiAgent(false);
+  }, []);
+
+  // Handle newly created Claude Code agent — append to sidebar list and close panel
+  const handleCCAgentCreated = useCallback((newAgent) => {
+    setClaudeCodeAgents((prev) => [...prev, newAgent]);
+    setCreatingCCAgent(false);
   }, []);
 
   // Persist a tool-link add/remove to the agent's DB record
@@ -263,11 +298,10 @@ const WorkflowBuilder = () => {
     if (!connectionMode) {
       const node = nodes.find((n) => n.id === nodeId);
       if (node?.type === 'agent') {
+        closeAllPanels();
         if (node.agentType === 'claude-code') {
-          setSelectedAgentId(null);
           setSelectedCCAgentId(node.agentId);
         } else {
-          setSelectedCCAgentId(null);
           setSelectedAgentId(node.agentId);
         }
       }
@@ -457,14 +491,10 @@ const WorkflowBuilder = () => {
           loadingTools={loadingTools}
           toolsError={toolsError}
           onDragStart={handleSidebarDragStart}
-          onAgentClick={(agentId) => {
-            setSelectedCCAgentId(null);
-            setSelectedAgentId(agentId);
-          }}
-          onCCAgentClick={(agentId) => {
-            setSelectedAgentId(null);
-            setSelectedCCAgentId(agentId);
-          }}
+          onAgentClick={(agentId) => { closeAllPanels(); setSelectedAgentId(agentId); }}
+          onCCAgentClick={(agentId) => { closeAllPanels(); setSelectedCCAgentId(agentId); }}
+          onBuildPiAgent={handleBuildPiAgent}
+          onBuildCCAgent={handleBuildCCAgent}
         />
         <Canvas
           nodes={nodes}
@@ -495,6 +525,36 @@ const WorkflowBuilder = () => {
             onClose={() => setSelectedCCAgentId(null)}
             onAgentUpdated={handleCCAgentUpdated}
           />
+        )}
+        {creatingPiAgent && (
+          <div className="wf-detail-panel">
+            <div className="wf-detail-panel-header">
+              <span className="wf-detail-panel-title">Build a Pi Agent</span>
+              <button className="wf-detail-panel-close" onClick={() => setCreatingPiAgent(false)}>×</button>
+            </div>
+            <div className="wf-detail-panel-body">
+              <PiAgentFormContainer
+                onCreated={handlePiAgentCreated}
+                onUpdated={() => {}}
+                onCancel={() => setCreatingPiAgent(false)}
+              />
+            </div>
+          </div>
+        )}
+        {creatingCCAgent && (
+          <div className="wf-detail-panel">
+            <div className="wf-detail-panel-header">
+              <span className="wf-detail-panel-title">Build a Claude Code Agent</span>
+              <button className="wf-detail-panel-close" onClick={() => setCreatingCCAgent(false)}>×</button>
+            </div>
+            <div className="wf-detail-panel-body">
+              <ClaudeCodeAgentForm
+                onCreated={handleCCAgentCreated}
+                onUpdated={() => {}}
+                onCancel={() => setCreatingCCAgent(false)}
+              />
+            </div>
+          </div>
         )}
       </div>
       

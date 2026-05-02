@@ -10,6 +10,7 @@ const Sidebar = ({
   claudeCodeAgents, loadingCCAgents, ccAgentsError,
   tools, loadingTools, toolsError,
   onDragStart, onAgentClick, onCCAgentClick,
+  onBuildPiAgent, onBuildCCAgent,
 }) => {
   const handleAgentDragStart = (e, agent) => {
     e.dataTransfer.setData('application/json', JSON.stringify({
@@ -97,6 +98,12 @@ const Sidebar = ({
           </div>
         )}
 
+        {!loadingAgents && !agentsError && (
+          <button className="wf-build-agent-btn" onClick={onBuildPiAgent}>
+            + Build an Agent
+          </button>
+        )}
+
         {/* ── Claude Code Agents ───────────────────────────── */}
         <div className="wf-sidebar-header wf-sidebar-header--cc-agents">
           Claude Code
@@ -143,6 +150,12 @@ const Sidebar = ({
               </div>
             ))}
           </div>
+        )}
+
+        {!loadingCCAgents && !ccAgentsError && (
+          <button className="wf-build-agent-btn wf-build-agent-btn--cc" onClick={onBuildCCAgent}>
+            + Build an Agent
+          </button>
         )}
 
         {/* ── Tools ─────────────────────────────────────────── */}
@@ -193,7 +206,7 @@ const Sidebar = ({
         )}
 
         <div className="wf-sidebar-header wf-sidebar-header--artefacts">
-          Artefacts
+          Interfaces
         </div>
         <div className="wf-category">
           {ARTEFACTS.map(artefact => (
