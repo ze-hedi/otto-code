@@ -31,12 +31,11 @@ const WorkflowNode = ({
     state.initLeft      = nodeRef.current.offsetLeft;
     state.initTop       = nodeRef.current.offsetTop;
 
-    if (connectionMode && onNodeClick) {
-      onNodeClick(node.id);
-    }
-
     const handleMouseMove = (ev) => {
       if (!state.isDragging) return;
+      const dx = ev.clientX - state.startX;
+      const dy = ev.clientY - state.startY;
+      if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
       if (!state.snapshotSaved) {
         state.snapshotSaved = true;
         onDragStart?.(node.id);
@@ -44,12 +43,15 @@ const WorkflowNode = ({
       const scale = getScale?.() ?? 1;
       onDragMove(
         node.id,
-        state.initLeft + (ev.clientX - state.startX) / scale,
-        state.initTop  + (ev.clientY - state.startY) / scale
+        state.initLeft + dx / scale,
+        state.initTop  + dy / scale
       );
     };
 
     const handleMouseUp = () => {
+      if (!state.snapshotSaved && onNodeClick) {
+        onNodeClick(node.id);
+      }
       state.isDragging = false;
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup',   handleMouseUp);

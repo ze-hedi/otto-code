@@ -2,6 +2,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import Canvas from './components/Canvas';
+import AgentDetailPanel from './components/AgentDetailPanel';
 import { generateNodeId, NODE_DEFAULT_SIDES } from './utils';
 import './WorkflowBuilder.css';
 
@@ -19,6 +20,7 @@ const WorkflowBuilder = () => {
   const [tools, setTools] = useState([]);
   const [loadingTools, setLoadingTools] = useState(true);
   const [toolsError, setToolsError] = useState(null);
+  const [selectedAgentId, setSelectedAgentId] = useState(null);
   const draggedType = useRef(null);
   const snapshotRef = useRef({ nodes, connections });
 
@@ -66,6 +68,27 @@ const WorkflowBuilder = () => {
         setToolsError(err.message);
         setLoadingTools(false);
       });
+  }, []);
+
+  // Close detail panel on Escape
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') setSelectedAgentId(null);
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Sync updated agent back to sidebar list and canvas nodes
+  const handleAgentUpdated = useCallback((updatedAgent) => {
+    setAgents((prev) => prev.map((a) => (a._id === updatedAgent._id ? updatedAgent : a)));
+    setNodes((prev) =>
+      prev.map((n) =>
+        n.agentId === updatedAgent._id
+          ? { ...n, agentName: updatedAgent.name, agentIcon: updatedAgent.icon || '🤖' }
+          : n
+      )
+    );
   }, []);
 
   // Sidebar drag start
@@ -141,9 +164,13 @@ const WorkflowBuilder = () => {
     if (selectedNodeId === nodeId) setSelectedNodeId(null);
   }, [saveSnapshot, selectedNodeId]);
 
-  // Node click (for connection mode)
+  // Node click — connection mode: wire nodes; normal mode: open detail panel
   const handleNodeClick = useCallback((nodeId) => {
-    if (!connectionMode) return;
+    if (!connectionMode) {
+      const node = nodes.find((n) => n.id === nodeId);
+      if (node?.type === 'agent') setSelectedAgentId(node.agentId);
+      return;
+    }
 
     if (selectedNodeId && selectedNodeId !== nodeId) {
       const fromNode = nodes.find(n => n.id === selectedNodeId);
@@ -301,6 +328,7 @@ const WorkflowBuilder = () => {
           loadingTools={loadingTools}
           toolsError={toolsError}
           onDragStart={handleSidebarDragStart}
+          onAgentClick={(agentId) => setSelectedAgentId(agentId)}
         />
         <Canvas
           nodes={nodes}
@@ -317,6 +345,14 @@ const WorkflowBuilder = () => {
           onDeleteConnection={handleDeleteConnection}
           onCanvasClick={handleCanvasClick}
         />
+        {selectedAgentId && (
+          <AgentDetailPanel
+            agent={agents.find((a) => a._id === selectedAgentId)}
+            availableTools={tools}
+            onClose={() => setSelectedAgentId(null)}
+            onAgentUpdated={handleAgentUpdated}
+          />
+        )}
       </div>
       
       {/* Delete connection button */}

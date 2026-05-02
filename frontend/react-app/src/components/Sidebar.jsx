@@ -5,7 +5,7 @@ const ARTEFACTS = [
   { type: 'plan', label: 'Plan', icon: '☰' },
 ];
 
-const Sidebar = ({ agents, loadingAgents, agentsError, tools, loadingTools, toolsError, onDragStart }) => {
+const Sidebar = ({ agents, loadingAgents, agentsError, tools, loadingTools, toolsError, onDragStart, onAgentClick }) => {
   const handleAgentDragStart = (e, agent) => {
     e.dataTransfer.setData('application/json', JSON.stringify({
       nodeType: 'agent',
@@ -73,6 +73,7 @@ const Sidebar = ({ agents, loadingAgents, agentsError, tools, loadingTools, tool
                 className="wf-component"
                 draggable="true"
                 onDragStart={(e) => handleAgentDragStart(e, agent)}
+                onClick={() => onAgentClick?.(agent._id)}
               >
                 <div className="wf-component-icon">{agent.icon || '🤖'}</div>
                 <span>{agent.name}</span>
