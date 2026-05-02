@@ -1,0 +1,10 @@
+services:
+  gateway:
+    volumes:
+      - ./gateway/src:/app/src:ro
+      - ./gateway/config.yaml:/app/config.yaml:ro
+    command: ["python3", "-m", "src.main"]
+
+  tavily:
+    volumes:
+      - ./servers/tavily/src:/app/src:ro
