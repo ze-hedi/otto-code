@@ -3,7 +3,7 @@ services:
     volumes:
       - ./gateway/src:/app/src:ro
       - ./gateway/config.yaml:/app/config.yaml:ro
-    command: ["python", "-m", "src.main"]
+    command: ["python3", "-m", "src.main"]
 
   tavily:
     volumes:
