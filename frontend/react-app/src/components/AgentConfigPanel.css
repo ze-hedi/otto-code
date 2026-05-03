@@ -1,0 +1,151 @@
+/* ── Panel shell ────────────────────────────────────────────── */
+.acp-panel {
+  width: 360px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: #161b27;
+  border-left: 1px solid #2a3350;
+  overflow: hidden;
+}
+
+/* ── Header ─────────────────────────────────────────────────── */
+.acp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid #2a3350;
+  flex-shrink: 0;
+}
+
+.acp-title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  font-family: 'Courier New', monospace;
+  color: #e2e8f0;
+  letter-spacing: 0.03em;
+}
+
+.acp-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.acp-refresh-btn,
+.acp-close-btn {
+  background: none;
+  border: 1px solid #2a3350;
+  color: #94a3b8;
+  font-size: 0.9rem;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.acp-refresh-btn:hover:not(:disabled),
+.acp-close-btn:hover {
+  border-color: #7c8cf8;
+  color: #7c8cf8;
+}
+
+.acp-refresh-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Body ───────────────────────────────────────────────────── */
+.acp-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* ── Error ──────────────────────────────────────────────────── */
+.acp-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.83rem;
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.08);
+  border: 1px solid rgba(248, 113, 113, 0.2);
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+  line-height: 1.5;
+}
+
+.acp-error-icon {
+  flex-shrink: 0;
+}
+
+/* ── Sections ───────────────────────────────────────────────── */
+.acp-section {
+  background: #1e2637;
+  border: 1px solid #2a3350;
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.acp-section-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-family: 'Courier New', monospace;
+  color: #7c8cf8;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 0.25rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid #2a3350;
+}
+
+/* ── Config rows ────────────────────────────────────────────── */
+.acp-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+}
+
+.acp-label {
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.acp-value {
+  color: #e2e8f0;
+  font-family: 'Courier New', monospace;
+  font-size: 0.8rem;
+  text-align: right;
+  word-break: break-all;
+}
+
+/* ── Tools ──────────────────────────────────────────────────── */
+.acp-empty-tools {
+  font-size: 0.82rem;
+  color: #4a5568;
+}
+
+.acp-tool-badge {
+  font-size: 0.78rem;
+  font-family: 'Courier New', monospace;
+  color: #7c8cf8;
+  background: rgba(124, 140, 248, 0.08);
+  border: 1px solid rgba(124, 140, 248, 0.2);
+  border-radius: 6px;
+  padding: 0.2rem 0.5rem;
+  display: inline-block;
+}

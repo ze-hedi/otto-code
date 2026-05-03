@@ -497,6 +497,29 @@ app.post('/runtime/agents/:id/abort', async (req, res) => {
 });
 
 /**
+ * GET /runtime/agents/:id/config
+ *
+ * Returns the resolved configuration and registered tools for a Pi agent.
+ */
+app.get('/runtime/agents/:id/config', (req, res) => {
+  const { id } = req.params;
+  const piAgent = activeAgents.get(id);
+
+  if (!piAgent) {
+    if (activeClaudeAgents.has(id)) {
+      res.status(400).json({ error: 'Agent config panel is not available for Claude Code agents.' });
+    } else {
+      res.status(404).json({ error: 'Agent not found in runtime.' });
+    }
+    return;
+  }
+
+  const config = piAgent.getConfig();
+  const tools = piAgent.getRegisteredTools();
+  res.json({ config, tools });
+});
+
+/**
  * GET /runtime/agents/:id/stats
  *
  * Returns context usage and session statistics for an active Pi agent.

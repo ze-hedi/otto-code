@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import SessionStatsPanel from '../components/SessionStatsPanel';
+import AgentConfigPanel from '../components/AgentConfigPanel';
 import './ChatPage.css';
 
 function ChatPage() {
@@ -14,6 +15,7 @@ function ChatPage() {
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState(null);
   const [showStats, setShowStats] = useState(false);
+  const [showConfig, setShowConfig] = useState(false);
 
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
@@ -178,13 +180,22 @@ function ChatPage() {
         </div>
         <div className="chat-status-dot" title="Active" />
         {agent?.agentType !== 'claude-code' && (
-          <button
-            className={`chat-stats-btn${showStats ? ' active' : ''}`}
-            onClick={() => setShowStats((v) => !v)}
-            title="Toggle session stats"
-          >
-            ◈ Stats
-          </button>
+          <>
+            <button
+              className={`chat-stats-btn${showStats ? ' active' : ''}`}
+              onClick={() => setShowStats((v) => !v)}
+              title="Toggle session stats"
+            >
+              ◈ Stats
+            </button>
+            <button
+              className={`chat-stats-btn${showConfig ? ' active' : ''}`}
+              onClick={() => setShowConfig((v) => !v)}
+              title="Toggle agent config"
+            >
+              ⬡ Agent
+            </button>
+          </>
         )}
       </div>
 
@@ -274,6 +285,12 @@ function ChatPage() {
           <SessionStatsPanel
             agentId={agentId}
             onClose={() => setShowStats(false)}
+          />
+        )}
+        {showConfig && (
+          <AgentConfigPanel
+            agentId={agentId}
+            onClose={() => setShowConfig(false)}
           />
         )}
       </div>
