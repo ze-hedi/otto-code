@@ -69,6 +69,45 @@
   flex-shrink: 0;
 }
 
+/* ── Body (chat + stats panel side by side) ─────────────────── */
+.chat-body {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  overflow: hidden;
+}
+
+.chat-area {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* ── Stats toggle button ────────────────────────────────────── */
+.chat-stats-btn {
+  background: none;
+  border: 1px solid #2a3350;
+  color: #94a3b8;
+  font-size: 0.82rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+  margin-left: auto;
+}
+.chat-stats-btn:hover {
+  border-color: #7c8cf8;
+  color: #7c8cf8;
+}
+.chat-stats-btn.active {
+  background: rgba(124, 140, 248, 0.12);
+  border-color: #7c8cf8;
+  color: #7c8cf8;
+}
+
 /* ── Message list ───────────────────────────────────────────── */
 .chat-messages {
   flex: 1;
@@ -242,4 +281,24 @@
   background: #2a3350;
   color: #4a5568;
   cursor: not-allowed;
+}
+
+.chat-stop-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: none;
+  background: rgba(248, 113, 113, 0.15);
+  color: #f87171;
+  font-size: 0.85rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.2s;
+}
+.chat-stop-btn:hover {
+  background: rgba(248, 113, 113, 0.3);
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.15);
 }

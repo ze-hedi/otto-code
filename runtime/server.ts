@@ -460,10 +460,75 @@ app.post('/runtime/chat/:id', async (req, res) => {
 
   console.log(`[runtime] chat → agent ${id}: "${message.trim().slice(0, 80)}"`);
 
-  await piAgent.execute(message.trim(), (event) => {
-    handleEventWithClient(event, send);
-  }); 
-  
+  try {
+    await piAgent.chat(message.trim(), (event) => {
+      handleEvent(event) ; 
+      handleEventWithClient(event, send);
+    });
+  } catch (err: any) {
+    send({ type: 'error', message: err?.message ?? String(err) });
+  } finally {
+    res.end();
+  }
+});
+
+/**
+ * POST /runtime/agents/:id/abort
+ *
+ * Interrupts the currently running agent loop for a Pi agent.
+ */
+app.post('/runtime/agents/:id/abort', async (req, res) => {
+  const { id } = req.params;
+  const piAgent = activeAgents.get(id);
+
+  if (!piAgent) {
+    res.status(404).json({ error: 'Agent not found in runtime.' });
+    return;
+  }
+
+  const session = piAgent.getCurrentSession();
+  if (!session) {
+    res.status(409).json({ error: 'No active session to abort.' });
+    return;
+  }
+
+  await session.abort();
+  res.json({ success: true });
+});
+
+/**
+ * GET /runtime/agents/:id/stats
+ *
+ * Returns context usage and session statistics for an active Pi agent.
+ * Not available for Claude Code agents.
+ */
+app.get('/runtime/agents/:id/stats', (req, res) => {
+  const { id } = req.params;
+  const piAgent = activeAgents.get(id);
+
+  if (!piAgent) {
+    if (activeClaudeAgents.has(id)) {
+      res.status(400).json({ error: 'Session stats are not available for Claude Code agents.' });
+    } else {
+      res.status(404).json({ error: 'Agent not found in runtime.' });
+    }
+    return;
+  }
+
+  try {
+    console.log("get the satas") ; 
+    const contextUsage = piAgent.getContextUsage();
+    console.log("contextUsage") ; 
+    console.log(contextUsage) ; 
+    const sessionStats = piAgent.getSessionStats();
+    console.log("sessionStats") ; 
+    console.log(sessionStats) ; 
+    res.json({ contextUsage, sessionStats });
+  } catch (err: any) {
+    res.status(503).json({
+      error: err?.message ?? 'No active session. Send a message to the agent first.',
+    });
+  }
 });
 
 /**

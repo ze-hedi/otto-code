@@ -39,7 +39,7 @@ export function handleEventWithClient(event: AgentEvent, send: (payload: object)
  */
 export function handleEvent(event: AgentEvent) {
   console.log("printing the whole event ") ; 
-  console.log(event) ; 
+  // console.log(event) ; 
   switch (event.type) {
     case "agent_start":
       console.log("--- agent start ---");

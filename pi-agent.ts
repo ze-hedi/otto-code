@@ -599,6 +599,25 @@ export class PiAgent {
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
+  // ── Context Management ────────────────────────────────────────────────────
+
+  private requireSession(): AgentSession {
+    if (!this.currentSession) throw new Error('No active session. Call execute() first.');
+    return this.currentSession;
+  }
+
+  /** Returns token usage details for the current context window. */
+  getContextUsage() {
+    return this.requireSession().getContextUsage();
+  }
+
+  /** Returns full session statistics: total tokens, cost, number of turns, etc. */
+  getSessionStats() {
+    return this.requireSession().getSessionStats();
+  }
+
+  // ── Config & Readiness ────────────────────────────────────────────────────
+
   /** Returns the resolved config (including all defaults). */
   getConfig() {
     return { model: this.model.id, hasApiKey: this._hasApiKey, ...this.config };
@@ -732,6 +751,33 @@ export class PiAgent {
     const unsubscribe = this._subscribe(session, onEvent);
     try {
       await session.prompt(query);
+      if (streamError) throw streamError;
+    } finally {
+      unsubscribe();
+      unsubError();
+    }
+  }
+
+  /**
+   * Send a message on the persistent session, preserving conversation history.
+   * Subsequent calls reuse the same session so the agent remembers prior turns.
+   * Throws if the stream ends with an error.
+   */
+  async chat(message: string, onEvent?: EventCallback): Promise<void> {
+    const session = await this.getSession();
+    let streamError: Error | undefined;
+    const unsubError = session.subscribe((event) => {
+      if (
+        event.type === "message_update" &&
+        event.assistantMessageEvent.type === "error"
+      ) {
+        const msg = (event.assistantMessageEvent.error as any)?.errorMessage;
+        streamError = new Error(msg ?? "Stream error");
+      }
+    });
+    const unsubscribe = this._subscribe(session, onEvent);
+    try {
+      await session.prompt(message);
       if (streamError) throw streamError;
     } finally {
       unsubscribe();

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
+import SessionStatsPanel from '../components/SessionStatsPanel';
 import './ChatPage.css';
 
 function ChatPage() {
@@ -12,6 +13,7 @@ function ChatPage() {
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState(null);
+  const [showStats, setShowStats] = useState(false);
 
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
@@ -146,6 +148,14 @@ function ChatPage() {
     }
   };
 
+  const abortAgent = async () => {
+    try {
+      await fetch(`http://localhost:5000/runtime/agents/${agentId}/abort`, { method: 'POST' });
+    } catch {
+      // stream will close on its own or the error surface via SSE
+    }
+  };
+
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -167,10 +177,21 @@ function ChatPage() {
           )}
         </div>
         <div className="chat-status-dot" title="Active" />
+        {agent?.agentType !== 'claude-code' && (
+          <button
+            className={`chat-stats-btn${showStats ? ' active' : ''}`}
+            onClick={() => setShowStats((v) => !v)}
+            title="Toggle session stats"
+          >
+            ◈ Stats
+          </button>
+        )}
       </div>
 
-      {/* Message list */}
-      <div className="chat-messages">
+      <div className="chat-body">
+        <div className="chat-area">
+        {/* Message list */}
+        <div className="chat-messages">
         {messages.length === 0 && (
           <div className="chat-empty">
             <p>Send a message to start the conversation.</p>
@@ -233,13 +254,28 @@ function ChatPage() {
           rows={1}
           disabled={streaming}
         />
-        <button
-          className="chat-send-btn"
-          onClick={sendMessage}
-          disabled={streaming || !input.trim()}
-        >
-          {streaming ? '…' : '↑'}
-        </button>
+        {streaming ? (
+          <button className="chat-stop-btn" onClick={abortAgent} title="Stop agent">
+            ■
+          </button>
+        ) : (
+          <button
+            className="chat-send-btn"
+            onClick={sendMessage}
+            disabled={!input.trim()}
+          >
+            ↑
+          </button>
+        )}
+      </div>
+      </div>
+
+        {showStats && (
+          <SessionStatsPanel
+            agentId={agentId}
+            onClose={() => setShowStats(false)}
+          />
+        )}
       </div>
     </div>
   );
