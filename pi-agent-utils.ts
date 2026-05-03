@@ -4,10 +4,42 @@
 import { AgentEvent } from './pi-agent';
 
 /**
+ * Forwards relevant AgentEvents to a frontend client over SSE.
+ * Pass the request-scoped `send` function from the chat route.
+ */
+export function handleEventWithClient(event: AgentEvent, send: (payload: object) => void) {
+  switch (event.type) {
+    case "message_update":
+      switch (event.assistantMessageEvent.type) {
+        case "text_delta":
+          send({ type: 'delta', text: event.assistantMessageEvent.delta });
+          break;
+        case "done":
+          send({ type: 'done' });
+          break;
+        case "error":
+          send({ type: 'error', message: event.assistantMessageEvent.reason });
+          break;
+      }
+      break;
+
+    case "tool_execution_start":
+      send({ type: 'tool_start', name: event.toolName, args: event.args });
+      break;
+
+    case "tool_execution_end":
+      send({ type: 'tool_end', name: event.toolName, result: event.result, isError: event.isError });
+      break;
+  }
+}
+
+/**
  * Logs every AgentEvent to stdout in a human-readable format.
  * Suitable for use as the event handler passed to agent.execute() / agent.chat().
  */
 export function handleEvent(event: AgentEvent) {
+  console.log("printing the whole event ") ; 
+  console.log(event) ; 
   switch (event.type) {
     case "agent_start":
       console.log("--- agent start ---");

@@ -11,7 +11,7 @@ import { Type } from 'typebox';
 import { PiAgent, PiAgentConfig, ToolInput } from '../pi-agent.js';
 import { ClaudeCodeAgent, ClaudeCodeAgentConfig } from '../claude-code-agents.ts/claude-code-agent.js';
 import { agentLogger } from './agent-logger.js';
-import { handleEvent } from '../pi-agent-utils.js';
+import { handleEvent, handleEventWithClient } from '../pi-agent-utils.js';
 import { ToolExecutor, ToolExecutionResult } from './tool-executor.js';
 
 const app = express();
@@ -316,8 +316,14 @@ app.post('/runtime/run', async (req, res) => {
 
   try {
     const piAgent = new PiAgent(config);
-    
-    console.log("[runtime] PiAgent created successfully"); 
+
+    if (!piAgent.isApiReady()) {
+      console.warn(`[runtime] Agent "${agent.name}" blocked: Anthropic model with no API key`);
+      res.status(400).json({ error: 'api_key_required', message: 'This agent uses an Anthropic model but no API key is configured.' });
+      return;
+    }
+
+    console.log("[runtime] PiAgent created successfully");
 
 
     // Store in map and as globals
@@ -354,6 +360,7 @@ app.post('/runtime/run', async (req, res) => {
     } else {
       console.log(`[runtime]   system prompt  : (none)`);
     }
+    console.log(`[runtime]   apiKey set     : ${piAgent.getConfig().hasApiKey}`);
 
     res.json({ 
       success: true, 
@@ -453,68 +460,10 @@ app.post('/runtime/chat/:id', async (req, res) => {
 
   console.log(`[runtime] chat → agent ${id}: "${message.trim().slice(0, 80)}"`);
 
-  await piAgent.execute(message.trim(), handleEvent) ; 
-  // try {
-  //   await piAgent.chat(message.trim(), (event) => {
-
-  //     console.log(event) ; 
-  //     // Stream all events to console via the shared handler
-  //     handleEvent(event);
-
-  //     // Also forward relevant events over SSE to the client
-  //     if (event.type === 'message_update') {
-  //       const sub = event.assistantMessageEvent;
-  //       if (sub?.type === 'text_delta') {
-  //         send({ type: 'delta', text: sub.delta });
-  //         agentLogger.log(id, 'message_update', {
-  //           textDelta: sub.delta,
-  //           timestamp: new Date().toISOString()
-  //         });
-  //       }
-  //     } else if (event.type === 'tool_execution_start') {
-  //       send({ type: 'tool_start', name: event.toolName, args: event.args });
-  //       agentLogger.log(id, 'tool_execution_start', {
-  //         toolName: event.toolName,
-  //         args: event.args,
-  //         timestamp: new Date().toISOString()
-  //       });
-  //     } else if (event.type === 'tool_execution_end') {
-  //       send({
-  //         type: 'tool_end',
-  //         name: event.toolName,
-  //         result: typeof event.result === 'string' ? event.result : JSON.stringify(event.result),
-  //         isError: event.isError,
-  //       });
-  //       agentLogger.log(id, 'tool_execution_end', {
-  //         toolName: event.toolName,
-  //         result: typeof event.result === 'string' ? event.result : event.result,
-  //         isError: event.isError,
-  //         timestamp: new Date().toISOString()
-  //       });
-  //     } else if (event.type === 'message_end') {
-  //       agentLogger.log(id, 'message_end', {
-  //         timestamp: new Date().toISOString()
-  //       });
-  //     } else if (event.type === 'turn_end') {
-  //       agentLogger.log(id, 'prompt_end', {
-  //         timestamp: new Date().toISOString()
-  //       });
-  //     }
-  //   });
-  //   console.log(`[runtime] chat ✓ agent ${id} turn complete`);
-  //   send({ type: 'done' });
-  // } catch (err: any) {
-  //   console.error(`[runtime] chat ✗ agent ${id}: ${err.message}`);
-  //   // Log error
-  //   agentLogger.log(id, 'error', {
-  //     message: err.message ?? String(err),
-  //     stack: err.stack,
-  //     timestamp: new Date().toISOString()
-  //   });
-  //   send({ type: 'error', message: err.message ?? String(err) });
-  // } finally {
-  //   res.end();
-  // }
+  await piAgent.execute(message.trim(), (event) => {
+    handleEventWithClient(event, send);
+  }); 
+  
 });
 
 /**

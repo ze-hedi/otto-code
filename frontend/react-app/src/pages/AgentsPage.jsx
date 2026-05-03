@@ -10,8 +10,11 @@ function AgentsPage() {
   const [agents, setAgents]   = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(null);
-  const [showFlow, setShowFlow]       = useState(false);
-  const [editingAgent, setEditingAgent] = useState(null);
+  const [showFlow, setShowFlow]           = useState(false);
+  const [editingAgent, setEditingAgent]   = useState(null);
+  const [popup, setPopup]                 = useState(null); // { message, code, agent }
+  const [apiKeyInput, setApiKeyInput]     = useState('');
+  const [savingKey, setSavingKey]         = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -64,10 +67,42 @@ function AgentsPage() {
         body: JSON.stringify({ agent, files }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Runtime server error');
+      if (!res.ok) {
+        setPopup({ message: data.message || data.error || 'Runtime server error', code: data.error, agent });
+        return;
+      }
       navigate(`/chat/${agent._id}`, { state: { agent } });
     } catch (err) {
-      alert(`Failed to start agent: ${err.message}`);
+      setPopup({ message: `Failed to start agent: ${err.message}`, code: 'unknown', agent });
+    }
+  };
+
+  const dismissPopup = () => {
+    setPopup(null);
+    setApiKeyInput('');
+    setSavingKey(false);
+  };
+
+  const handleSaveAndRun = async () => {
+    if (!apiKeyInput.trim() || !popup?.agent) return;
+    setSavingKey(true);
+    try {
+      const res = await fetch(`/api/agents/${popup.agent._id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...popup.agent, apiKey: apiKeyInput.trim() }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to save API key');
+      }
+      const updatedAgent = { ...popup.agent, apiKey: apiKeyInput.trim() };
+      setAgents((prev) => prev.map((a) => (a._id === updatedAgent._id ? updatedAgent : a)));
+      dismissPopup();
+      await handleRun(updatedAgent);
+    } catch (err) {
+      setPopup((prev) => ({ ...prev, message: err.message }));
+      setSavingKey(false);
     }
   };
 
@@ -89,6 +124,36 @@ function AgentsPage() {
 
   return (
     <div className="agents-container">
+      {popup && (
+        <div className="agent-error-popup">
+          <div className="agent-error-popup__box">
+            <p className="agent-error-popup__title">Cannot start agent</p>
+            <p className="agent-error-popup__message">{popup.message}</p>
+            {popup.code === 'api_key_required' && (
+              <>
+                <input
+                  className="agent-error-popup__input"
+                  type="password"
+                  placeholder="sk-ant-..."
+                  value={apiKeyInput}
+                  onChange={(e) => setApiKeyInput(e.target.value)}
+                  disabled={savingKey}
+                />
+                <button
+                  className="agent-error-popup__save"
+                  onClick={handleSaveAndRun}
+                  disabled={!apiKeyInput.trim() || savingKey}
+                >
+                  {savingKey ? 'Saving...' : 'Save & Run'}
+                </button>
+              </>
+            )}
+            <button className="agent-error-popup__close" onClick={dismissPopup}>
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
       <div className="agents-content">
         <div className={`agents-header-row${showFlow ? ' agents-header-row--centered' : ''}`}>
           <div>

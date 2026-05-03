@@ -219,6 +219,8 @@ export class PiAgent {
   private skillsTmpDir: string | null = null;
   private customTools: ToolInput[] = [];
   private toolDefinitions: Map<string, ToolDefinition> = new Map();
+  private _hasApiKey: boolean = false;
+  private _provider: string = "";
 
   constructor(config: PiAgentConfig) {
     const [provider, modelName] = config.model.split("/");
@@ -228,9 +230,11 @@ export class PiAgent {
       );
     }
 
+    this._provider = provider;
     this.authStorage = AuthStorage.create();
     if (config.apiKey) {
       this.authStorage.setRuntimeApiKey(provider, config.apiKey);
+      this._hasApiKey = true;
     }
     this.modelRegistry = ModelRegistry.create(this.authStorage);
 
@@ -597,7 +601,19 @@ export class PiAgent {
 
   /** Returns the resolved config (including all defaults). */
   getConfig() {
-    return { model: this.model.id, ...this.config };
+    return { model: this.model.id, hasApiKey: this._hasApiKey, ...this.config };
+  }
+
+  /**
+   * Returns true if the agent is ready to make API calls.
+   * For Anthropic models, an explicit API key must be set.
+   * For all other providers, it always returns true.
+   */
+  isApiReady(): boolean {
+    if (this._provider === "anthropic") {
+      return this._hasApiKey;
+    }
+    return true;
   }
 
   /**
