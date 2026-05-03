@@ -26,6 +26,9 @@ const WorkflowBuilder = () => {
   const [claudeCodeAgents, setClaudeCodeAgents] = useState([]);
   const [loadingCCAgents, setLoadingCCAgents] = useState(true);
   const [ccAgentsError, setCCAgentsError] = useState(null);
+  const [interfaces, setInterfaces] = useState([]);
+  const [loadingInterfaces, setLoadingInterfaces] = useState(true);
+  const [interfacesError, setInterfacesError] = useState(null);
   const [selectedAgentId, setSelectedAgentId] = useState(null);
   const [selectedCCAgentId, setSelectedCCAgentId] = useState(null);
   const [creatingPiAgent, setCreatingPiAgent] = useState(false);
@@ -81,6 +84,24 @@ const WorkflowBuilder = () => {
         console.error('Error fetching tools:', err);
         setToolsError(err.message);
         setLoadingTools(false);
+      });
+  }, []);
+
+  // Fetch interfaces from database on mount
+  useEffect(() => {
+    setLoadingInterfaces(true);
+    fetch('http://localhost:4000/api/interfaces')
+      .then(res => {
+        if (!res.ok) throw new Error('Failed to fetch interfaces');
+        return res.json();
+      })
+      .then(data => {
+        setInterfaces(data);
+        setLoadingInterfaces(false);
+      })
+      .catch(err => {
+        setInterfacesError(err.message);
+        setLoadingInterfaces(false);
       });
   }, []);
 
@@ -207,6 +228,7 @@ const WorkflowBuilder = () => {
         type: 'artefact',
         artefactType: data.artefactType,
         label: data.label,
+        icon: data.artefactIcon,
         x: x - 55,
         y: y - 40,
       };
@@ -490,6 +512,9 @@ const WorkflowBuilder = () => {
           tools={tools}
           loadingTools={loadingTools}
           toolsError={toolsError}
+          interfaces={interfaces}
+          loadingInterfaces={loadingInterfaces}
+          interfacesError={interfacesError}
           onDragStart={handleSidebarDragStart}
           onAgentClick={(agentId) => { closeAllPanels(); setSelectedAgentId(agentId); }}
           onCCAgentClick={(agentId) => { closeAllPanels(); setSelectedCCAgentId(agentId); }}

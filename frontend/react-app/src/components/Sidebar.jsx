@@ -1,14 +1,10 @@
 import React from 'react';
 
-const ARTEFACTS = [
-  { type: 'if',   label: 'If',   icon: '◇' },
-  { type: 'plan', label: 'Plan', icon: '☰' },
-];
-
 const Sidebar = ({
   agents, loadingAgents, agentsError,
   claudeCodeAgents, loadingCCAgents, ccAgentsError,
   tools, loadingTools, toolsError,
+  interfaces, loadingInterfaces, interfacesError,
   onDragStart, onAgentClick, onCCAgentClick,
   onBuildPiAgent, onBuildCCAgent,
 }) => {
@@ -45,8 +41,9 @@ const Sidebar = ({
   const handleArtefactDragStart = (e, artefact) => {
     e.dataTransfer.setData('application/json', JSON.stringify({
       nodeType: 'artefact',
-      artefactType: artefact.type,
-      label: artefact.label,
+      artefactType: artefact._id,
+      artefactIcon: artefact.icon,
+      label: artefact.name,
     }));
     onDragStart(artefact);
   };
@@ -207,22 +204,48 @@ const Sidebar = ({
 
         <div className="wf-sidebar-header wf-sidebar-header--artefacts">
           Interfaces
+          {!loadingInterfaces && !interfacesError && (
+            <span className="tool-count">{interfaces.length}</span>
+          )}
         </div>
-        <div className="wf-category">
-          {ARTEFACTS.map(artefact => (
-            <div
-              key={artefact.type}
-              className="wf-component wf-component--artefact"
-              draggable="true"
-              onDragStart={(e) => handleArtefactDragStart(e, artefact)}
-            >
-              <div className="wf-component-icon wf-component-icon--artefact">
-                {artefact.icon}
+
+        {loadingInterfaces && (
+          <div className="loading-spinner">
+            <div className="spinner"></div>
+            <p>Loading interfaces...</p>
+          </div>
+        )}
+
+        {interfacesError && (
+          <div className="error-state">
+            <p>Failed to load interfaces</p>
+            <small>{interfacesError}</small>
+          </div>
+        )}
+
+        {!loadingInterfaces && !interfacesError && interfaces.length === 0 && (
+          <div className="empty-state">
+            <p>No interfaces available</p>
+          </div>
+        )}
+
+        {!loadingInterfaces && !interfacesError && interfaces.length > 0 && (
+          <div className="wf-category">
+            {interfaces.map(artefact => (
+              <div
+                key={artefact._id}
+                className="wf-component wf-component--artefact"
+                draggable="true"
+                onDragStart={(e) => handleArtefactDragStart(e, artefact)}
+              >
+                <div className="wf-component-icon wf-component-icon--artefact">
+                  {artefact.icon}
+                </div>
+                <span>{artefact.name}</span>
               </div>
-              <span>{artefact.label}</span>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </aside>
   );

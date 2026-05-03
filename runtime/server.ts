@@ -524,6 +524,7 @@ app.post('/runtime/chat/:id', async (req, res) => {
 app.get('/runtime/status', (_req, res) => {
   res.json({
     activeAgents: Array.from(activeAgents.keys()),
+    activeClaudeAgents: Array.from(activeClaudeAgents.keys()),
     currentAgentId,
   });
 });

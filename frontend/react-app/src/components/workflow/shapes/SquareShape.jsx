@@ -1,10 +1,5 @@
 import React from 'react';
 
-const ARTEFACT_ICONS = {
-  if:   '◇',
-  plan: '☰',
-};
-
 const SquareShape = ({ node, onDelete, onHandleMouseDown }) => (
   <div className="wf-shape wf-shape--square">
     <button
@@ -14,7 +9,7 @@ const SquareShape = ({ node, onDelete, onHandleMouseDown }) => (
       ×
     </button>
     <div className="wf-node-icon wf-node-icon--artefact">
-      {ARTEFACT_ICONS[node.artefactType] ?? '◇'}
+      {node.icon ?? '◇'}
     </div>
     <div className="wf-node-label">{node.label}</div>
     <div className="wf-handle left"  data-side="left"  onMouseDown={(e) => onHandleMouseDown(e, 'left')}  />
