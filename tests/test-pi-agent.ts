@@ -17,7 +17,7 @@ When asked to list files, use the Bash tool to run \`ls -la\`.
 
 async function main() {
   const agent = new PiAgent({
-    model: "anthropic/claude-sonnet-4-5",
+    model: "anthropic/claude-haiku-4-5",
     apiKey: process.env.ANTHROPIC_API_KEY,
     sessionMode: "memory",
     systemPromptSuffix: SYSTEM_PROMPT,

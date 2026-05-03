@@ -39,30 +39,56 @@ export interface ClaudeCodeAgentConfig {
 
 // ── Events ─────────────────────────────────────────────────────────────────────
 
+/** First event emitted before any turn. Carries session bootstrap info. */
+export type ClaudeSystemEvent = {
+  type: "system";
+  subtype: "init";
+  sessionId: string;
+  model: string;
+  tools: string[];
+  cwd: string;
+  apiKeySource: string;
+};
+
 /** Text content from an assistant turn. In stream-json mode this is the full
  *  text block of a turn, not a character-level token. */
 export type ClaudeTextEvent = { type: "text"; delta: string };
+
+/** Extended-thinking content emitted before the assistant's reply. */
+export type ClaudeThinkingEvent = { type: "thinking"; thinking: string };
 
 /** A tool invocation Claude decided to make. */
 export type ClaudeToolStartEvent = { type: "tool_start"; name: string; input: unknown };
 
 /** The result returned to Claude after a tool executed. */
-export type ClaudeToolResultEvent = { type: "tool_result"; content: string };
+export type ClaudeToolResultEvent = { type: "tool_result"; content: string; isError: boolean };
 
 /** Final event emitted when the agent stops. Contains the full response and
  *  billing info. The session ID is also stored on the agent for resumption. */
 export type ClaudeResultEvent = {
   type: "result";
+  subtype: "success" | "error_during_execution" | "max_turns_reached";
   text: string;
   sessionId: string;
   costUsd: number;
+  durationMs: number;
+  numTurns: number;
+  usage: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadInputTokens: number;
+    cacheCreationInputTokens: number;
+  };
+  isError: boolean;
 };
 
 /** Emitted when the CLI exits with a non-zero code or writes to stderr. */
 export type ClaudeErrorEvent = { type: "error"; message: string };
 
 export type ClaudeEvent =
+  | ClaudeSystemEvent
   | ClaudeTextEvent
+  | ClaudeThinkingEvent
   | ClaudeToolStartEvent
   | ClaudeToolResultEvent
   | ClaudeResultEvent
@@ -226,11 +252,30 @@ export class ClaudeCodeAgent {
     const events: ClaudeEvent[] = [];
 
     switch (raw.type) {
+      case "system": {
+        if (raw.subtype === "init") {
+          const sessionId = raw.session_id ?? "";
+          if (sessionId) this.sessionId = sessionId;
+          events.push({
+            type: "system",
+            subtype: "init",
+            sessionId,
+            model: raw.model ?? "",
+            tools: raw.tools ?? [],
+            cwd: raw.cwd ?? "",
+            apiKeySource: raw.api_key_source ?? "",
+          });
+        }
+        break;
+      }
+
       case "assistant": {
         const blocks: any[] = raw.message?.content ?? [];
         for (const block of blocks) {
           if (block.type === "text" && typeof block.text === "string") {
             events.push({ type: "text", delta: block.text });
+          } else if (block.type === "thinking" && typeof block.thinking === "string") {
+            events.push({ type: "thinking", thinking: block.thinking });
           } else if (block.type === "tool_use" && block.name) {
             events.push({ type: "tool_start", name: block.name, input: block.input ?? {} });
           }
@@ -247,7 +292,7 @@ export class ClaudeCodeAgent {
               : typeof block.content === "string"
                 ? block.content
                 : "";
-            events.push({ type: "tool_result", content });
+            events.push({ type: "tool_result", content, isError: block.is_error ?? false });
           }
         }
         break;
@@ -258,9 +303,19 @@ export class ClaudeCodeAgent {
         if (sessionId) this.sessionId = sessionId;
         events.push({
           type: "result",
+          subtype: raw.subtype ?? "success",
           text: raw.result ?? "",
           sessionId,
           costUsd: raw.total_cost_usd ?? 0,
+          durationMs: raw.duration_ms ?? 0,
+          numTurns: raw.num_turns ?? 0,
+          usage: {
+            inputTokens: raw.usage?.input_tokens ?? 0,
+            outputTokens: raw.usage?.output_tokens ?? 0,
+            cacheReadInputTokens: raw.usage?.cache_read_input_tokens ?? 0,
+            cacheCreationInputTokens: raw.usage?.cache_creation_input_tokens ?? 0,
+          },
+          isError: raw.is_error ?? false,
         });
         break;
       }

@@ -7,7 +7,7 @@ import './load-env.js';
 
 import express from 'express';
 import cors from 'cors';
-import { Type } from '@typebox/typebox';
+import { Type } from 'typebox';
 import { PiAgent, PiAgentConfig, ToolInput } from '../pi-agent.js';
 import { ClaudeCodeAgent, ClaudeCodeAgentConfig } from '../claude-code-agents.ts/claude-code-agent.js';
 import { agentLogger } from './agent-logger.js';
@@ -245,6 +245,7 @@ app.post('/runtime/run', async (req, res) => {
 
     try {
       const ccAgent = new ClaudeCodeAgent(ccConfig);
+      ccAgent.start();
       activeClaudeAgents.set(agent._id, ccAgent);
       currentAgentId = agent._id;
 
@@ -409,9 +410,9 @@ app.post('/runtime/chat/:id', async (req, res) => {
     };
 
     console.log(`[runtime] claude-code chat → agent ${id}: "${message.trim().slice(0, 80)}"`);
-
+    console.log("handdeling claude code messages here ")
     try {
-      for await (const event of ccAgent.run(message.trim())) {
+      for await (const event of ccAgent.send(message.trim())) {
         if (event.type === 'text')        send({ type: 'delta', text: event.delta });
         else if (event.type === 'tool_start') send({ type: 'tool_start', name: event.name });
         else if (event.type === 'tool_result') send({ type: 'tool_end', name: 'tool', result: event.content, isError: false });
@@ -541,6 +542,7 @@ app.delete('/runtime/agents/:id', (req, res) => {
     return;
   }
   activeAgents.delete(id);
+  activeClaudeAgents.get(id)?.stop();
   activeClaudeAgents.delete(id);
   if (currentAgentId === id) {
     currentAgentId       = null;

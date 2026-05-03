@@ -15,6 +15,7 @@ function ChatPage() {
 
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
+  const agentLoggedRef = useRef(false);
 
   // Load agent info from DB if not passed via navigation state
   useEffect(() => {
@@ -27,6 +28,35 @@ function ChatPage() {
       })
       .catch(() => {});
   }, [agentId, agent]);
+
+  // Log agent info when agent is loaded (once only)
+  useEffect(() => {
+    if (!agent || agentLoggedRef.current) return;
+    agentLoggedRef.current = true;
+    if (agent.agentType === 'claude-code') {
+      console.log('[ChatPage] Claude Code Agent loaded:', {
+        id: agent._id,
+        name: agent.name,
+        model: agent.model,
+        permissionMode: agent.permissionMode,
+        maxTurns: agent.maxTurns,
+        allowedTools: agent.allowedTools,
+        mcpServers: agent.mcpServers,
+        systemPrompt: agent.systemPrompt,
+      });
+    } else {
+      console.log('[ChatPage] Pi Agent loaded:', {
+        id: agent._id,
+        name: agent.name,
+        model: agent.model,
+        thinkingLevel: agent.thinkingLevel,
+        sessionMode: agent.sessionMode,
+        workingDir: agent.workingDir,
+        tools: agent.tools,
+        status: agent.status,
+      });
+    }
+  }, [agent]);
 
   // Scroll to bottom when messages change
   useEffect(() => {

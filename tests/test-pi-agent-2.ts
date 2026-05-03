@@ -11,7 +11,7 @@ import { handleEvent } from "../pi-agent-utils";
 
 async function basicExample() {
   const agent = new PiAgent({
-    model: "anthropic/claude-sonnet-4-5",
+    model: "anthropic/claude-haiku-4-5",
     apiKey: process.env.ANTHROPIC_API_KEY,
     thinkingLevel: "medium",
     sessionMode: "memory",
