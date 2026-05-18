@@ -37,6 +37,7 @@ const agentSchema = new mongoose.Schema(
       type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'ToolSchema' }],
       default: [],
     },
+    toolCallGuardrails: { type: Boolean, default: false },
     compaction: {
       enabled: { type: Boolean, default: true },
       reserveTokens: { type: Number, default: null },

@@ -10,7 +10,7 @@ const Terminal = ({ logs, onClose, activeAgent, sessionId }) => {
   const [activeTab, setActiveTab] = useState('runtime');
   const [input, setInput] = useState('');
 
-  const { messages, streaming, error, sendMessage, abortAgent } = useAgentChat(sessionId);
+  const { messages, streaming, error, sendMessage, abortAgent, approveToolCall, rejectToolCall } = useAgentChat(sessionId);
 
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -81,6 +81,8 @@ const Terminal = ({ logs, onClose, activeAgent, sessionId }) => {
             onKeyDown={handleKeyDown}
             onSend={handleSend}
             onAbort={abortAgent}
+            onApproveToolCall={approveToolCall}
+            onRejectToolCall={rejectToolCall}
             bottomRef={bottomRef}
             textareaRef={textareaRef}
           />

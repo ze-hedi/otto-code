@@ -27,6 +27,7 @@ app.post('/api/agents', async (req, res) => {
     const {
       name, description, model,
       thinkingLevel, sessionMode, workingDir, playground, apiKey, icon, tools,
+      toolCallGuardrails,
       compaction,
       systemPrompt, skills
     } = req.body;
@@ -34,6 +35,7 @@ app.post('/api/agents', async (req, res) => {
     const agent = await Agent.create({
       name, description, model,
       thinkingLevel, sessionMode, workingDir, playground, apiKey, icon, tools,
+      toolCallGuardrails,
       ...(compaction ? { compaction } : {}),
     });
 
@@ -113,13 +115,14 @@ app.put('/api/agents/:id', async (req, res) => {
     const {
       name, description, model,
       thinkingLevel, sessionMode, workingDir, playground, apiKey, icon, tools,
+      toolCallGuardrails,
       compaction,
       systemPrompt, skills
     } = req.body;
 
     const agent = await Agent.findByIdAndUpdate(
       req.params.id,
-      { name, description, model, thinkingLevel, sessionMode, workingDir, playground, apiKey, icon, tools, ...(compaction ? { compaction } : {}) },
+      { name, description, model, thinkingLevel, sessionMode, workingDir, playground, apiKey, icon, tools, toolCallGuardrails, ...(compaction ? { compaction } : {}) },
       { returnDocument: 'after', runValidators: true }
     );
     if (!agent) return res.status(404).json({ error: 'Agent not found' });

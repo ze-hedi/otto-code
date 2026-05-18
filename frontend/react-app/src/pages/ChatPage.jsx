@@ -18,7 +18,7 @@ function ChatPage() {
   const chatKey = sessionId || agentId;
 
   // Chat state from the global context (survives navigation)
-  const { messages, streaming, error, sendMessage, abortAgent, hydrateFromServer } = useAgentChat(chatKey);
+  const { messages, streaming, error, sendMessage, abortAgent, hydrateFromServer, approveToolCall, rejectToolCall } = useAgentChat(chatKey);
 
   // Local UI state
   const [agent, setAgent] = useState(state?.agent || null);
@@ -173,6 +173,8 @@ function ChatPage() {
             onKeyDown={handleKeyDown}
             onSend={handleSend}
             onAbort={abortAgent}
+            onApproveToolCall={approveToolCall}
+            onRejectToolCall={rejectToolCall}
             bottomRef={bottomRef}
             textareaRef={textareaRef}
           />

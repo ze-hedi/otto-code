@@ -3,12 +3,10 @@
 
 import { Router } from 'express';
 import { PiAgent, PiAgentConfig } from '../../pi-agent.js';
-import { PiOrchestrator } from '../../pi-orchestrator.js';
 import {
   activeAgents,
-  activeOrchestrators,
-  orchestratorSubAgents,
   sessionAgentMap,
+  agentToSessionMap,
   setCurrentAgentId,
   resolveModel,
 } from '../state.js';
@@ -88,12 +86,19 @@ router.post('/runtime/workflow/compile', async (req, res) => {
         playground: node.playground?.trim() || undefined,
         apiKey: node.apiKey || process.env.ANTHROPIC_API_KEY || undefined,
         ...(node.compaction ? { compaction: node.compaction } : {}),
+        onToolExecute: async (_toolCallId, toolName, params, _signal) => {
+          console.log(`[runtime] Agent "${node.name}" called tool "${toolName}"`, JSON.stringify(params, null, 2));
+          return {
+            content: [{ type: 'text', text: `${toolName} submitted successfully.` }],
+          };
+        },
       };
 
       return { agent: node as AgentData, piAgent: new PiAgent(config) };
     };
 
     const sessionId = `workflow-${Date.now()}`;
+    console.log(":::::: agent build correctly ") ;
 
     // Build all agents first
     const agentMap = new Map<string, { agent: AgentData; piAgent: PiAgent }>();
@@ -105,6 +110,7 @@ router.post('/runtime/workflow/compile', async (req, res) => {
     const agentDetails: { name: string; model: string; sessionMode: string; thinkingLevel: string; tools: string[] }[] = [];
 
     for (const node of agentNodes) {
+      console.log("agent node : ", node.name)
       const { agent: agentData, piAgent } = agentMap.get(node.id)!;
       const nodeSuccessors = successors.get(node.id) || [];
       const assignedTools: string[] = [];
@@ -112,7 +118,6 @@ router.post('/runtime/workflow/compile', async (req, res) => {
       for (const succ of nodeSuccessors) {
         if (succ.type !== 'artefact') continue;
         const interfaceName = (succ.name || '').toLowerCase();
-
         if (interfaceName === 'briefing') {
           piAgent.addTool(briefingTool);
           assignedTools.push('briefing');
@@ -136,11 +141,14 @@ router.post('/runtime/workflow/compile', async (req, res) => {
               }
             }
           }
+
           piAgent.addTool(createDelegateTool(subAgents));
           assignedTools.push(`delegate → [${Object.keys(subAgents).join(', ')}]`);
           console.log(`[runtime]   Assigned delegateTool to "${node.name}" (delegates to: ${Object.keys(subAgents).join(', ')})`);
         }
+        console.log("11111 agent :",node.name," added tool :" , interfaceName) ; 
       }
+
 
       agentDetails.push({
         name: agentData.name,
@@ -149,6 +157,11 @@ router.post('/runtime/workflow/compile', async (req, res) => {
         thinkingLevel: agentData.thinkingLevel || 'medium',
         tools: assignedTools,
       });
+    }
+
+    // Dump registered tools for each agent
+    for (const [nodeId, { agent, piAgent }] of agentMap) {
+      console.log(`[DEBUG] Agent "${agent.name}" registered tools:`, piAgent.getRegisteredTools());
     }
 
     // Single agent — run directly
@@ -176,53 +189,28 @@ router.post('/runtime/workflow/compile', async (req, res) => {
       return;
     }
 
-    // Multiple agents — create orchestrator
-    const subAgentEntries: { agentData: AgentData; piAgent: PiAgent }[] = [];
-
+    // Multiple agents — register each under composite key + reverse map
     for (const node of agentNodes) {
       const { agent, piAgent } = agentMap.get(node.id)!;
-      activeAgents.set(`${sessionId}::${agent._id}`, piAgent);
-      subAgentEntries.push({ agentData: agent, piAgent });
-      console.log(`[runtime] Workflow sub-agent "${agent.name}" (${sessionId}::${agent._id}) created`);
+      const compositeKey = `${sessionId}::${agent._id}`;
+      activeAgents.set(compositeKey, piAgent);
+      agentToSessionMap.set(agent._id, compositeKey);
+      console.log(`[runtime] Workflow agent "${agent.name}" → id: ${agent._id} | key: ${compositeKey} | tools: [${piAgent.getRegisteredTools().join(', ')}]`);
     }
 
-    // Create orchestrator
-    const orchestrator = new PiOrchestrator({
-      model: resolveModel('claude-sonnet-4-6'),
-      sessionMode: 'memory',
-      thinkingLevel: 'medium',
-      apiKey: process.env.ANTHROPIC_API_KEY || undefined,
-    });
+    // First agent in execution queue is the default chat target
+    const firstAgentNode = executionQueue.flat().find((n) => n.type === 'agent')!;
+    const { agent: firstAgent } = agentMap.get(firstAgentNode.id)!;
 
-    for (const { agentData, piAgent } of subAgentEntries) {
-      orchestrator.addSubAgent({
-        name: agentData.name,
-        description: agentData.description,
-        agent: piAgent,
-        stateful: false,
-      });
-    }
-
-    orchestrator.initialize();
-
-    const agentsForState = subAgentEntries.map((e) => e.agentData);
-    activeOrchestrators.set(sessionId, orchestrator);
-    orchestratorSubAgents.set(sessionId, agentsForState);
-    activeAgents.set(sessionId, orchestrator.getOrchestrator());
-    sessionAgentMap.set(sessionId, sessionId);
-    setCurrentAgentId(sessionId);
-    global.activeAgent = orchestrator.getOrchestrator();
-    global.activeAgentId = sessionId;
-
-    console.log(`[runtime] Workflow orchestrator session ${sessionId} created with ${agentNodes.length} agents`);
-    console.log(`[runtime]   agents: ${agentsForState.map((a) => a.name).join(', ')}`);
+    console.log(`[runtime] Workflow compiled with ${agentNodes.length} agents, first: "${firstAgent.name}"`);
 
     res.json({
       success: true,
       compilationSuccess: true,
-      mode: 'orchestrator',
+      mode: 'multi-agent',
       sessionId,
-      agents: agentsForState.map((a) => a.name),
+      activeAgent: { name: firstAgent.name, id: firstAgent._id },
+      agents: Array.from(agentMap.values()).map(({ agent }) => ({ name: agent.name, id: agent._id })),
       agentDetails,
       executionQueue: executionQueue.map((level) => level.map((n) => ({ id: n.id, type: n.type, name: n.name }))),
     });

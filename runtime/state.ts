@@ -22,6 +22,9 @@ export const sessionAgentMap = new Map<string, string>();
 // Map of sessionFile path → sessionId (deduplication of disk sessions)
 export const sessionFileMap = new Map<string, string>();
 
+// Reverse lookup: agentId (MongoDB _id) → composite key in activeAgents
+export const agentToSessionMap = new Map<string, string>();
+
 // Convenience pointer to the last agent that was run
 export let currentAgentId: string | null = null;
 

@@ -31,6 +31,7 @@ function PiAgentFormContainer({ editingAgent, onCreated, onUpdated, onCancel }) 
   const [reserveTokens, setReserveTokens]                   = useState(editingAgent?.compaction?.reserveTokens ?? 16384);
   const [keepRecentTokens, setKeepRecentTokens]             = useState(editingAgent?.compaction?.keepRecentTokens ?? 20000);
   const [compactionInstructions, setCompactionInstructions] = useState(editingAgent?.compaction?.customInstructions ?? '');
+  const [toolCallGuardrails, setToolCallGuardrails] = useState(editingAgent?.toolCallGuardrails ?? false);
 
   // Load available tools
   useEffect(() => {
@@ -81,6 +82,7 @@ function PiAgentFormContainer({ editingAgent, onCreated, onUpdated, onCancel }) 
     icon,
     tools: selectedTools,
     ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
+    toolCallGuardrails,
     compaction: {
       enabled: compactionEnabled,
       ...(reserveTokens !== '' ? { reserveTokens: Number(reserveTokens) } : {}),
@@ -180,6 +182,7 @@ function PiAgentFormContainer({ editingAgent, onCreated, onUpdated, onCancel }) 
       reserveTokens={reserveTokens}                 setReserveTokens={setReserveTokens}
       keepRecentTokens={keepRecentTokens}           setKeepRecentTokens={setKeepRecentTokens}
       compactionInstructions={compactionInstructions} setCompactionInstructions={setCompactionInstructions}
+      toolCallGuardrails={toolCallGuardrails}       setToolCallGuardrails={setToolCallGuardrails}
       handleSystemPromptLoad={handleSystemPromptLoad}
       handleSkillsLoad={handleSkillsLoad}
       handleSkillsDrop={handleSkillsDrop}

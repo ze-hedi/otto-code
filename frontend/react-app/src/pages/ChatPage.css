@@ -460,6 +460,100 @@
   text-decoration: underline;
 }
 
+/* ── Tool approval guardrails ──────────────────────────────── */
+.chat-tool-block.pending-approval {
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  border-radius: 8px;
+  padding: 0.4rem;
+  background: rgba(251, 191, 36, 0.05);
+}
+.chat-tool-block.pending-approval .chat-tool-event {
+  color: #fbbf24;
+}
+.tool-approval {
+  padding: 0.4rem 0.5rem 0.5rem 1.8rem;
+}
+.tool-approval-args {
+  margin-bottom: 0.5rem;
+}
+.tool-approval-args pre {
+  background: rgba(0, 0, 0, 0.3);
+  color: #cbd5e1;
+  padding: 0.5rem;
+  border-radius: 6px;
+  overflow-x: auto;
+  max-height: 200px;
+  overflow-y: auto;
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+.tool-approval-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+.tool-approve-btn {
+  background: #22c55e;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.35rem 0.8rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tool-approve-btn:hover { background: #16a34a; }
+.tool-reject-btn {
+  background: #ef4444;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.35rem 0.8rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tool-reject-btn:hover { background: #dc2626; }
+.tool-reject-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.tool-reject-input {
+  background: #0a0e14;
+  border: 1px solid #2a3350;
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+  color: #e2e8f0;
+  font-size: 0.78rem;
+  resize: vertical;
+  min-height: 2.5rem;
+  font-family: inherit;
+}
+.tool-reject-input:focus { border-color: #ef4444; outline: none; }
+.tool-reject-confirm-btn {
+  background: #ef4444;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.35rem 0.8rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tool-reject-confirm-btn:hover { background: #dc2626; }
+.tool-reject-cancel-btn {
+  background: none;
+  border: 1px solid #475569;
+  color: #94a3b8;
+  border-radius: 6px;
+  padding: 0.35rem 0.8rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.tool-reject-cancel-btn:hover { color: #e2e8f0; border-color: #64748b; }
+
 /* ── Typing indicator ──────────────────────────────────────── */
 .chat-typing-indicator {
   display: inline-flex;

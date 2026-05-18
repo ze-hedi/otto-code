@@ -61,6 +61,8 @@ function AgentForm({
   setKeepRecentTokens,
   compactionInstructions,
   setCompactionInstructions,
+  toolCallGuardrails,
+  setToolCallGuardrails,
   handleSystemPromptLoad,
   handleSkillsLoad,
   handleSkillsDrop,
@@ -355,6 +357,19 @@ function AgentForm({
                 {showApiKey ? 'Hide' : 'Show'}
               </button>
             </div>
+          </div>
+
+          {/* ── Tool Call Guardrails ──── */}
+          <div className="form-group" style={{ marginTop: '1.25rem' }}>
+            <label className="form-label">Tool Call Guardrails</label>
+            <label className="compaction-toggle">
+              <input
+                type="checkbox"
+                checked={toolCallGuardrails}
+                onChange={(e) => setToolCallGuardrails(e.target.checked)}
+              />
+              <span>Require approval before tool execution</span>
+            </label>
           </div>
 
           {/* ── Context Compaction ──── */}

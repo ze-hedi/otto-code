@@ -205,6 +205,8 @@ export interface PiAgentConfig {
   sessionDir?: string;
   /** Mem0 configuration. When provided, a Mem0 instance is created with a per-agent history DB. */
   mem0Config?: Mem0Config;
+  /** When true, tool calls pause for user approval before executing (default: false) */
+  toolCallGuardrails?: boolean;
   /** Compaction (context compression) settings */
   compaction?: {
     /** Enable/disable auto-compaction (default: true) */
@@ -230,7 +232,7 @@ export class PiAgent {
   private modelRegistry: ModelRegistry;
   private model: Model<Api>;
   private config: Required<
-    Omit<PiAgentConfig, "apiKey" | "workingDir" | "playground" | "model" | "skills" | "handlers" | "tools" | "onToolExecute" | "mem0Config" | "compaction" | "sessionDir" | "name">
+    Omit<PiAgentConfig, "apiKey" | "workingDir" | "playground" | "model" | "skills" | "handlers" | "tools" | "onToolExecute" | "mem0Config" | "compaction" | "sessionDir" | "name" | "toolCallGuardrails">
   > & {
     workingDir: string;
     playground: string;
@@ -248,6 +250,8 @@ export class PiAgent {
   private _compaction: PiAgentConfig["compaction"];
   private _sessionDir: string | undefined;
   private _name: string | undefined;
+  private _toolCallGuardrails: boolean = false;
+  private _pendingApprovals: Map<string, { resolve: (approved: boolean) => void; comment?: string }> = new Map();
 
   constructor(config: PiAgentConfig) {
     const [provider, modelName] = config.model.split("/");
@@ -288,6 +292,7 @@ export class PiAgent {
     this._name = config.name;
     this._sessionDir = config.sessionDir;
     this._compaction = config.compaction;
+    this._toolCallGuardrails = config.toolCallGuardrails ?? false;
 
     // Initialize mem0 if configured
     if (config.mem0Config) {
@@ -648,8 +653,57 @@ export class PiAgent {
       ...(this.toolDefinitions.size > 0 ? { customTools: Array.from(this.toolDefinitions.values()) } : {}),
     });
 
+    // Install tool call guardrails hook if enabled
+    console.log(`[pi-agent] toolCallGuardrails = ${this._toolCallGuardrails}`);
+    if (this._toolCallGuardrails) {
+      console.log('[pi-agent] Installing beforeToolCall guardrails hook');
+      session.agent.beforeToolCall = async ({ toolCall, args }) => {
+        const toolCallId = toolCall.id;
+        console.log(`[pi-agent] beforeToolCall fired for ${toolCall.name} (${toolCallId})`);
+        // Notify listeners that approval is required
+        this._onToolApprovalRequired?.(toolCallId, toolCall.name, args);
+        // Block until the user approves or rejects
+        const approved = await new Promise<boolean>((resolve) => {
+          this._pendingApprovals.set(toolCallId, { resolve });
+        });
+        if (!approved) {
+          const entry = this._pendingApprovals.get(toolCallId);
+          const comment = entry?.comment || 'No reason provided';
+          this._pendingApprovals.delete(toolCallId);
+          return { block: true, reason: `Tool call rejected by user. Reason: ${comment}` };
+        }
+        this._pendingApprovals.delete(toolCallId);
+        return undefined; // proceed with execution
+      };
+    }
+
     this.currentSession = session;
     return session;
+  }
+
+  // ── Tool call guardrails ───────────────────────────────────────────────────
+
+  /** Callback fired when a tool call requires user approval (set by caller) */
+  private _onToolApprovalRequired?: (toolCallId: string, toolName: string, args: unknown) => void;
+
+  /** Register a callback for when tool approval is needed */
+  onToolApprovalRequired(cb: (toolCallId: string, toolName: string, args: unknown) => void): void {
+    this._onToolApprovalRequired = cb;
+  }
+
+  /** Approve a pending tool call — execution proceeds */
+  approveToolCall(toolCallId: string): void {
+    const entry = this._pendingApprovals.get(toolCallId);
+    if (entry) entry.resolve(true);
+  }
+
+  /** Reject a pending tool call — LLM sees the rejection reason */
+  rejectToolCall(toolCallId: string, comment?: string): void {
+    const entry = this._pendingApprovals.get(toolCallId);
+    if (entry) {
+      entry.comment = comment;
+      entry.resolve(false);
+    }
   }
 
   // ── Internal subscribe helper ──────────────────────────────────────────────

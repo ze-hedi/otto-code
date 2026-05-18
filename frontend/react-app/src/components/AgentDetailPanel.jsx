@@ -24,6 +24,7 @@ function AgentDetailPanel({ agent, availableTools, onClose, onAgentUpdated }) {
   const [reserveTokens, setReserveTokens] = useState(16384);
   const [keepRecentTokens, setKeepRecentTokens] = useState(20000);
   const [compactionInstructions, setCompactionInstructions] = useState('');
+  const [toolCallGuardrails, setToolCallGuardrails] = useState(false);
 
   useEffect(() => {
     if (!agent) return;
@@ -41,6 +42,7 @@ function AgentDetailPanel({ agent, availableTools, onClose, onAgentUpdated }) {
     setReserveTokens(agent.compaction?.reserveTokens ?? 16384);
     setKeepRecentTokens(agent.compaction?.keepRecentTokens ?? 20000);
     setCompactionInstructions(agent.compaction?.customInstructions ?? '');
+    setToolCallGuardrails(agent.toolCallGuardrails ?? false);
     setSelectedTools(
       agent.tools ? agent.tools.map((t) => (typeof t === 'object' ? t._id : t)) : []
     );
@@ -93,6 +95,7 @@ function AgentDetailPanel({ agent, availableTools, onClose, onAgentUpdated }) {
       icon,
       tools: selectedTools,
       ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
+      toolCallGuardrails,
       compaction: {
         enabled: compactionEnabled,
         ...(reserveTokens !== '' ? { reserveTokens: Number(reserveTokens) } : {}),
@@ -210,6 +213,8 @@ function AgentDetailPanel({ agent, availableTools, onClose, onAgentUpdated }) {
             setKeepRecentTokens={setKeepRecentTokens}
             compactionInstructions={compactionInstructions}
             setCompactionInstructions={setCompactionInstructions}
+            toolCallGuardrails={toolCallGuardrails}
+            setToolCallGuardrails={setToolCallGuardrails}
             handleSystemPromptLoad={handleSystemPromptLoad}
             handleSkillsLoad={handleSkillsLoad}
             handleSkillsDrop={handleSkillsDrop}

@@ -13,6 +13,7 @@ import {
   orchestratorSubAgents,
   sessionAgentMap,
   sessionFileMap,
+  agentToSessionMap,
   setCurrentAgentId,
   resolveModel,
 } from '../state.js';
@@ -94,6 +95,7 @@ router.post('/runtime/run', async (req, res) => {
     apiKey: agent.apiKey || process.env.ANTHROPIC_API_KEY || undefined,
     ...(sessionDir ? { sessionDir } : {}),
     ...(agent.compaction ? { compaction: agent.compaction } : {}),
+    toolCallGuardrails: agent.toolCallGuardrails ?? false,
   };
 
   try {
@@ -207,6 +209,12 @@ router.post('/runtime/chat/:id', async (req, res) => {
 
   console.log(`[runtime] chat → agent ${id}: "${message.trim().slice(0, 80)}"`);
 
+  // Wire tool approval SSE event for this request
+  piAgent.onToolApprovalRequired((toolCallId, toolName, args) => {
+    console.log(`[runtime] tool_approval_required → ${toolName} (${toolCallId})`);
+    send({ type: 'tool_approval_required', toolCallId, name: toolName, args });
+  });
+
   try {
     await piAgent.chat(message.trim(), (event) => {
       handleEvent(event) ;
@@ -217,6 +225,42 @@ router.post('/runtime/chat/:id', async (req, res) => {
   } finally {
     res.end();
   }
+});
+
+/**
+ * POST /runtime/chat/:id/tool-approve
+ *
+ * Body: { toolCallId: string }
+ * Approves a pending tool call when guardrails are enabled.
+ */
+router.post('/runtime/chat/:id/tool-approve', (req, res) => {
+  const { id } = req.params;
+  const { toolCallId } = req.body as { toolCallId?: string };
+  const piAgent = activeAgents.get(id);
+
+  if (!piAgent) { res.status(404).json({ error: 'Agent not found.' }); return; }
+  if (!toolCallId) { res.status(400).json({ error: 'toolCallId is required.' }); return; }
+
+  piAgent.approveToolCall(toolCallId);
+  res.json({ success: true });
+});
+
+/**
+ * POST /runtime/chat/:id/tool-reject
+ *
+ * Body: { toolCallId: string, comment?: string }
+ * Rejects a pending tool call when guardrails are enabled.
+ */
+router.post('/runtime/chat/:id/tool-reject', (req, res) => {
+  const { id } = req.params;
+  const { toolCallId, comment } = req.body as { toolCallId?: string; comment?: string };
+  const piAgent = activeAgents.get(id);
+
+  if (!piAgent) { res.status(404).json({ error: 'Agent not found.' }); return; }
+  if (!toolCallId) { res.status(400).json({ error: 'toolCallId is required.' }); return; }
+
+  piAgent.rejectToolCall(toolCallId, comment);
+  res.json({ success: true });
 });
 
 /**

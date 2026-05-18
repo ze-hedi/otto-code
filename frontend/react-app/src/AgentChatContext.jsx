@@ -145,8 +145,12 @@ function finalizeAssistant(sessionId) {
 }
 
 function appendToolStart(sessionId, event) {
-  // Increment per-tool counter
   const s = getSession(sessionId);
+
+  // If the approval flow already created a tool message for this call, skip the duplicate
+  if (s.messages.some((m) => m.role === 'tool' && !m.done && m.name === event.name)) return;
+
+  // Increment per-tool counter
   const counts = { ...s.toolCallCounts };
   counts[event.name] = (counts[event.name] || 0) + 1;
   sessions.set(sessionId, { ...s, toolCallCounts: counts });
@@ -162,7 +166,39 @@ function appendToolEnd(sessionId, event) {
     const idx = prev.findLastIndex((m) => m.role === 'tool' && !m.done);
     if (idx === -1) return prev;
     const updated = [...prev];
-    updated[idx] = { ...updated[idx], result: event.result, isError: event.isError, done: true };
+    updated[idx] = { ...updated[idx], result: event.result, isError: event.isError, done: true, pendingApproval: false };
+    return updated;
+  });
+}
+
+function markToolPendingApproval(sessionId, event) {
+  // beforeToolCall fires BEFORE tool_execution_start, so the tool message may not exist yet.
+  // If it does exist (tool_start arrived first), tag it. Otherwise, create it directly.
+  console.log('[chat] tool_approval_required received:', event.name, event.toolCallId);
+  updateMessages(sessionId, (prev) => {
+    const idx = prev.findLastIndex((m) => m.role === 'tool' && !m.done && m.name === event.name);
+    console.log('[chat] findLastIndex result:', idx, 'messages count:', prev.length, 'looking for name:', event.name);
+    if (idx === -1) {
+      // No tool message yet — create one with pendingApproval already set
+      return [...prev, {
+        role: 'tool', name: event.name, args: event.args,
+        result: null, isError: false, done: false,
+        pendingApproval: true, toolCallId: event.toolCallId,
+        id: Date.now() + Math.random(),
+      }];
+    }
+    const updated = [...prev];
+    updated[idx] = { ...updated[idx], pendingApproval: true, toolCallId: event.toolCallId };
+    return updated;
+  });
+}
+
+function resolveToolApproval(sessionId, toolCallId) {
+  updateMessages(sessionId, (prev) => {
+    const idx = prev.findLastIndex((m) => m.role === 'tool' && m.toolCallId === toolCallId && m.pendingApproval);
+    if (idx === -1) return prev;
+    const updated = [...prev];
+    updated[idx] = { ...updated[idx], pendingApproval: false };
     return updated;
   });
 }
@@ -275,6 +311,7 @@ async function sendMessage(sessionId, text) {
         else if (evt.type === 'thinking') appendThinkingDelta(sessionId, evt.text);
         else if (evt.type === 'tool_start') appendToolStart(sessionId, evt);
         else if (evt.type === 'tool_end') appendToolEnd(sessionId, evt);
+        else if (evt.type === 'tool_approval_required') markToolPendingApproval(sessionId, evt);
         else if (evt.type === 'done') finalizeAssistant(sessionId);
         else if (evt.type === 'error') throw new Error(evt.message);
       }
@@ -299,6 +336,32 @@ async function abortAgent(sessionId) {
     await fetch(`http://localhost:5000/runtime/agents/${sessionId}/abort`, { method: 'POST' });
   } catch {
     // stream will close on its own
+  }
+}
+
+async function approveToolCall(sessionId, toolCallId) {
+  resolveToolApproval(sessionId, toolCallId);
+  try {
+    await fetch(`http://localhost:5000/runtime/chat/${sessionId}/tool-approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ toolCallId }),
+    });
+  } catch (err) {
+    updateSession(sessionId, { error: `Failed to approve tool: ${err.message}` });
+  }
+}
+
+async function rejectToolCall(sessionId, toolCallId, comment) {
+  resolveToolApproval(sessionId, toolCallId);
+  try {
+    await fetch(`http://localhost:5000/runtime/chat/${sessionId}/tool-reject`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ toolCallId, comment }),
+    });
+  } catch (err) {
+    updateSession(sessionId, { error: `Failed to reject tool: ${err.message}` });
   }
 }
 
@@ -336,7 +399,7 @@ function getAgentSessionsSnapshot(agentId) {
 // Exported directly so non-hook code (e.g. event handlers) can call it
 export { createSession, removeSession, abortAgent };
 
-const api = { sendMessage, abortAgent, hydrateFromServer, getSession, createSession, removeSession, getAgentSessions };
+const api = { sendMessage, abortAgent, hydrateFromServer, getSession, createSession, removeSession, getAgentSessions, approveToolCall, rejectToolCall };
 
 export function AgentChatProvider({ children }) {
   return (
@@ -365,6 +428,8 @@ export function useAgentChat(sessionId) {
     sendMessage: useCallback((text) => ctx.sendMessage(sessionId, text), [ctx, sessionId]),
     abortAgent: useCallback(() => ctx.abortAgent(sessionId), [ctx, sessionId]),
     hydrateFromServer: useCallback(() => ctx.hydrateFromServer(sessionId), [ctx, sessionId]),
+    approveToolCall: useCallback((toolCallId) => ctx.approveToolCall(sessionId, toolCallId), [ctx, sessionId]),
+    rejectToolCall: useCallback((toolCallId, comment) => ctx.rejectToolCall(sessionId, toolCallId, comment), [ctx, sessionId]),
   };
 }
 

@@ -13,12 +13,16 @@ function ChatArea({
   onKeyDown,
   onSend,
   onAbort,
+  onApproveToolCall,
+  onRejectToolCall,
   bottomRef,
   textareaRef,
 }) {
   const [expandedThinking, setExpandedThinking] = useState({});
   const [expandedTools, setExpandedTools] = useState(new Set());
   const [fullResultTools, setFullResultTools] = useState(new Set());
+  const [rejectingToolId, setRejectingToolId] = useState(null);
+  const [rejectComment, setRejectComment] = useState('');
 
   const toggleThinking = useCallback((id) => {
     setExpandedThinking((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -110,9 +114,10 @@ function ChatArea({
             const resultLines = resultStr ? resultStr.split('\n') : [];
             const isTruncated = resultLines.length > 10;
             const displayResult = isTruncated && !showFull ? resultLines.slice(0, 10).join('\n') + '\n…' : resultStr;
+            const isRejecting = rejectingToolId === msg.id;
 
             return (
-              <div key={msg.id} className={`chat-tool-block${msg.done ? (msg.isError ? ' error' : ' done') : ''}`}>
+              <div key={msg.id} className={`chat-tool-block${msg.done ? (msg.isError ? ' error' : ' done') : ''}${msg.pendingApproval ? ' pending-approval' : ''}`}>
                 <div
                   className="chat-tool-event"
                   onClick={() => setExpandedTools((prev) => {
@@ -121,11 +126,66 @@ function ChatArea({
                     return next;
                   })}
                 >
-                  <span className="tool-icon">{!msg.done ? '⚙' : msg.isError ? '✕' : '✓'}</span>
-                  <span>{!msg.done ? <>Running <code>{msg.name}</code>…</> : <><code>{msg.name}</code> {msg.isError ? 'failed' : 'done'}</>}</span>
+                  <span className="tool-icon">{msg.pendingApproval ? '⏸' : !msg.done ? '⚙' : msg.isError ? '✕' : '✓'}</span>
+                  <span>{msg.pendingApproval ? <>Approve <code>{msg.name}</code>?</> : !msg.done ? <>Running <code>{msg.name}</code>…</> : <><code>{msg.name}</code> {msg.isError ? 'failed' : 'done'}</>}</span>
                   <span className={`tool-chevron${isExpanded ? ' expanded' : ''}`}>›</span>
                 </div>
-                {isExpanded && (
+                {msg.pendingApproval && (
+                  <div className="tool-approval">
+                    {argsStr && (
+                      <div className="tool-approval-args">
+                        <span className="tool-details-label">Arguments</span>
+                        <pre>{argsStr}</pre>
+                      </div>
+                    )}
+                    {!isRejecting ? (
+                      <div className="tool-approval-actions">
+                        <button
+                          className="tool-approve-btn"
+                          onClick={(e) => { e.stopPropagation(); onApproveToolCall?.(msg.toolCallId); }}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          className="tool-reject-btn"
+                          onClick={(e) => { e.stopPropagation(); setRejectingToolId(msg.id); setRejectComment(''); }}
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="tool-reject-form">
+                        <textarea
+                          className="tool-reject-input"
+                          placeholder="Why are you rejecting this tool call?"
+                          value={rejectComment}
+                          onChange={(e) => setRejectComment(e.target.value)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                        <div className="tool-approval-actions">
+                          <button
+                            className="tool-reject-confirm-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onRejectToolCall?.(msg.toolCallId, rejectComment);
+                              setRejectingToolId(null);
+                              setRejectComment('');
+                            }}
+                          >
+                            Confirm Reject
+                          </button>
+                          <button
+                            className="tool-reject-cancel-btn"
+                            onClick={(e) => { e.stopPropagation(); setRejectingToolId(null); }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {isExpanded && !msg.pendingApproval && (
                   <div className="tool-details">
                     {argsStr && (
                       <>
