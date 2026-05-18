@@ -7,6 +7,7 @@ const Sidebar = ({
   placedAgentIds = [],
   onDragStart, onAgentClick,
   onBuildPiAgent,
+  collapsed, onToggleCollapse,
 }) => {
   const handleAgentDragStart = (e, agent) => {
     e.dataTransfer.setData('application/json', JSON.stringify({
@@ -39,7 +40,12 @@ const Sidebar = ({
   };
 
   return (
-    <aside className="wf-sidebar">
+    <aside className={`wf-sidebar${collapsed ? ' wf-sidebar--collapsed' : ''}`}>
+      <button className="wf-sidebar-toggle" onClick={onToggleCollapse} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+        {collapsed ? '»' : '«'}
+      </button>
+      {!collapsed && (
+      <>
       <div className="wf-sidebar-header">
         Agents
         {!loadingAgents && !agentsError && (
@@ -186,6 +192,8 @@ const Sidebar = ({
           </div>
         )}
       </div>
+      </>
+      )}
     </aside>
   );
 };

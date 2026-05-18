@@ -28,6 +28,7 @@ const WorkflowBuilder = () => {
   const [interfacesError, setInterfacesError] = useState(null);
   const [selectedAgentId, setSelectedAgentId] = useState(null);
   const [creatingPiAgent, setCreatingPiAgent] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [terminalLogs, setTerminalLogs] = useState([]);
   const [activeSessionAgent, setActiveSessionAgent] = useState(null);
@@ -578,6 +579,8 @@ const WorkflowBuilder = () => {
           onAgentClick={(agentId) => { closeAllPanels(); setSelectedAgentId(agentId); }}
           placedAgentIds={nodes.filter((n) => n.type === 'agent').map((n) => n.agentId)}
           onBuildPiAgent={handleBuildPiAgent}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
         />
         <div className={`wf-canvas-area${terminalOpen ? ' wf-canvas-area--split' : ''}`}>
           <Canvas
