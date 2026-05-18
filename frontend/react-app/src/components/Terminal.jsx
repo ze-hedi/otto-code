@@ -6,9 +6,7 @@ import '../pages/ChatPage.css';
 const Terminal = ({ logs, onClose, activeAgent, sessionId }) => {
   const logsEndRef = useRef(null);
   const bottomRef = useRef(null);
-  const textareaRef = useRef(null);
   const [activeTab, setActiveTab] = useState('runtime');
-  const [input, setInput] = useState('');
 
   const { messages, streaming, error, sendMessage, abortAgent, approveToolCall, rejectToolCall } = useAgentChat(sessionId);
 
@@ -21,20 +19,10 @@ const Terminal = ({ logs, onClose, activeAgent, sessionId }) => {
     if (activeAgent) setActiveTab('chat');
   }, [activeAgent]);
 
-  const handleSend = useCallback(() => {
-    if (!input.trim() || streaming) return;
-    sendMessage(input.trim());
-    setInput('');
-  }, [input, streaming, sendMessage]);
-
-  const handleInputChange = useCallback((e) => setInput(e.target.value), []);
-
-  const handleKeyDown = useCallback((e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  }, [handleSend]);
+  const handleSend = useCallback((text) => {
+    if (!text || streaming) return;
+    sendMessage(text);
+  }, [streaming, sendMessage]);
 
   return (
     <div className="wf-terminal">
@@ -76,15 +64,11 @@ const Terminal = ({ logs, onClose, activeAgent, sessionId }) => {
             messages={messages}
             streaming={streaming}
             error={error}
-            input={input}
-            onInputChange={handleInputChange}
-            onKeyDown={handleKeyDown}
             onSend={handleSend}
             onAbort={abortAgent}
             onApproveToolCall={approveToolCall}
             onRejectToolCall={rejectToolCall}
             bottomRef={bottomRef}
-            textareaRef={textareaRef}
           />
         </div>
       )}

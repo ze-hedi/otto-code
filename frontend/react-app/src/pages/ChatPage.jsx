@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { useAgentChat } from '../AgentChatContext';
 import SessionStatsPanel from '../components/SessionStatsPanel';
@@ -22,7 +22,6 @@ function ChatPage() {
 
   // Local UI state
   const [agent, setAgent] = useState(state?.agent || null);
-  const [input, setInput] = useState('');
   const [showStats, setShowStats] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
   const [showSubAgents, setShowSubAgents] = useState(false);
@@ -30,7 +29,6 @@ function ChatPage() {
   const [subAgentView, setSubAgentView] = useState(null);
 
   const bottomRef = useRef(null);
-  const textareaRef = useRef(null);
   const agentLoggedRef = useRef(false);
 
   // Load agent info from DB if not passed via navigation state
@@ -70,27 +68,10 @@ function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSend = () => {
-    const text = input.trim();
+  const handleSend = useCallback((text) => {
     if (!text || streaming) return;
-    setInput('');
     sendMessage(text);
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
-
-  const handleInputChange = (e) => {
-    setInput(e.target.value);
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight}px`;
-  };
+  }, [streaming, sendMessage]);
 
   return (
     <div className="chat-page">
@@ -168,15 +149,11 @@ function ChatPage() {
             messages={messages}
             streaming={streaming}
             error={error}
-            input={input}
-            onInputChange={handleInputChange}
-            onKeyDown={handleKeyDown}
             onSend={handleSend}
             onAbort={abortAgent}
             onApproveToolCall={approveToolCall}
             onRejectToolCall={rejectToolCall}
             bottomRef={bottomRef}
-            textareaRef={textareaRef}
           />
         )}
 
