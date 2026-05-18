@@ -5,6 +5,7 @@ import Canvas from './components/Canvas';
 import AgentDetailPanel from './components/AgentDetailPanel';
 import PiAgentFormContainer from './components/agents/PiAgentFormContainer';
 import Terminal from './components/Terminal';
+import { createSession } from './AgentChatContext';
 import { generateNodeId, NODE_DEFAULT_SIDES } from './utils';
 import './WorkflowBuilder.css';
 
@@ -29,6 +30,8 @@ const WorkflowBuilder = () => {
   const [creatingPiAgent, setCreatingPiAgent] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [terminalLogs, setTerminalLogs] = useState([]);
+  const [activeSessionAgent, setActiveSessionAgent] = useState(null);
+  const [workflowSessionId, setWorkflowSessionId] = useState(null);
   const draggedType = useRef(null);
   const snapshotRef = useRef({ nodes, connections });
   const agentsRef   = useRef(agents);
@@ -505,6 +508,16 @@ const WorkflowBuilder = () => {
       if (!res.ok) throw new Error(data.error || 'Unknown error');
       if (data.compilationSuccess) {
         addLog('info', 'Compilation succeeded');
+        // Set the first agent from execution queue as active chat target
+        let agentName = null;
+        if (data.executionQueue?.length > 0) {
+          const firstAgent = data.executionQueue[0].find((n) => n.type === 'agent');
+          if (firstAgent) agentName = firstAgent.name;
+        }
+        setActiveSessionAgent(agentName);
+        setWorkflowSessionId(data.sessionId);
+        // Register session in the shared chat store
+        createSession(agentName, data.sessionId, agentName);
       }
       addLog('info', `Workflow started (${data.mode})`);
       addLog('info', `Session: ${data.sessionId}`);
@@ -583,7 +596,12 @@ const WorkflowBuilder = () => {
             onCanvasClick={handleCanvasClick}
           />
           {terminalOpen && (
-            <Terminal logs={terminalLogs} onClose={() => setTerminalOpen(false)} />
+            <Terminal
+              logs={terminalLogs}
+              onClose={() => setTerminalOpen(false)}
+              activeAgent={activeSessionAgent}
+              sessionId={workflowSessionId}
+            />
           )}
         </div>
         {selectedAgentId && (
