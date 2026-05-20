@@ -14,6 +14,7 @@ import {
   sessionAgentMap,
   sessionFileMap,
   agentToSessionMap,
+  clearSessionHooks,
   setCurrentAgentId,
   resolveModel,
 } from '../state.js';
@@ -395,6 +396,7 @@ router.delete('/runtime/agents/:id', (req, res) => {
     global.activeAgent   = null;
     global.activeAgentId = null;
   }
+  clearSessionHooks(id);
   agentLogger.clearLogs(id);
   console.log(`[runtime] Agent ${id} removed from runtime`);
   res.json({ success: true });

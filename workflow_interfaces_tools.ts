@@ -87,6 +87,16 @@ export const planTool: ToolInput = {
  * Forces the agent to produce a detailed task delegation breakdown per sub-agent.
  * Must be called with the dict of available sub-agents (name → description).
  */
+/** All interface tool names — single source of truth for hook matching. */
+export const INTERFACE_TOOL_NAMES = [
+  'submit_briefing',
+  'submit_plan',
+  'submit_report',
+  'submit_delegation',
+] as const;
+
+export type InterfaceToolName = (typeof INTERFACE_TOOL_NAMES)[number];
+
 export function createDelegateTool(subAgents: Record<string, string>): ToolInput {
   const agentNames = Object.keys(subAgents);
   const agentList = agentNames.map((name) => `- ${name}: ${subAgents[name]}`).join('\n');

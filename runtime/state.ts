@@ -25,6 +25,35 @@ export const sessionFileMap = new Map<string, string>();
 // Reverse lookup: agentId (MongoDB _id) → composite key in activeAgents
 export const agentToSessionMap = new Map<string, string>();
 
+// ─── Workflow session hooks ───────────────────────────────────────────────────
+
+export interface SessionHookContext {
+  sessionId: string;
+  agentName: string;
+  toolName: string;
+  args: any;
+  result: any;
+}
+
+export interface SessionHook {
+  /** Tool name to match, or '*' to match all interface tools. */
+  toolName: string;
+  callback: (ctx: SessionHookContext) => void | Promise<void>;
+}
+
+/** Map of session key → registered hooks (same keys as activeAgents). */
+export const sessionHooks = new Map<string, SessionHook[]>();
+
+/** Remove all hooks for a session (handles both bare and composite keys). */
+export function clearSessionHooks(sessionId: string): void {
+  sessionHooks.delete(sessionId);
+  for (const key of sessionHooks.keys()) {
+    if (key.startsWith(sessionId + '::')) {
+      sessionHooks.delete(key);
+    }
+  }
+}
+
 // Convenience pointer to the last agent that was run
 export let currentAgentId: string | null = null;
 

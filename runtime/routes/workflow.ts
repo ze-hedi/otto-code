@@ -7,12 +7,14 @@ import {
   activeAgents,
   sessionAgentMap,
   agentToSessionMap,
+  sessionHooks,
   setCurrentAgentId,
   resolveModel,
 } from '../state.js';
+import type { SessionHook } from '../state.js';
 import type { AgentData, AgentFile } from '../types.js';
 import { buildExecutionQueue, compileGraph } from '../workflow-scheduler.js';
-import { briefingTool, planTool, reportTool, createDelegateTool } from '../../workflow_interfaces_tools.js';
+import { briefingTool, planTool, reportTool, createDelegateTool, INTERFACE_TOOL_NAMES } from '../../workflow_interfaces_tools.js';
 
 const router = Router();
 
@@ -69,7 +71,7 @@ router.post('/runtime/workflow/compile', async (req, res) => {
     });
 
     // Agent data is now sent directly from the frontend — no DB fetch needed
-    const buildAgent = (node: any): { agent: AgentData; piAgent: PiAgent } => {
+    const buildAgent = (node: any, keyRef: { current: string }): { agent: AgentData; piAgent: PiAgent } => {
       const files: AgentFile[] = node.files || [];
       const soulFile = files.find((f) => f.type === 'soul');
       const skillsFile = files.find((f) => f.type === 'skills');
@@ -88,9 +90,32 @@ router.post('/runtime/workflow/compile', async (req, res) => {
         ...(node.compaction ? { compaction: node.compaction } : {}),
         onToolExecute: async (_toolCallId, toolName, params, _signal) => {
           console.log(`[runtime] Agent "${node.name}" called tool "${toolName}"`, JSON.stringify(params, null, 2));
-          return {
+
+          const result = {
             content: [{ type: 'text', text: `${toolName} submitted successfully.` }],
           };
+
+          // Fire session hooks for interface tools
+          if ((INTERFACE_TOOL_NAMES as readonly string[]).includes(toolName) && keyRef.current) {
+            const hooks = sessionHooks.get(keyRef.current) || [];
+            for (const hook of hooks) {
+              if (hook.toolName === '*' || hook.toolName === toolName) {
+                try {
+                  await hook.callback({
+                    sessionId: keyRef.current,
+                    agentName: node.name,
+                    toolName,
+                    args: params,
+                    result,
+                  });
+                } catch (err: any) {
+                  console.error(`[workflow-hook] Error firing hook for "${toolName}": ${err.message}`);
+                }
+              }
+            }
+          }
+
+          return result;
         },
       };
 
@@ -101,9 +126,10 @@ router.post('/runtime/workflow/compile', async (req, res) => {
     console.log(":::::: agent build correctly ") ;
 
     // Build all agents first
-    const agentMap = new Map<string, { agent: AgentData; piAgent: PiAgent }>();
+    const agentMap = new Map<string, { agent: AgentData; piAgent: PiAgent; keyRef: { current: string } }>();
     for (const node of agentNodes) {
-      agentMap.set(node.id, buildAgent(node));
+      const keyRef = { current: '' };
+      agentMap.set(node.id, { ...buildAgent(node, keyRef), keyRef });
     }
 
     // Assign interface tools to each agent based on outgoing interfaces
@@ -167,13 +193,22 @@ router.post('/runtime/workflow/compile', async (req, res) => {
     // Single agent — run directly
     if (agentNodes.length === 1) {
       const node = agentNodes[0];
-      const { agent, piAgent } = agentMap.get(node.id)!;
+      const { agent, piAgent, keyRef } = agentMap.get(node.id)!;
 
       activeAgents.set(sessionId, piAgent);
       sessionAgentMap.set(sessionId, agent._id);
       setCurrentAgentId(sessionId);
       global.activeAgent = piAgent;
       global.activeAgentId = sessionId;
+
+      // Wire up hooks
+      keyRef.current = sessionId;
+      sessionHooks.set(sessionId, [{
+        toolName: '*',
+        callback: async ({ agentName, toolName, args }) => {
+          console.log(`[workflow-hook] Agent "${agentName}" submitted "${toolName}"`);
+        },
+      }]);
 
       console.log(`[runtime] Workflow single-agent session ${sessionId} started: "${agent.name}"`);
 
@@ -191,10 +226,20 @@ router.post('/runtime/workflow/compile', async (req, res) => {
 
     // Multiple agents — register each under composite key + reverse map
     for (const node of agentNodes) {
-      const { agent, piAgent } = agentMap.get(node.id)!;
+      const { agent, piAgent, keyRef } = agentMap.get(node.id)!;
       const compositeKey = `${sessionId}::${agent._id}`;
       activeAgents.set(compositeKey, piAgent);
       agentToSessionMap.set(agent._id, compositeKey);
+
+      // Wire up hooks
+      keyRef.current = compositeKey;
+      sessionHooks.set(compositeKey, [{
+        toolName: '*',
+        callback: async ({ agentName, toolName, args }) => {
+          console.log(`[workflow-hook] Agent "${agentName}" submitted "${toolName}"`);
+        },
+      }]);
+
       console.log(`[runtime] Workflow agent "${agent.name}" → id: ${agent._id} | key: ${compositeKey} | tools: [${piAgent.getRegisteredTools().join(', ')}]`);
     }
 
