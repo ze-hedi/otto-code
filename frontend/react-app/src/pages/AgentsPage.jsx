@@ -371,6 +371,7 @@ function AgentsPage() {
       <div className="agents-content">
         <div className={`agents-header-row${flowStep ? ' agents-header-row--centered' : ''}`}>
           <div>
+            <button className="agents-back-btn" onClick={() => navigate('/')}>← Back</button>
             <h1>Agents</h1>
             <p className="agents-subtitle">Manage your AI agents</p>
           </div>

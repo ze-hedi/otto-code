@@ -516,9 +516,14 @@ const WorkflowBuilder = () => {
           if (firstAgent) agentName = firstAgent.name;
         }
         setActiveSessionAgent(agentName);
-        setWorkflowSessionId(data.sessionId);
+        // For multi-agent workflows, use the composite key so the runtime
+        // can look up the correct agent in its activeAgents map.
+        const chatSessionId = data.mode === 'multi-agent' && data.activeAgent?.id
+          ? `${data.sessionId}::${data.activeAgent.id}`
+          : data.sessionId;
+        setWorkflowSessionId(chatSessionId);
         // Register session in the shared chat store
-        createSession(agentName, data.sessionId, agentName);
+        createSession(agentName, chatSessionId, agentName);
       }
       addLog('info', `Workflow started (${data.mode})`);
       addLog('info', `Session: ${data.sessionId}`);
