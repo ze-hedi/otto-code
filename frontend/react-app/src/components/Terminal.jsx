@@ -1,28 +1,60 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import ChatArea from './ChatArea';
+import SessionStatsPanel from './SessionStatsPanel';
 import { useAgentChat } from '../AgentChatContext';
 import '../pages/ChatPage.css';
 
-const Terminal = ({ logs, onClose, activeAgent, sessionId }) => {
-  const logsEndRef = useRef(null);
+const ChatTab = ({ sessionId, onSendRef }) => {
   const bottomRef = useRef(null);
-  const [activeTab, setActiveTab] = useState('runtime');
-
   const { messages, streaming, error, sendMessage, abortAgent, approveToolCall, rejectToolCall } = useAgentChat(sessionId);
-
-  useEffect(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [logs]);
-
-  // Switch to chat tab when activeAgent becomes available
-  useEffect(() => {
-    if (activeAgent) setActiveTab('chat');
-  }, [activeAgent]);
 
   const handleSend = useCallback((text) => {
     if (!text || streaming) return;
     sendMessage(text);
   }, [streaming, sendMessage]);
+
+  // Expose sendMessage to parent via ref
+  useEffect(() => {
+    if (onSendRef) onSendRef.current = sendMessage;
+  }, [sendMessage, onSendRef]);
+
+  return (
+    <div className="wf-terminal-chat-panel">
+      <ChatArea
+        messages={messages}
+        streaming={streaming}
+        error={error}
+        onSend={handleSend}
+        onAbort={abortAgent}
+        onApproveToolCall={approveToolCall}
+        onRejectToolCall={rejectToolCall}
+        bottomRef={bottomRef}
+      />
+    </div>
+  );
+};
+
+const Terminal = ({ logs, onClose, chatTabs, activeChatTab, onSwitchChatTab }) => {
+  const logsEndRef = useRef(null);
+  const [activeTab, setActiveTab] = useState('runtime');
+  const [showStats, setShowStats] = useState(false);
+
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [logs]);
+
+  // Switch to latest chat tab when a new one is added
+  useEffect(() => {
+    if (activeChatTab) setActiveTab(activeChatTab);
+  }, [activeChatTab]);
+
+  // Hide stats when switching to runtime tab
+  const handleTabSwitch = (tab) => {
+    setActiveTab(tab);
+    if (tab === 'runtime') setShowStats(false);
+  };
+
+  const isOnChatTab = activeTab !== 'runtime';
 
   return (
     <div className="wf-terminal">
@@ -30,20 +62,32 @@ const Terminal = ({ logs, onClose, activeAgent, sessionId }) => {
         <div className="wf-terminal-tabs">
           <button
             className={`wf-terminal-tab${activeTab === 'runtime' ? ' wf-terminal-tab--active' : ''}`}
-            onClick={() => setActiveTab('runtime')}
+            onClick={() => handleTabSwitch('runtime')}
           >
             Runtime
           </button>
-          {activeAgent && (
+          {chatTabs.map((tab) => (
             <button
-              className={`wf-terminal-tab${activeTab === 'chat' ? ' wf-terminal-tab--active' : ''}`}
-              onClick={() => setActiveTab('chat')}
+              key={tab.sessionId}
+              className={`wf-terminal-tab${activeTab === tab.sessionId ? ' wf-terminal-tab--active' : ''}`}
+              onClick={() => { handleTabSwitch(tab.sessionId); onSwitchChatTab && onSwitchChatTab(tab.sessionId); }}
             >
-              Chat
+              Chat ({tab.agentName})
+            </button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          {isOnChatTab && (
+            <button
+              className={`chat-stats-btn${showStats ? ' active' : ''}`}
+              onClick={() => setShowStats((prev) => !prev)}
+              title="Toggle session stats"
+            >
+              ◈ Stats
             </button>
           )}
+          <button className="wf-terminal-close" onClick={onClose}>×</button>
         </div>
-        <button className="wf-terminal-close" onClick={onClose}>×</button>
       </div>
 
       {activeTab === 'runtime' && (
@@ -58,19 +102,17 @@ const Terminal = ({ logs, onClose, activeAgent, sessionId }) => {
         </div>
       )}
 
-      {activeTab === 'chat' && activeAgent && (
-        <div className="wf-terminal-chat-panel">
-          <ChatArea
-            messages={messages}
-            streaming={streaming}
-            error={error}
-            onSend={handleSend}
-            onAbort={abortAgent}
-            onApproveToolCall={approveToolCall}
-            onRejectToolCall={rejectToolCall}
-            bottomRef={bottomRef}
-          />
-        </div>
+      {chatTabs.map((tab) => (
+        activeTab === tab.sessionId && (
+          <ChatTab key={tab.sessionId} sessionId={tab.sessionId} />
+        )
+      ))}
+
+      {showStats && isOnChatTab && (
+        <SessionStatsPanel
+          agentId={activeTab}
+          onClose={() => setShowStats(false)}
+        />
       )}
     </div>
   );

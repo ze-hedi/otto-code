@@ -5,7 +5,7 @@ import Canvas from './components/Canvas';
 import AgentDetailPanel from './components/AgentDetailPanel';
 import PiAgentFormContainer from './components/agents/PiAgentFormContainer';
 import Terminal from './components/Terminal';
-import { createSession } from './AgentChatContext';
+import { createSession, sendMessage } from './AgentChatContext';
 import { generateNodeId, NODE_DEFAULT_SIDES } from './utils';
 import './WorkflowBuilder.css';
 
@@ -33,6 +33,9 @@ const WorkflowBuilder = () => {
   const [terminalLogs, setTerminalLogs] = useState([]);
   const [activeSessionAgent, setActiveSessionAgent] = useState(null);
   const [workflowSessionId, setWorkflowSessionId] = useState(null);
+  const [hookPopup, setHookPopup] = useState(null);
+  const [chatTabs, setChatTabs] = useState([]);
+  const [activeChatTab, setActiveChatTab] = useState(null);
   const draggedType = useRef(null);
   const snapshotRef = useRef({ nodes, connections });
   const agentsRef   = useRef(agents);
@@ -44,6 +47,55 @@ const WorkflowBuilder = () => {
   useEffect(() => {
     agentsRef.current = agents;
   }, [agents]);
+
+  // Subscribe to workflow hook events via SSE
+  useEffect(() => {
+    if (!workflowSessionId) return;
+    const es = new EventSource('http://localhost:5000/runtime/workflow/events');
+    es.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.type === 'hook_fired') {
+          setHookPopup(data);
+        }
+      } catch {}
+    };
+    return () => es.close();
+  }, [workflowSessionId]);
+
+  const handleAcceptHook = () => {
+    console.log('[workflow] handleAcceptHook fired, hookPopup:', JSON.stringify(hookPopup));
+    if (!hookPopup || !hookPopup.nextAgents?.length) {
+      console.log('[workflow] No nextAgents found, closing popup');
+      setHookPopup(null);
+      return;
+    }
+    const next = hookPopup.nextAgents[0]; // single next agent for now
+    const { name, compositeKey } = next;
+    console.log('[workflow] Accept hook → next agent:', name, 'key:', compositeKey);
+
+    // Register session in chat store
+    createSession(name, compositeKey, name);
+
+    // Add a new chat tab and switch to it
+    setChatTabs((prev) => {
+      if (prev.some((t) => t.sessionId === compositeKey)) return prev;
+      return [...prev, { agentName: name, sessionId: compositeKey }];
+    });
+    setActiveChatTab(compositeKey);
+    setActiveSessionAgent(name);
+    setWorkflowSessionId(compositeKey);
+
+    // Build a context message and send it to the next agent
+    const argsText = Object.entries(hookPopup.args || {})
+      .map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`)
+      .join('\n');
+    const contextMessage = `[Delegation from agent "${hookPopup.agentName}" via "${hookPopup.toolName}"]\n\n${argsText}`;
+
+    sendMessage(compositeKey, contextMessage);
+
+    setHookPopup(null);
+  };
 
   const saveSnapshot = useCallback(() => {
     setHistory(prev => [...prev, { nodes: snapshotRef.current.nodes, connections: snapshotRef.current.connections }]);
@@ -522,8 +574,10 @@ const WorkflowBuilder = () => {
           ? `${data.sessionId}::${data.activeAgent.id}`
           : data.sessionId;
         setWorkflowSessionId(chatSessionId);
-        // Register session in the shared chat store
+        // Register session in the shared chat store and create first chat tab
         createSession(agentName, chatSessionId, agentName);
+        setChatTabs([{ agentName, sessionId: chatSessionId }]);
+        setActiveChatTab(chatSessionId);
       }
       addLog('info', `Workflow started (${data.mode})`);
       addLog('info', `Session: ${data.sessionId}`);
@@ -607,8 +661,9 @@ const WorkflowBuilder = () => {
             <Terminal
               logs={terminalLogs}
               onClose={() => setTerminalOpen(false)}
-              activeAgent={activeSessionAgent}
-              sessionId={workflowSessionId}
+              chatTabs={chatTabs}
+              activeChatTab={activeChatTab}
+              onSwitchChatTab={(sid) => setActiveChatTab(sid)}
             />
           )}
         </div>
@@ -658,6 +713,54 @@ const WorkflowBuilder = () => {
             <div className="wf-modal-actions">
               <button className="btn btn--secondary" onClick={() => setShowExportConfirm(false)}>Cancel</button>
               <button className="btn btn--primary" onClick={confirmExport}>Yes, export</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {hookPopup && (
+        <div className="wf-modal-overlay" onClick={() => setHookPopup(null)}>
+          <div className="wf-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720, textAlign: 'left' }}>
+            <div className="wf-modal-text">
+              <strong>{hookPopup.agentName}</strong> called <strong>{hookPopup.toolName}</strong>
+              {hookPopup.nextAgents?.length > 0 && (
+                <span> → {hookPopup.nextAgents.map((a) => a.name).join(', ')}</span>
+              )}
+            </div>
+            <div style={{
+              background: '#1e1e2e',
+              borderRadius: '6px',
+              overflow: 'auto',
+              maxHeight: '400px',
+              margin: '12px 0',
+              padding: '4px 0',
+            }}>
+              {Object.entries(hookPopup.args || {}).map(([key, value]) => (
+                <div key={key} style={{
+                  display: 'flex',
+                  padding: '8px 12px',
+                  borderBottom: '1px solid #2a3350',
+                }}>
+                  <span style={{ color: '#7c8cf8', fontWeight: 600, minWidth: 120, flexShrink: 0, fontSize: '13px' }}>
+                    {key}
+                  </span>
+                  <span style={{ color: '#cdd6f4', fontSize: '13px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                    {Array.isArray(value) ? (
+                      <ul style={{ margin: 0, paddingLeft: '18px', listStyle: 'disc' }}>
+                        {value.map((item, i) => (
+                          <li key={i} style={{ marginBottom: '4px' }}>
+                            {typeof item === 'object' ? JSON.stringify(item, null, 2) : String(item)}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="wf-modal-actions">
+              <button className="btn btn--secondary" onClick={() => setHookPopup(null)}>Close</button>
+              <button className="btn btn--primary" onClick={handleAcceptHook}>Accept</button>
             </div>
           </div>
         </div>

@@ -10,6 +10,7 @@ import {
   sessionHooks,
   setCurrentAgentId,
   resolveModel,
+  workflowEvents,
 } from '../state.js';
 import type { SessionHook } from '../state.js';
 import type { AgentData, AgentFile } from '../types.js';
@@ -17,6 +18,28 @@ import { buildExecutionQueue, compileGraph } from '../workflow-scheduler.js';
 import { briefingTool, planTool, reportTool, createDelegateTool, INTERFACE_TOOL_NAMES } from '../../workflow_interfaces_tools.js';
 
 const router = Router();
+
+/**
+ * GET /runtime/workflow/events
+ *
+ * SSE stream for workflow hook events (broadcast to all connected clients).
+ */
+router.get('/runtime/workflow/events', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const onHook = (payload: object) => {
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
+
+  workflowEvents.on('hook_fired', onHook);
+
+  req.on('close', () => {
+    workflowEvents.off('hook_fired', onHook);
+  });
+});
 
 interface WorkflowNode {
   id: string;
@@ -190,39 +213,6 @@ router.post('/runtime/workflow/compile', async (req, res) => {
       console.log(`[DEBUG] Agent "${agent.name}" registered tools:`, piAgent.getRegisteredTools());
     }
 
-    // Single agent — run directly
-    if (agentNodes.length === 1) {
-      const node = agentNodes[0];
-      const { agent, piAgent, keyRef } = agentMap.get(node.id)!;
-
-      activeAgents.set(sessionId, piAgent);
-      sessionAgentMap.set(sessionId, agent._id);
-      setCurrentAgentId(sessionId);
-      global.activeAgent = piAgent;
-      global.activeAgentId = sessionId;
-
-      // Wire up hooks
-      keyRef.current = sessionId;
-      sessionHooks.set(sessionId, [{
-        toolName: '*',
-        callback: async ({ agentName, toolName, args }) => {
-          console.log(`[workflow-hook] Agent "${agentName}" submitted "${toolName}"`);
-        },
-      }]);
-
-      console.log(`[runtime] Workflow single-agent session ${sessionId} started: "${agent.name}"`);
-
-      res.json({
-        success: true,
-        compilationSuccess: true,
-        mode: 'single-agent',
-        sessionId,
-        agent: agent.name,
-        agentDetails,
-        executionQueue: executionQueue.map((level) => level.map((n) => ({ id: n.id, type: n.type, name: n.name }))),
-      });
-      return;
-    }
 
     // Multiple agents — register each under composite key + reverse map
     for (const node of agentNodes) {
@@ -237,6 +227,38 @@ router.post('/runtime/workflow/compile', async (req, res) => {
         toolName: '*',
         callback: async ({ agentName, toolName, args }) => {
           console.log(`[workflow-hook] Agent "${agentName}" submitted "${toolName}"`);
+
+          // Find the interface node matching the tool that was called
+          const agentSuccessors = successors.get(node.id) || [];
+          const interfaceNode = agentSuccessors.find(
+            (n) => n.type === 'artefact' && toolName === `submit_${(n.name || '').toLowerCase()}`
+          );
+
+          let nextAgentInfos: { name: string; compositeKey: string }[] = [];
+          if (interfaceNode) {
+            const nextAgents = (successors.get(interfaceNode.id) || []).filter(
+              (n) => n.type === 'agent'
+            );
+            nextAgentInfos = nextAgents.map((a) => {
+              const entry = agentMap.get(a.id);
+              const key = entry ? `${sessionId}::${entry.agent._id}` : '';
+              return { name: a.name || a.id, compositeKey: key };
+            });
+            console.log(
+              `[workflow-hook] Next agents after "${toolName}": [${nextAgentInfos.map((a) => a.name).join(', ')}]`
+            );
+          }
+
+          // Broadcast to frontend via SSE
+          const hookPayload = {
+            type: 'hook_fired',
+            agentName,
+            toolName,
+            args,
+            nextAgents: nextAgentInfos,
+          };
+          console.log(`[workflow-hook] Emitting hook_fired:`, JSON.stringify(hookPayload, null, 2));
+          workflowEvents.emit('hook_fired', hookPayload);
         },
       }]);
 

@@ -397,7 +397,7 @@ function getAgentSessionsSnapshot(agentId) {
 }
 
 // Exported directly so non-hook code (e.g. event handlers) can call it
-export { createSession, removeSession, abortAgent };
+export { createSession, removeSession, abortAgent, sendMessage };
 
 const api = { sendMessage, abortAgent, hydrateFromServer, getSession, createSession, removeSession, getAgentSessions, approveToolCall, rejectToolCall };
 

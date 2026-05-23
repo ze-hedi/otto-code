@@ -54,6 +54,11 @@ export function clearSessionHooks(sessionId: string): void {
   }
 }
 
+// ─── Workflow event bus (SSE broadcast) ──────────────────────────────────────
+
+import { EventEmitter } from 'events';
+export const workflowEvents = new EventEmitter();
+
 // Convenience pointer to the last agent that was run
 export let currentAgentId: string | null = null;
 
