@@ -7,7 +7,7 @@ const Sidebar = ({
   interfaces, loadingInterfaces, interfacesError,
   placedAgentIds = [],
   placedOrchestratorIds = [],
-  onDragStart, onAgentClick,
+  onDragStart, onAgentClick, onToolClick,
   onBuildPiAgent,
   collapsed, onToggleCollapse,
 }) => {
@@ -191,12 +191,13 @@ const Sidebar = ({
 
         {!loadingTools && !toolsError && tools.length > 0 && (
           <div className="wf-category">
-            {tools.map(tool => (
+            {tools.filter(t => !t.isMcp).map(tool => (
               <div
                 key={tool._id}
                 className="wf-component wf-component--tool"
                 draggable="true"
                 onDragStart={(e) => handleToolDragStart(e, tool)}
+                onClick={() => onToolClick?.(tool._id)}
               >
                 <div className="wf-component-icon wf-component-icon--tool">
                   {tool.icon || '🔧'}
@@ -204,6 +205,25 @@ const Sidebar = ({
                 <span>{tool.name}</span>
               </div>
             ))}
+            {tools.some(t => t.isMcp) && (
+              <>
+                <div className="wf-category-label">MCP</div>
+                {tools.filter(t => t.isMcp).map(tool => (
+                  <div
+                    key={tool._id}
+                    className="wf-component wf-component--tool wf-component--mcp"
+                    draggable="true"
+                    onDragStart={(e) => handleToolDragStart(e, tool)}
+                    onClick={() => onToolClick?.(tool._id)}
+                  >
+                    <div className="wf-component-icon wf-component-icon--tool">
+                      {tool.icon || '🌐'}
+                    </div>
+                    <span>{tool.name}</span>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         )}
 

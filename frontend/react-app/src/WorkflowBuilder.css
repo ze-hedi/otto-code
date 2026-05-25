@@ -263,6 +263,23 @@ html, body {
   margin-bottom: 0.5rem;
 }
 
+.wf-category-label {
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #06b6d4;
+  padding: 0.5rem 0.25rem 0.25rem;
+}
+
+.wf-component--mcp {
+  border-color: #164e63;
+}
+
+.wf-component--mcp:hover {
+  border-color: #06b6d4;
+}
+
 /* Draggable component pill */
 .wf-component {
   display: flex;
@@ -325,6 +342,94 @@ html, body {
   border-radius: 12px;
   font-size: 0.65rem;
   font-weight: 600;
+}
+
+/* Tool detail panel */
+.tool-detail-identity {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.tool-detail-icon {
+  font-size: 2rem;
+}
+
+.tool-detail-name {
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+  color: #e2e8f0;
+}
+
+.tool-detail-badge {
+  display: inline-block;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: #1e2637;
+  color: #94a3b8;
+}
+
+.tool-detail-badge--mcp {
+  background: #164e63;
+  color: #06b6d4;
+}
+
+.tool-detail-section {
+  margin-bottom: 1rem;
+}
+
+.tool-detail-label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #64748b;
+  margin-bottom: 0.35rem;
+}
+
+.tool-detail-description {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #cbd5e1;
+  line-height: 1.5;
+}
+
+.tool-detail-params {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.tool-detail-param {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.4rem 0.5rem;
+  background: #1e2637;
+  border-radius: 6px;
+}
+
+.tool-detail-param-name {
+  font-size: 0.8rem;
+  color: #e2e8f0;
+}
+
+.tool-detail-param-type {
+  font-size: 0.7rem;
+  color: #06b6d4;
+}
+
+.tool-detail-param-desc {
+  width: 100%;
+  font-size: 0.75rem;
+  color: #94a3b8;
 }
 
 /* Tool draggable pill */

@@ -3,6 +3,7 @@ import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import Canvas from './components/Canvas';
 import AgentDetailPanel from './components/AgentDetailPanel';
+import ToolDetailPanel from './components/ToolDetailPanel';
 import PiAgentFormContainer from './components/agents/PiAgentFormContainer';
 import Terminal from './components/Terminal';
 import { createSession, sendMessage } from './AgentChatContext';
@@ -23,6 +24,9 @@ const WorkflowBuilder = () => {
   const [tools, setTools] = useState([]);
   const [loadingTools, setLoadingTools] = useState(true);
   const [toolsError, setToolsError] = useState(null);
+  const [mcpTools, setMcpTools] = useState([]);
+  const [loadingMcpTools, setLoadingMcpTools] = useState(true);
+  const [selectedToolId, setSelectedToolId] = useState(null);
   const [interfaces, setInterfaces] = useState([]);
   const [loadingInterfaces, setLoadingInterfaces] = useState(true);
   const [interfacesError, setInterfacesError] = useState(null);
@@ -208,6 +212,33 @@ const WorkflowBuilder = () => {
       });
   }, []);
 
+  // Fetch MCP tools from gateway on mount
+  useEffect(() => {
+    setLoadingMcpTools(true);
+    fetch('http://localhost:5000/runtime/mcp-tools')
+      .then(res => {
+        if (!res.ok) throw new Error('MCP gateway unavailable');
+        return res.json();
+      })
+      .then(data => {
+        const mapped = data.map(t => ({
+          _id: `mcp_${t.name}`,
+          name: t.name,
+          description: t.description,
+          icon: '🌐',
+          isMcp: true,
+          inputSchema: t.inputSchema,
+        }));
+        setMcpTools(mapped);
+        setLoadingMcpTools(false);
+      })
+      .catch(err => {
+        console.error('MCP tools unavailable:', err.message);
+        setMcpTools([]);
+        setLoadingMcpTools(false);
+      });
+  }, []);
+
   // Fetch interfaces from database on mount
   useEffect(() => {
     setLoadingInterfaces(true);
@@ -270,6 +301,7 @@ const WorkflowBuilder = () => {
   // Close all right-side panels
   const closeAllPanels = useCallback(() => {
     setSelectedAgentId(null);
+    setSelectedToolId(null);
     setCreatingPiAgent(false);
   }, []);
 
@@ -783,8 +815,8 @@ const WorkflowBuilder = () => {
           agents={agents}
           loadingAgents={loadingAgents}
           agentsError={agentsError}
-          tools={tools}
-          loadingTools={loadingTools}
+          tools={[...tools, ...mcpTools]}
+          loadingTools={loadingTools || loadingMcpTools}
           toolsError={toolsError}
           interfaces={interfaces}
           loadingInterfaces={loadingInterfaces}
@@ -794,6 +826,7 @@ const WorkflowBuilder = () => {
           orchestratorsError={orchestratorsError}
           onDragStart={handleSidebarDragStart}
           onAgentClick={(agentId) => { closeAllPanels(); setSelectedAgentId(agentId); }}
+          onToolClick={(toolId) => { closeAllPanels(); setSelectedToolId(toolId); }}
           placedAgentIds={nodes.filter((n) => n.type === 'agent').map((n) => n.agentId)}
           placedOrchestratorIds={nodes.filter((n) => n.type === 'orchestrator').map((n) => n.orchestratorId)}
           onBuildPiAgent={handleBuildPiAgent}
@@ -833,6 +866,12 @@ const WorkflowBuilder = () => {
             availableTools={tools}
             onClose={() => setSelectedAgentId(null)}
             onAgentUpdated={handleAgentUpdated}
+          />
+        )}
+        {selectedToolId && (
+          <ToolDetailPanel
+            tool={[...tools, ...mcpTools].find((t) => t._id === selectedToolId)}
+            onClose={() => setSelectedToolId(null)}
           />
         )}
         {creatingPiAgent && (
