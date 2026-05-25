@@ -10,6 +10,7 @@ import TeamOfAgentsPage from './pages/TeamOfAgentsPage';
 import OrchestratorPage from './pages/OrchestratorPage';
 import DashboardPage from './pages/DashboardPage';
 import AgentDashboardPage from './pages/AgentDashboardPage';
+import WorkflowsPage from './pages/WorkflowsPage';
 
 function App() {
   return (
@@ -17,6 +18,7 @@ function App() {
       <AgentChatProvider>
         <Routes>
           <Route path="/" element={<Home />} />
+          <Route path="/workflows" element={<WorkflowsPage />} />
           <Route path="/workflow" element={<WorkflowBuilder />} />
           <Route path="/chat" element={<ChatPage />} />
           <Route path="/chat/:agentId" element={<ChatPage />} />

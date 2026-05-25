@@ -10,11 +10,17 @@ function Home() {
       <div className="home-content">
         <h1>Welcome to Workflow Builder</h1>
         <div className="button-container">
-          <button 
+          <button
             className="home-button workflow-button"
             onClick={() => navigate('/workflow')}
           >
             Create Workflow
+          </button>
+          <button
+            className="home-button workflow-button"
+            onClick={() => navigate('/workflows')}
+          >
+            Workflows
           </button>
           <button
             className="home-button team-button"
