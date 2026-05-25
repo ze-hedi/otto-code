@@ -1,15 +1,19 @@
 import React, { useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 const Header = ({
   connectionMode,
   canUndo,
+  terminalOpen,
   onToggleConnectionMode,
+  onToggleTerminal,
   onUndo,
   onExport,
   onImport,
   onRun,
   onClear
 }) => {
+  const navigate = useNavigate();
   const uploadInputRef = useRef(null);
 
   const handleUploadClick = () => {
@@ -42,6 +46,13 @@ const Header = ({
 
   return (
     <header className="wf-topbar">
+      <button
+        className="tb-btn tb-btn--back"
+        onClick={() => navigate('/')}
+        title="Back to home"
+      >
+        <i className="bi bi-arrow-left"></i>
+      </button>
       <a href="index.html" className="brand">
         <i className="bi bi-robot"></i>
         <span>Otto</span>
@@ -101,6 +112,15 @@ const Header = ({
         >
           <i className="bi bi-trash3"></i>
           <span>Clear</span>
+        </button>
+
+        <button
+          className={`tb-btn${terminalOpen ? ' connect-active' : ''}`}
+          onClick={onToggleTerminal}
+          title="Toggle terminal panel"
+        >
+          <i className="bi bi-terminal"></i>
+          <span>Terminal</span>
         </button>
 
         <button
