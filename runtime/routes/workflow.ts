@@ -15,6 +15,7 @@ import {
   resolveModel,
   workflowEvents,
   workflowHistory,
+  workflowSessions,
 } from '../state.js';
 import type { SessionHook } from '../state.js';
 import type { AgentData, AgentFile } from '../types.js';
@@ -96,6 +97,7 @@ interface WorkflowConnection {
 interface WorkflowRunRequest {
   nodes: WorkflowNode[];
   connections: WorkflowConnection[];
+  existingSessionId?: string; // If provided, incremental compile: reuse session, skip already-compiled agents
 }
 
 /**
@@ -105,7 +107,7 @@ interface WorkflowRunRequest {
  * the corresponding agents/orchestrator in the runtime.
  */
 router.post('/runtime/workflow/compile', async (req, res) => {
-  const { nodes, connections }: WorkflowRunRequest = req.body;
+  const { nodes, connections, existingSessionId }: WorkflowRunRequest = req.body;
 
   if (!nodes?.length) {
     res.status(400).json({ error: 'Workflow must contain at least one node' });
@@ -119,8 +121,12 @@ router.post('/runtime/workflow/compile', async (req, res) => {
     return;
   }
 
+  // Determine if this is an incremental compile
+  const isIncremental = !!existingSessionId && workflowSessions.has(existingSessionId);
+  const existingState = isIncremental ? workflowSessions.get(existingSessionId)! : null;
+
   try {
-    // Build execution queue (Kahn's topological sort) and validate
+    // Build execution queue (Kahn's topological sort) and validate full graph
     const queueResult = buildExecutionQueue(nodes, connections);
     const { levels: executionQueue, predecessors, successors } = compileGraph(queueResult);
     console.log(`[runtime] Workflow execution queue (${executionQueue.length} levels):`);
@@ -180,19 +186,46 @@ router.post('/runtime/workflow/compile', async (req, res) => {
       return { agent: node as AgentData, piAgent: new PiAgent(config) };
     };
 
-    const sessionId = `workflow-${Date.now()}`;
-    console.log(":::::: agent build correctly ") ;
+    const sessionId = isIncremental ? existingSessionId! : `workflow-${Date.now()}`;
+    console.log(`[runtime] ${isIncremental ? 'Incremental' : 'Full'} compile, sessionId: ${sessionId}`);
 
     // Build all agents first
     // actorMap unifies agents and orchestrators for interface tool assignment and hook wiring
     const actorMap = new Map<string, { agent: AgentData; piAgent: PiAgent; keyRef: { current: string } }>();
+    // Track which node IDs are newly built (vs reused from previous compile)
+    const newlyBuiltNodeIds = new Set<string>();
+
     for (const node of agentNodes) {
+      // If incremental and this node was already compiled, reuse the existing PiAgent
+      if (isIncremental && existingState!.compiledActors.has(node.id)) {
+        const compositeKey = existingState!.compiledActors.get(node.id)!;
+        const existingPiAgent = activeAgents.get(compositeKey);
+        if (existingPiAgent) {
+          const keyRef = { current: compositeKey };
+          actorMap.set(node.id, { agent: node as AgentData, piAgent: existingPiAgent, keyRef });
+          console.log(`[runtime] Reusing existing agent "${node.name}" (${compositeKey})`);
+          continue;
+        }
+      }
       const keyRef = { current: '' };
       actorMap.set(node.id, { ...buildAgent(node, keyRef), keyRef });
+      newlyBuiltNodeIds.add(node.id);
     }
 
     // Build orchestrator nodes — each becomes a raw agent with a delegate tool + sub-agents
     for (const node of orchestratorNodes) {
+      // If incremental and this orchestrator was already compiled, reuse it
+      if (isIncremental && existingState!.compiledActors.has(node.id)) {
+        const compositeKey = existingState!.compiledActors.get(node.id)!;
+        const existingPiAgent = activeAgents.get(compositeKey);
+        if (existingPiAgent) {
+          const keyRef = { current: compositeKey };
+          actorMap.set(node.id, { agent: node as AgentData, piAgent: existingPiAgent, keyRef });
+          console.log(`[runtime] Reusing existing orchestrator "${node.name}" (${compositeKey})`);
+          continue;
+        }
+      }
+      newlyBuiltNodeIds.add(node.id);
       const keyRef = { current: '' };
       const files: AgentFile[] = node.files || [];
       const soulFile = files.find((f) => f.type === 'soul');
@@ -353,6 +386,18 @@ router.post('/runtime/workflow/compile', async (req, res) => {
       const nodeSuccessors = successors.get(node.id) || [];
       const assignedTools: string[] = [];
 
+      // Skip tool assignment for reused actors (they already have their tools)
+      if (isIncremental && !newlyBuiltNodeIds.has(node.id)) {
+        agentDetails.push({
+          name: agentData.name,
+          model: agentData.model,
+          sessionMode: agentData.sessionMode || 'memory',
+          thinkingLevel: agentData.thinkingLevel || 'medium',
+          tools: ['(reused)'],
+        });
+        continue;
+      }
+
       // Orchestrators already have delegate built-in, note it in assignedTools
       if (node.type === 'orchestrator') {
         assignedTools.push('delegate (built-in)');
@@ -448,6 +493,14 @@ router.post('/runtime/workflow/compile', async (req, res) => {
       const { agent, piAgent, keyRef } = actorMap.get(node.id)!;
       const actorId = node.type === 'orchestrator' ? (node.orchestratorId || node._id) : agent._id;
       const compositeKey = `${sessionId}::${actorId}`;
+
+      // Skip registration for reused actors — they're already in activeAgents with hooks
+      if (isIncremental && !newlyBuiltNodeIds.has(node.id)) {
+        // But update hooks to reference new graph successors (connections may have changed)
+        console.log(`[runtime] Skipping registration for reused "${agent.name}" (${compositeKey})`);
+        continue;
+      }
+
       activeAgents.set(compositeKey, piAgent);
       agentToSessionMap.set(actorId, compositeKey);
 
@@ -566,24 +619,57 @@ router.post('/runtime/workflow/compile', async (req, res) => {
       ? ((firstActorNode as any).orchestratorId || firstAgent._id)
       : firstAgent._id;
 
-    console.log(`[runtime] Workflow compiled with ${agentNodes.length} agent(s) + ${orchestratorNodes.length} orchestrator(s), first: "${firstAgent.name}"`);
+    console.log(`[runtime] Workflow compiled with ${agentNodes.length} agent(s) + ${orchestratorNodes.length} orchestrator(s), first: "${firstAgent.name}" [${isIncremental ? 'incremental' : 'full'}, ${newlyBuiltNodeIds.size} new]`);
 
-    // Save workflow record for history
-    const now = new Date().toISOString();
-    workflowHistory.push({
-      id: sessionId,
-      agents: Array.from(actorMap.values()).map(({ agent }) => agent.name),
-      createdAt: now,
-      lastInteractedAt: now,
-    });
+    // Update workflow session state for future incremental compiles
+    const sessionState = workflowSessions.get(sessionId) || {
+      sessionId,
+      compiledActors: new Map<string, string>(),
+      successors: new Map(),
+      predecessors: new Map(),
+    };
+    // Register all actors (including reused) in the session state
+    for (const node of allActorNodes) {
+      const { agent } = actorMap.get(node.id)!;
+      const actorId = node.type === 'orchestrator' ? (node.orchestratorId || (node as any)._id) : agent._id;
+      sessionState.compiledActors.set(node.id, `${sessionId}::${actorId}`);
+    }
+    sessionState.successors = successors;
+    sessionState.predecessors = predecessors;
+    workflowSessions.set(sessionId, sessionState);
+
+    // Save workflow record for history (only on first compile)
+    if (!isIncremental) {
+      const now = new Date().toISOString();
+      workflowHistory.push({
+        id: sessionId,
+        agents: Array.from(actorMap.values()).map(({ agent }) => agent.name),
+        createdAt: now,
+        lastInteractedAt: now,
+      });
+    } else {
+      // Update history entry with new agent list
+      const record = workflowHistory.find((w) => w.id === sessionId);
+      if (record) {
+        record.agents = Array.from(actorMap.values()).map(({ agent }) => agent.name);
+        record.lastInteractedAt = new Date().toISOString();
+      }
+    }
+
+    // Return newly compiled agents separately so frontend knows what to add
+    const newAgents = Array.from(actorMap.entries())
+      .filter(([nodeId]) => newlyBuiltNodeIds.has(nodeId))
+      .map(([_, { agent }]) => ({ name: agent.name, id: agent._id }));
 
     res.json({
       success: true,
       compilationSuccess: true,
       mode: 'multi-agent',
       sessionId,
+      incremental: isIncremental,
       activeAgent: { name: firstAgent.name, id: firstActorId },
       agents: Array.from(actorMap.values()).map(({ agent }) => ({ name: agent.name, id: agent._id })),
+      newAgents,
       agentDetails,
       executionQueue: executionQueue.map((level) => level.map((n) => ({ id: n.id, type: n.type, name: n.name }))),
     });

@@ -679,6 +679,8 @@ const WorkflowBuilder = () => {
         toSide: c.toSide,
         ...(c.linkType ? { linkType: c.linkType } : {}),
       })),
+      // If we already have a workflow session, request incremental compile
+      ...(workflowSessionId ? { existingSessionId: workflowSessionId.split('::')[0] } : {}),
     };
     try {
       const res = await fetch('http://localhost:5000/runtime/workflow/compile', {
@@ -689,22 +691,42 @@ const WorkflowBuilder = () => {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Unknown error');
       if (data.compilationSuccess) {
-        addLog('info', 'Compilation succeeded');
-        // Register sessions and open tabs for ALL agents in the workflow
-        const allTabs = (data.agents || []).map((agent) => {
-          const compositeKey = `${data.sessionId}::${agent.id}`;
-          createSession(agent.name, compositeKey, agent.name);
-          return { agentName: agent.name, sessionId: compositeKey };
-        });
+        if (data.incremental) {
+          addLog('info', `Incremental compilation succeeded (${data.newAgents?.length || 0} new agent(s))`);
+          // Only create sessions/tabs for newly compiled agents
+          const newTabs = (data.newAgents || []).map((agent) => {
+            const compositeKey = `${data.sessionId}::${agent.id}`;
+            createSession(agent.name, compositeKey, agent.name);
+            return { agentName: agent.name, sessionId: compositeKey };
+          });
+          if (newTabs.length > 0) {
+            setChatTabs((prev) => {
+              const existing = new Set(prev.map((t) => t.sessionId));
+              const toAdd = newTabs.filter((t) => !existing.has(t.sessionId));
+              return toAdd.length ? [...prev, ...toAdd] : prev;
+            });
+            // Switch to first new agent
+            setActiveChatTab(newTabs[0].sessionId);
+            setActiveSessionAgent(newTabs[0].agentName);
+          }
+        } else {
+          addLog('info', 'Compilation succeeded');
+          // Full compile: register sessions and open tabs for ALL agents
+          const allTabs = (data.agents || []).map((agent) => {
+            const compositeKey = `${data.sessionId}::${agent.id}`;
+            createSession(agent.name, compositeKey, agent.name);
+            return { agentName: agent.name, sessionId: compositeKey };
+          });
 
-        // Default active chat target is the first agent in execution queue
-        const firstCompositeKey = data.activeAgent?.id
-          ? `${data.sessionId}::${data.activeAgent.id}`
-          : allTabs[0]?.sessionId;
-        setWorkflowSessionId(firstCompositeKey);
-        setActiveSessionAgent(data.activeAgent?.name || allTabs[0]?.agentName || null);
-        setChatTabs(allTabs);
-        setActiveChatTab(firstCompositeKey);
+          // Default active chat target is the first agent in execution queue
+          const firstCompositeKey = data.activeAgent?.id
+            ? `${data.sessionId}::${data.activeAgent.id}`
+            : allTabs[0]?.sessionId;
+          setWorkflowSessionId(firstCompositeKey);
+          setActiveSessionAgent(data.activeAgent?.name || allTabs[0]?.agentName || null);
+          setChatTabs(allTabs);
+          setActiveChatTab(firstCompositeKey);
+        }
       }
       addLog('info', `Workflow started (${data.mode})`);
       addLog('info', `Session: ${data.sessionId}`);
@@ -727,7 +749,7 @@ const WorkflowBuilder = () => {
     } catch (err) {
       addLog('error', `Failed: ${err.message}`);
     }
-  }, [nodes, connections, agents, addLog]);
+  }, [nodes, connections, agents, addLog, workflowSessionId]);
 
   const handleClear = useCallback(() => {
     saveSnapshot();
@@ -736,6 +758,10 @@ const WorkflowBuilder = () => {
     setSelectedNodeId(null);
     setSelectedConnection(null);
     setDeleteConnBtnPos(null);
+    setWorkflowSessionId(null);
+    setChatTabs([]);
+    setActiveChatTab(null);
+    setActiveSessionAgent(null);
   }, [saveSnapshot]);
 
   return (

@@ -54,6 +54,21 @@ export function clearSessionHooks(sessionId: string): void {
   }
 }
 
+// ─── Workflow session state (tracks compiled actors per session for incremental recompilation) ─
+
+export interface WorkflowSessionState {
+  sessionId: string;
+  /** Map of node.id → compositeKey for already-compiled actors */
+  compiledActors: Map<string, string>;
+  /** The successors map from the last compilation (used for hook wiring) */
+  successors: Map<string, any[]>;
+  /** The predecessors map from the last compilation */
+  predecessors: Map<string, any[]>;
+}
+
+/** sessionId → WorkflowSessionState */
+export const workflowSessions = new Map<string, WorkflowSessionState>();
+
 // ─── Workflow history (in-memory) ────────────────────────────────────────────
 
 export interface WorkflowRecord {
