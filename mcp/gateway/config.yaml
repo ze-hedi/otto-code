@@ -1,0 +1,6 @@
+name: mcp-gateway
+
+upstreams:
+  - name: tavily
+    prefix: tavily
+    url: http://tavily:8000/mcp/
