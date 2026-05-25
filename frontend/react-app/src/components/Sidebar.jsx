@@ -2,9 +2,11 @@ import React from 'react';
 
 const Sidebar = ({
   agents, loadingAgents, agentsError,
+  orchestrators, loadingOrchestrators, orchestratorsError,
   tools, loadingTools, toolsError,
   interfaces, loadingInterfaces, interfacesError,
   placedAgentIds = [],
+  placedOrchestratorIds = [],
   onDragStart, onAgentClick,
   onBuildPiAgent,
   collapsed, onToggleCollapse,
@@ -27,6 +29,16 @@ const Sidebar = ({
       toolIcon: tool.icon || '🔧',
     }));
     onDragStart(tool);
+  };
+
+  const handleOrchestratorDragStart = (e, orchestrator) => {
+    e.dataTransfer.setData('application/json', JSON.stringify({
+      nodeType: 'orchestrator',
+      orchestratorId: orchestrator._id,
+      orchestratorName: orchestrator.name,
+      orchestratorIcon: orchestrator.icon || '🧠',
+    }));
+    onDragStart(orchestrator);
   };
 
   const handleArtefactDragStart = (e, artefact) => {
@@ -98,6 +110,54 @@ const Sidebar = ({
           <button className="wf-build-agent-btn" onClick={onBuildPiAgent}>
             + Build an Agent
           </button>
+        )}
+
+        {/* ── Orchestrators ──────────────────────────────────── */}
+        <div className="wf-sidebar-header wf-sidebar-header--orchestrators">
+          Orchestrators
+          {!loadingOrchestrators && !orchestratorsError && (
+            <span className="agent-count">{orchestrators.length}</span>
+          )}
+        </div>
+
+        {loadingOrchestrators && (
+          <div className="loading-spinner">
+            <div className="spinner"></div>
+            <p>Loading orchestrators...</p>
+          </div>
+        )}
+
+        {orchestratorsError && (
+          <div className="error-state">
+            <p>Failed to load orchestrators</p>
+            <small>{orchestratorsError}</small>
+          </div>
+        )}
+
+        {!loadingOrchestrators && !orchestratorsError && orchestrators.length === 0 && (
+          <div className="empty-state">
+            <p>No orchestrators available</p>
+            <a href="/team-of-agents">Create an orchestrator</a>
+          </div>
+        )}
+
+        {!loadingOrchestrators && !orchestratorsError && orchestrators.length > 0 && (
+          <div className="wf-category">
+            {orchestrators.map(orch => {
+              const isPlaced = placedOrchestratorIds.includes(orch._id);
+              return (
+                <div
+                  key={orch._id}
+                  className={`wf-component wf-component--orchestrator${isPlaced ? ' wf-component--disabled' : ''}`}
+                  draggable={!isPlaced}
+                  onDragStart={(e) => !isPlaced && handleOrchestratorDragStart(e, orch)}
+                >
+                  <div className="wf-component-icon">{orch.icon || '🧠'}</div>
+                  <span>{orch.name}</span>
+                </div>
+              );
+            })}
+          </div>
         )}
 
         {/* ── Tools ─────────────────────────────────────────── */}

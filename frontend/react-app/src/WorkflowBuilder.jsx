@@ -26,6 +26,9 @@ const WorkflowBuilder = () => {
   const [interfaces, setInterfaces] = useState([]);
   const [loadingInterfaces, setLoadingInterfaces] = useState(true);
   const [interfacesError, setInterfacesError] = useState(null);
+  const [orchestrators, setOrchestrators] = useState([]);
+  const [loadingOrchestrators, setLoadingOrchestrators] = useState(true);
+  const [orchestratorsError, setOrchestratorsError] = useState(null);
   const [selectedAgentId, setSelectedAgentId] = useState(null);
   const [creatingPiAgent, setCreatingPiAgent] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -34,6 +37,7 @@ const WorkflowBuilder = () => {
   const [activeSessionAgent, setActiveSessionAgent] = useState(null);
   const [workflowSessionId, setWorkflowSessionId] = useState(null);
   const [hookPopup, setHookPopup] = useState(null);
+  const [hookProgress, setHookProgress] = useState(null); // { interfaceName, received, expected }
   const [chatTabs, setChatTabs] = useState([]);
   const [activeChatTab, setActiveChatTab] = useState(null);
   const draggedType = useRef(null);
@@ -55,12 +59,22 @@ const WorkflowBuilder = () => {
     es.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
-        if (data.type === 'hook_fired') {
+        if (data.type === 'hook_partial') {
+          setHookProgress({ interfaceName: data.interfaceName, received: data.received, expected: data.expected, latestAgent: data.latestAgent });
+        } else if (data.type === 'hook_fired') {
+          setHookProgress(null);
           setHookPopup(data);
         }
       } catch {}
     };
     return () => es.close();
+  }, [workflowSessionId]);
+
+  // Touch workflow to update lastInteractedAt
+  const touchWorkflow = useCallback(() => {
+    if (!workflowSessionId) return;
+    const baseId = workflowSessionId.includes('::') ? workflowSessionId.split('::')[0] : workflowSessionId;
+    fetch(`http://localhost:5000/runtime/workflows/${baseId}/touch`, { method: 'PATCH' }).catch(() => {});
   }, [workflowSessionId]);
 
   const handleAcceptHook = () => {
@@ -70,30 +84,85 @@ const WorkflowBuilder = () => {
       setHookPopup(null);
       return;
     }
-    const next = hookPopup.nextAgents[0]; // single next agent for now
-    const { name, compositeKey } = next;
-    console.log('[workflow] Accept hook → next agent:', name, 'key:', compositeKey);
 
-    // Register session in chat store
-    createSession(name, compositeKey, name);
+    const { nextAgents, toolName } = hookPopup;
+    const isMerged = Array.isArray(hookPopup.entries);
 
-    // Add a new chat tab and switch to it
+    // --- Build context message(s) depending on single vs merged ---
+
+    let contextMessageBuilder;
+
+    if (isMerged) {
+      // Multi-entry: merge all entries into one context message per next agent
+      const mergedSections = hookPopup.entries.map((entry) => {
+        const argsText = Object.entries(entry.args || {})
+          .map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`)
+          .join('\n');
+        return `[From agent "${entry.agentName}" via "${toolName}"]\n${argsText}`;
+      }).join('\n\n---\n\n');
+      const mergedMessage = `[Merged briefing from ${hookPopup.entries.length} agents]\n\n${mergedSections}`;
+      contextMessageBuilder = () => mergedMessage;
+    } else {
+      // Single-entry: existing behavior
+      const { args, agentName: sourceAgent } = hookPopup;
+      const isDelegation = toolName === 'submit_delegate';
+      const delegations = isDelegation ? (args?.delegations || []) : [];
+
+      const delegationByAgent = {};
+      for (const d of delegations) {
+        delegationByAgent[d.agentName] = d;
+      }
+
+      const fallbackArgsText = Object.entries(args || {})
+        .map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`)
+        .join('\n');
+      const fallbackMessage = `[Delegation from agent "${sourceAgent}" via "${toolName}"]\n\n${fallbackArgsText}`;
+
+      contextMessageBuilder = (nextAgentName) => {
+        const delegation = delegationByAgent[nextAgentName];
+        if (isDelegation && delegation) {
+          const specs = delegation.referenceSpecs?.length
+            ? `\nReference Specs:\n${delegation.referenceSpecs.map((s) => `  - ${s}`).join('\n')}`
+            : '';
+          return (
+            `[Delegation from agent "${sourceAgent}"]\n\n` +
+            `Goal: ${args.goal}\n` +
+            `Task: ${delegation.task}\n` +
+            `Context: ${delegation.context}\n` +
+            `Expected Output: ${delegation.expectedOutput}\n` +
+            `Priority: ${delegation.priority}` +
+            specs
+          );
+        }
+        return fallbackMessage;
+      };
+    }
+
+    const newTabs = [];
+
+    for (const next of nextAgents) {
+      const { name, compositeKey } = next;
+      console.log('[workflow] Accept hook → next agent:', name, 'key:', compositeKey);
+
+      createSession(name, compositeKey, name);
+      newTabs.push({ agentName: name, sessionId: compositeKey });
+
+      const contextMessage = contextMessageBuilder(name);
+      sendMessage(compositeKey, contextMessage);
+    }
+
+    // Add all new tabs at once
     setChatTabs((prev) => {
-      if (prev.some((t) => t.sessionId === compositeKey)) return prev;
-      return [...prev, { agentName: name, sessionId: compositeKey }];
+      const existing = new Set(prev.map((t) => t.sessionId));
+      const toAdd = newTabs.filter((t) => !existing.has(t.sessionId));
+      return toAdd.length ? [...prev, ...toAdd] : prev;
     });
-    setActiveChatTab(compositeKey);
-    setActiveSessionAgent(name);
-    setWorkflowSessionId(compositeKey);
 
-    // Build a context message and send it to the next agent
-    const argsText = Object.entries(hookPopup.args || {})
-      .map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`)
-      .join('\n');
-    const contextMessage = `[Delegation from agent "${hookPopup.agentName}" via "${hookPopup.toolName}"]\n\n${argsText}`;
+    // Switch to the first new agent tab
+    setActiveChatTab(newTabs[0].sessionId);
+    setActiveSessionAgent(newTabs[0].agentName);
 
-    sendMessage(compositeKey, contextMessage);
-
+    touchWorkflow();
     setHookPopup(null);
   };
 
@@ -154,6 +223,24 @@ const WorkflowBuilder = () => {
       .catch(err => {
         setInterfacesError(err.message);
         setLoadingInterfaces(false);
+      });
+  }, []);
+
+  // Fetch orchestrators from database on mount
+  useEffect(() => {
+    setLoadingOrchestrators(true);
+    fetch('http://localhost:4000/api/orchestrators')
+      .then(res => {
+        if (!res.ok) throw new Error('Failed to fetch orchestrators');
+        return res.json();
+      })
+      .then(data => {
+        setOrchestrators(data);
+        setLoadingOrchestrators(false);
+      })
+      .catch(err => {
+        setOrchestratorsError(err.message);
+        setLoadingOrchestrators(false);
       });
   }, []);
 
@@ -248,6 +335,16 @@ const WorkflowBuilder = () => {
         toolId: data.toolId,
         toolName: data.toolName,
         toolIcon: data.toolIcon,
+        x: x - 55,
+        y: y - 40,
+      };
+    } else if (data.nodeType === 'orchestrator') {
+      newNode = {
+        id: generateNodeId(),
+        type: 'orchestrator',
+        orchestratorId: data.orchestratorId,
+        orchestratorName: data.orchestratorName,
+        orchestratorIcon: data.orchestratorIcon || '🧠',
         x: x - 55,
         y: y - 40,
       };
@@ -515,9 +612,10 @@ const WorkflowBuilder = () => {
 
   const handleRun = useCallback(async () => {
     const agentNodes = nodes.filter((n) => n.type === 'agent');
-    if (agentNodes.length === 0) {
+    const orchestratorNodes = nodes.filter((n) => n.type === 'orchestrator');
+    if (agentNodes.length === 0 && orchestratorNodes.length === 0) {
       setTerminalOpen(true);
-      addLog('error', 'Add at least one agent to the workflow before running.');
+      addLog('error', 'Add at least one agent or orchestrator to the workflow before running.');
       return;
     }
     setTerminalOpen(true);
@@ -535,6 +633,37 @@ const WorkflowBuilder = () => {
           if (filesRes.ok) files = await filesRes.json();
         } catch {}
         return { ...base, ...agentData, files };
+      }
+      if (n.type === 'orchestrator') {
+        // Fetch full orchestrator data with populated sub-agents
+        let orchData = null;
+        try {
+          const orchRes = await fetch('http://localhost:4000/api/orchestrators');
+          if (orchRes.ok) {
+            const allOrch = await orchRes.json();
+            orchData = allOrch.find((o) => o._id === n.orchestratorId);
+          }
+        } catch {}
+        // Fetch files for each sub-agent
+        const subAgents = [];
+        if (orchData?.subAgents) {
+          for (const sub of orchData.subAgents) {
+            const agentData = sub.agent || sub;
+            let files = [];
+            try {
+              const filesRes = await fetch(`http://localhost:4000/api/agents/${agentData._id}/files`);
+              if (filesRes.ok) files = await filesRes.json();
+            } catch {}
+            subAgents.push({ ...agentData, stateful: sub.stateful ?? false, files });
+          }
+        }
+        // Fetch orchestrator's own files (soul prompt)
+        let orchFiles = [];
+        try {
+          const filesRes = await fetch(`http://localhost:4000/api/agents/${n.orchestratorId}/files`);
+          if (filesRes.ok) orchFiles = await filesRes.json();
+        } catch {}
+        return { ...base, ...orchData, orchestratorId: n.orchestratorId, subAgents, files: orchFiles };
       }
       if (n.type === 'tool') return { ...base, name: n.toolName, icon: n.toolIcon, toolId: n.toolId };
       if (n.type === 'artefact') return { ...base, name: n.label, icon: n.icon, artefactType: n.artefactType };
@@ -561,23 +690,21 @@ const WorkflowBuilder = () => {
       if (!res.ok) throw new Error(data.error || 'Unknown error');
       if (data.compilationSuccess) {
         addLog('info', 'Compilation succeeded');
-        // Set the first agent from execution queue as active chat target
-        let agentName = null;
-        if (data.executionQueue?.length > 0) {
-          const firstAgent = data.executionQueue[0].find((n) => n.type === 'agent');
-          if (firstAgent) agentName = firstAgent.name;
-        }
-        setActiveSessionAgent(agentName);
-        // For multi-agent workflows, use the composite key so the runtime
-        // can look up the correct agent in its activeAgents map.
-        const chatSessionId = data.mode === 'multi-agent' && data.activeAgent?.id
+        // Register sessions and open tabs for ALL agents in the workflow
+        const allTabs = (data.agents || []).map((agent) => {
+          const compositeKey = `${data.sessionId}::${agent.id}`;
+          createSession(agent.name, compositeKey, agent.name);
+          return { agentName: agent.name, sessionId: compositeKey };
+        });
+
+        // Default active chat target is the first agent in execution queue
+        const firstCompositeKey = data.activeAgent?.id
           ? `${data.sessionId}::${data.activeAgent.id}`
-          : data.sessionId;
-        setWorkflowSessionId(chatSessionId);
-        // Register session in the shared chat store and create first chat tab
-        createSession(agentName, chatSessionId, agentName);
-        setChatTabs([{ agentName, sessionId: chatSessionId }]);
-        setActiveChatTab(chatSessionId);
+          : allTabs[0]?.sessionId;
+        setWorkflowSessionId(firstCompositeKey);
+        setActiveSessionAgent(data.activeAgent?.name || allTabs[0]?.agentName || null);
+        setChatTabs(allTabs);
+        setActiveChatTab(firstCompositeKey);
       }
       addLog('info', `Workflow started (${data.mode})`);
       addLog('info', `Session: ${data.sessionId}`);
@@ -616,7 +743,9 @@ const WorkflowBuilder = () => {
       <Header
         connectionMode={connectionMode}
         canUndo={history.length > 0}
+        terminalOpen={terminalOpen}
         onToggleConnectionMode={handleToggleConnectionMode}
+        onToggleTerminal={() => setTerminalOpen((v) => !v)}
         onUndo={handleUndo}
         onExport={handleExport}
         onImport={handleImport}
@@ -634,9 +763,13 @@ const WorkflowBuilder = () => {
           interfaces={interfaces}
           loadingInterfaces={loadingInterfaces}
           interfacesError={interfacesError}
+          orchestrators={orchestrators}
+          loadingOrchestrators={loadingOrchestrators}
+          orchestratorsError={orchestratorsError}
           onDragStart={handleSidebarDragStart}
           onAgentClick={(agentId) => { closeAllPanels(); setSelectedAgentId(agentId); }}
           placedAgentIds={nodes.filter((n) => n.type === 'agent').map((n) => n.agentId)}
+          placedOrchestratorIds={nodes.filter((n) => n.type === 'orchestrator').map((n) => n.orchestratorId)}
           onBuildPiAgent={handleBuildPiAgent}
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
@@ -664,6 +797,7 @@ const WorkflowBuilder = () => {
               chatTabs={chatTabs}
               activeChatTab={activeChatTab}
               onSwitchChatTab={(sid) => setActiveChatTab(sid)}
+              onMessageSent={touchWorkflow}
             />
           )}
         </div>
@@ -718,46 +852,127 @@ const WorkflowBuilder = () => {
         </div>
       )}
 
+      {hookProgress && !hookPopup && (
+        <div style={{
+          position: 'fixed',
+          bottom: 24,
+          right: 24,
+          background: '#1e1e2e',
+          border: '1px solid #2a3350',
+          borderRadius: '8px',
+          padding: '12px 20px',
+          color: '#cdd6f4',
+          fontSize: '13px',
+          zIndex: 9999,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+        }}>
+          <strong>{hookProgress.interfaceName}</strong>: {hookProgress.received}/{hookProgress.expected} agents submitted
+          <span style={{ color: '#7c8cf8', marginLeft: 8 }}>({hookProgress.latestAgent} just submitted)</span>
+        </div>
+      )}
+
       {hookPopup && (
         <div className="wf-modal-overlay" onClick={() => setHookPopup(null)}>
           <div className="wf-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720, textAlign: 'left' }}>
-            <div className="wf-modal-text">
-              <strong>{hookPopup.agentName}</strong> called <strong>{hookPopup.toolName}</strong>
-              {hookPopup.nextAgents?.length > 0 && (
-                <span> → {hookPopup.nextAgents.map((a) => a.name).join(', ')}</span>
-              )}
-            </div>
-            <div style={{
-              background: '#1e1e2e',
-              borderRadius: '6px',
-              overflow: 'auto',
-              maxHeight: '400px',
-              margin: '12px 0',
-              padding: '4px 0',
-            }}>
-              {Object.entries(hookPopup.args || {}).map(([key, value]) => (
-                <div key={key} style={{
-                  display: 'flex',
-                  padding: '8px 12px',
-                  borderBottom: '1px solid #2a3350',
-                }}>
-                  <span style={{ color: '#7c8cf8', fontWeight: 600, minWidth: 120, flexShrink: 0, fontSize: '13px' }}>
-                    {key}
-                  </span>
-                  <span style={{ color: '#cdd6f4', fontSize: '13px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                    {Array.isArray(value) ? (
-                      <ul style={{ margin: 0, paddingLeft: '18px', listStyle: 'disc' }}>
-                        {value.map((item, i) => (
-                          <li key={i} style={{ marginBottom: '4px' }}>
-                            {typeof item === 'object' ? JSON.stringify(item, null, 2) : String(item)}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}
-                  </span>
+            {Array.isArray(hookPopup.entries) ? (
+              /* ── Merged multi-entry popup ── */
+              <>
+                <div className="wf-modal-text">
+                  <strong>{hookPopup.entries.length} agents</strong> submitted <strong>{hookPopup.toolName}</strong>
+                  {hookPopup.nextAgents?.length > 0 && (
+                    <span> → {hookPopup.nextAgents.map((a) => a.name).join(', ')}</span>
+                  )}
                 </div>
-              ))}
-            </div>
+                <div style={{
+                  background: '#1e1e2e',
+                  borderRadius: '6px',
+                  overflow: 'auto',
+                  maxHeight: '400px',
+                  margin: '12px 0',
+                  padding: '4px 0',
+                }}>
+                  {hookPopup.entries.map((entry, idx) => (
+                    <div key={idx}>
+                      <div style={{
+                        padding: '8px 12px',
+                        background: '#252540',
+                        borderBottom: '1px solid #2a3350',
+                        fontWeight: 600,
+                        color: '#a6adc8',
+                        fontSize: '12px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}>
+                        {entry.agentName}
+                      </div>
+                      {Object.entries(entry.args || {}).map(([key, value]) => (
+                        <div key={key} style={{
+                          display: 'flex',
+                          padding: '8px 12px',
+                          borderBottom: '1px solid #2a3350',
+                        }}>
+                          <span style={{ color: '#7c8cf8', fontWeight: 600, minWidth: 120, flexShrink: 0, fontSize: '13px' }}>
+                            {key}
+                          </span>
+                          <span style={{ color: '#cdd6f4', fontSize: '13px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                            {Array.isArray(value) ? (
+                              <ul style={{ margin: 0, paddingLeft: '18px', listStyle: 'disc' }}>
+                                {value.map((item, i) => (
+                                  <li key={i} style={{ marginBottom: '4px' }}>
+                                    {typeof item === 'object' ? JSON.stringify(item, null, 2) : String(item)}
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              /* ── Single-entry popup (existing) ── */
+              <>
+                <div className="wf-modal-text">
+                  <strong>{hookPopup.agentName}</strong> called <strong>{hookPopup.toolName}</strong>
+                  {hookPopup.nextAgents?.length > 0 && (
+                    <span> → {hookPopup.nextAgents.map((a) => a.name).join(', ')}</span>
+                  )}
+                </div>
+                <div style={{
+                  background: '#1e1e2e',
+                  borderRadius: '6px',
+                  overflow: 'auto',
+                  maxHeight: '400px',
+                  margin: '12px 0',
+                  padding: '4px 0',
+                }}>
+                  {Object.entries(hookPopup.args || {}).map(([key, value]) => (
+                    <div key={key} style={{
+                      display: 'flex',
+                      padding: '8px 12px',
+                      borderBottom: '1px solid #2a3350',
+                    }}>
+                      <span style={{ color: '#7c8cf8', fontWeight: 600, minWidth: 120, flexShrink: 0, fontSize: '13px' }}>
+                        {key}
+                      </span>
+                      <span style={{ color: '#cdd6f4', fontSize: '13px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                        {Array.isArray(value) ? (
+                          <ul style={{ margin: 0, paddingLeft: '18px', listStyle: 'disc' }}>
+                            {value.map((item, i) => (
+                              <li key={i} style={{ marginBottom: '4px' }}>
+                                {typeof item === 'object' ? JSON.stringify(item, null, 2) : String(item)}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
             <div className="wf-modal-actions">
               <button className="btn btn--secondary" onClick={() => setHookPopup(null)}>Close</button>
               <button className="btn btn--primary" onClick={handleAcceptHook}>Accept</button>
