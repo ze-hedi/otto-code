@@ -4,8 +4,10 @@
 import fs from "fs";
 import os from "os";
 import path from "path";
+import { Type } from "typebox";
 import { Mem0 } from "./mem0.js";
 import type { Mem0Config } from "./mem0.js";
+import type { McpBridge, McpToolEntry } from "./mcp-bridge.js";
 import {
   AuthStorage,
   createAgentSession,
@@ -207,6 +209,10 @@ export interface PiAgentConfig {
   mem0Config?: Mem0Config;
   /** When true, tool calls pause for user approval before executing (default: false) */
   toolCallGuardrails?: boolean;
+  /** MCP gateway endpoint URL. When set, call connectMcp() to discover and register tools. */
+  mcpEndpoint?: string;
+  /** MCP connection timeout in ms (default: 5000). */
+  mcpConnectionTimeout?: number;
   /** Compaction (context compression) settings */
   compaction?: {
     /** Enable/disable auto-compaction (default: true) */
@@ -232,7 +238,7 @@ export class PiAgent {
   private modelRegistry: ModelRegistry;
   private model: Model<Api>;
   private config: Required<
-    Omit<PiAgentConfig, "apiKey" | "workingDir" | "playground" | "model" | "skills" | "handlers" | "tools" | "onToolExecute" | "mem0Config" | "compaction" | "sessionDir" | "name" | "toolCallGuardrails">
+    Omit<PiAgentConfig, "apiKey" | "workingDir" | "playground" | "model" | "skills" | "handlers" | "tools" | "onToolExecute" | "mem0Config" | "compaction" | "sessionDir" | "name" | "toolCallGuardrails" | "mcpEndpoint" | "mcpConnectionTimeout">
   > & {
     workingDir: string;
     playground: string;
@@ -252,6 +258,10 @@ export class PiAgent {
   private _name: string | undefined;
   private _toolCallGuardrails: boolean = false;
   private _pendingApprovals: Map<string, { resolve: (approved: boolean) => void; comment?: string }> = new Map();
+  private _mcpBridge: McpBridge | null = null;
+  private _mcpEndpoint: string | undefined;
+  private _mcpConnectionTimeout: number;
+  private _mcpToolNames: Set<string> = new Set();
 
   constructor(config: PiAgentConfig) {
     const [provider, modelName] = config.model.split("/");
@@ -293,6 +303,8 @@ export class PiAgent {
     this._sessionDir = config.sessionDir;
     this._compaction = config.compaction;
     this._toolCallGuardrails = config.toolCallGuardrails ?? false;
+    this._mcpEndpoint = config.mcpEndpoint;
+    this._mcpConnectionTimeout = config.mcpConnectionTimeout ?? 5000;
 
     // Initialize mem0 if configured
     if (config.mem0Config) {
@@ -363,6 +375,31 @@ export class PiAgent {
       const toolDef = this._createToolDefinition(toolInput);
       this.toolDefinitions.set(toolInput.name, toolDef);
     }
+  }
+
+  // ── MCP Tool Definition ────────────────────────────────────────────────────
+
+  private _createMcpToolDefinition(mcpTool: McpToolEntry, bridge: McpBridge): ToolDefinition {
+    return {
+      name: mcpTool.name,
+      label: mcpTool.name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+      description: mcpTool.description,
+      parameters: Type.Unsafe(mcpTool.inputSchema),
+      executionMode: "sequential",
+
+      async execute(toolCallId, params, signal) {
+        try {
+          const result = await bridge.callTool(mcpTool.name, params as Record<string, unknown>);
+          return { content: result.content, details: {} };
+        } catch (error) {
+          return {
+            content: [{ type: "text", text: `MCP tool error: ${error instanceof Error ? error.message : String(error)}` }],
+            details: { error: true },
+            isError: true,
+          };
+        }
+      },
+    };
   }
 
   // ── Event loop ──────────────────────────────────────────────────────────────
@@ -849,6 +886,67 @@ export class PiAgent {
     }
 
     return true;
+  }
+
+  // ── MCP Integration ─────────────────────────────────────────────────────────
+
+  /**
+   * Connect to an MCP gateway, discover tools, and register them.
+   * Call this before the first chat()/execute() so tools are available in the session.
+   * Can be called again to reconnect (old MCP tools are replaced).
+   * @param endpoint - Override the configured mcpEndpoint
+   * @returns Array of discovered MCP tool names
+   */
+  async connectMcp(endpoint?: string): Promise<string[]> {
+    const url = endpoint ?? this._mcpEndpoint;
+    if (!url) throw new Error("No MCP endpoint configured. Set mcpEndpoint in config or pass it to connectMcp().");
+
+    // Tear down previous MCP connection if reconnecting
+    if (this._mcpBridge) {
+      Array.from(this._mcpToolNames).forEach((name) => this.toolDefinitions.delete(name));
+      this._mcpToolNames.clear();
+      await this._mcpBridge.close().catch(() => {});
+      this._mcpBridge = null;
+    }
+
+    const { createMcpBridge } = await import("./mcp-bridge.js");
+    const bridge = await createMcpBridge(url, this._mcpConnectionTimeout);
+    this._mcpBridge = bridge;
+
+    for (const mcpTool of bridge.tools) {
+      if (this.toolDefinitions.has(mcpTool.name)) {
+        console.warn(`[pi-agent] MCP tool "${mcpTool.name}" conflicts with existing tool, skipping`);
+        continue;
+      }
+      const toolDef = this._createMcpToolDefinition(mcpTool, bridge);
+      this.toolDefinitions.set(mcpTool.name, toolDef);
+      this._mcpToolNames.add(mcpTool.name);
+    }
+
+    if (this.currentSession) {
+      console.warn("[pi-agent] MCP tools registered but require a new session to take effect.");
+    }
+
+    return Array.from(this._mcpToolNames);
+  }
+
+  /** Disconnect from MCP gateway and unregister all MCP tools. */
+  async disconnectMcp(): Promise<void> {
+    if (!this._mcpBridge) return;
+    Array.from(this._mcpToolNames).forEach((name) => this.toolDefinitions.delete(name));
+    this._mcpToolNames.clear();
+    await this._mcpBridge.close().catch(() => {});
+    this._mcpBridge = null;
+  }
+
+  /** Returns true if an MCP bridge is currently connected. */
+  isMcpConnected(): boolean {
+    return this._mcpBridge !== null;
+  }
+
+  /** Returns the list of tool names registered from MCP. */
+  getMcpTools(): string[] {
+    return Array.from(this._mcpToolNames);
   }
 
   /**

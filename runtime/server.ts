@@ -47,6 +47,26 @@ app.get('/runtime/status', (_req, res) => {
   });
 });
 
+// ─── MCP Tools discovery ────────────────────────────────────────────────────
+
+const MCP_ENDPOINT = process.env.MCP_ENDPOINT || 'http://localhost:8080/mcp';
+
+app.get('/runtime/mcp-tools', async (_req, res) => {
+  try {
+    const { createMcpBridge } = await import('../mcp-bridge.js');
+    const bridge = await createMcpBridge(MCP_ENDPOINT, 5000);
+    const tools = bridge.tools.map((t) => ({
+      name: t.name,
+      description: t.description,
+      inputSchema: t.inputSchema,
+    }));
+    await bridge.close();
+    res.json(tools);
+  } catch (err: any) {
+    res.status(502).json({ error: `MCP gateway unavailable: ${err.message}` });
+  }
+});
+
 // ─── Start ───────────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => {
