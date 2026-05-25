@@ -475,8 +475,7 @@ router.post('/runtime/workflow/compile', async (req, res) => {
           const nextAgentInfos = nextActors.map((a) => {
             const entry = actorMap.get(a.id);
             if (!entry) return { name: a.name || a.id, compositeKey: '' };
-            const nextId = a.type === 'orchestrator' ? ((a as any).orchestratorId || entry.agent._id) : entry.agent._id;
-            return { name: a.name || a.id, compositeKey: `${sessionId}::${nextId}` };
+            return { name: a.name || a.id, compositeKey: `${sessionId}::${resolveActorId(a, entry.agent)}` };
           });
           pendingBriefings.set(node.id, {
             expected: nodePredecessors.length,
@@ -488,39 +487,40 @@ router.post('/runtime/workflow/compile', async (req, res) => {
       }
     }
 
+    // Helper: resolve the runtime ID for an actor node (orchestrators use orchestratorId)
+    const resolveActorId = (node: WorkflowNode, agent: AgentData) =>
+      node.type === 'orchestrator' ? (node.orchestratorId || (node as any)._id || agent._id) : agent._id;
+
     // Register all actors under composite key + reverse map + hooks
     for (const node of allActorNodes) {
       const { agent, piAgent, keyRef } = actorMap.get(node.id)!;
-      const actorId = node.type === 'orchestrator' ? (node.orchestratorId || node._id) : agent._id;
+      const actorId = resolveActorId(node, agent);
       const compositeKey = `${sessionId}::${actorId}`;
+      const isReused = isIncremental && !newlyBuiltNodeIds.has(node.id);
 
-      // Skip registration for reused actors — they're already in activeAgents with hooks
-      if (isIncremental && !newlyBuiltNodeIds.has(node.id)) {
-        // But update hooks to reference new graph successors (connections may have changed)
-        console.log(`[runtime] Skipping registration for reused "${agent.name}" (${compositeKey})`);
-        continue;
-      }
+      // Only register new actors in activeAgents / sub-agents (reused are already there)
+      if (!isReused) {
+        activeAgents.set(compositeKey, piAgent);
+        agentToSessionMap.set(actorId, compositeKey);
 
-      activeAgents.set(compositeKey, piAgent);
-      agentToSessionMap.set(actorId, compositeKey);
-
-      // For orchestrators, also register sub-agents and metadata
-      if (node.type === 'orchestrator') {
-        const subAgentPiAgents: Map<string, { def: AgentData; piAgent: PiAgent }> = (piAgent as any)._workflowSubAgents;
-        if (subAgentPiAgents) {
-          const subAgentDataList: AgentData[] = [];
-          for (const [name, { def, piAgent: subPi }] of subAgentPiAgents) {
-            const subCompositeKey = `${sessionId}::${def._id}`;
-            activeAgents.set(subCompositeKey, subPi);
-            agentToSessionMap.set(def._id, subCompositeKey);
-            subAgentDataList.push(def);
-            console.log(`[runtime]   Sub-agent "${name}" (${subCompositeKey}) registered`);
+        // For orchestrators, also register sub-agents and metadata
+        if (node.type === 'orchestrator') {
+          const subAgentPiAgents: Map<string, { def: AgentData; piAgent: PiAgent }> = (piAgent as any)._workflowSubAgents;
+          if (subAgentPiAgents) {
+            const subAgentDataList: AgentData[] = [];
+            for (const [name, { def, piAgent: subPi }] of subAgentPiAgents) {
+              const subCompositeKey = `${sessionId}::${def._id}`;
+              activeAgents.set(subCompositeKey, subPi);
+              agentToSessionMap.set(def._id, subCompositeKey);
+              subAgentDataList.push(def);
+              console.log(`[runtime]   Sub-agent "${name}" (${subCompositeKey}) registered`);
+            }
+            orchestratorSubAgents.set(compositeKey, subAgentDataList);
           }
-          orchestratorSubAgents.set(compositeKey, subAgentDataList);
         }
       }
 
-      // Wire up hooks
+      // Always (re-)wire hooks — graph connections may have changed on incremental compile
       keyRef.current = compositeKey;
       sessionHooks.set(compositeKey, [{
         toolName: '*',
@@ -589,8 +589,7 @@ router.post('/runtime/workflow/compile', async (req, res) => {
             const nextAgentInfos = nextActors.map((a) => {
               const entry = actorMap.get(a.id);
               if (!entry) return { name: a.name || a.id, compositeKey: '' };
-              const nextId = a.type === 'orchestrator' ? ((a as any).orchestratorId || entry.agent._id) : entry.agent._id;
-              return { name: a.name || a.id, compositeKey: `${sessionId}::${nextId}` };
+              return { name: a.name || a.id, compositeKey: `${sessionId}::${resolveActorId(a, entry.agent)}` };
             });
             console.log(
               `[workflow-hook] Next actors after "${toolName}": [${nextAgentInfos.map((a) => a.name).join(', ')}]`
@@ -609,15 +608,13 @@ router.post('/runtime/workflow/compile', async (req, res) => {
         },
       }]);
 
-      console.log(`[runtime] Workflow "${agent.name}" → id: ${actorId} | key: ${compositeKey} | tools: [${piAgent.getRegisteredTools().join(', ')}]`);
+      console.log(`[runtime] Workflow "${agent.name}" → id: ${actorId} | key: ${compositeKey} | tools: [${piAgent.getRegisteredTools().join(', ')}]${isReused ? ' (reused)' : ''}`);
     }
 
     // First agent/orchestrator in execution queue is the default chat target
     const firstActorNode = executionQueue.flat().find((n) => n.type === 'agent' || n.type === 'orchestrator')!;
     const { agent: firstAgent } = actorMap.get(firstActorNode.id)!;
-    const firstActorId = firstActorNode.type === 'orchestrator'
-      ? ((firstActorNode as any).orchestratorId || firstAgent._id)
-      : firstAgent._id;
+    const firstActorId = resolveActorId(firstActorNode, firstAgent);
 
     console.log(`[runtime] Workflow compiled with ${agentNodes.length} agent(s) + ${orchestratorNodes.length} orchestrator(s), first: "${firstAgent.name}" [${isIncremental ? 'incremental' : 'full'}, ${newlyBuiltNodeIds.size} new]`);
 
@@ -631,8 +628,7 @@ router.post('/runtime/workflow/compile', async (req, res) => {
     // Register all actors (including reused) in the session state
     for (const node of allActorNodes) {
       const { agent } = actorMap.get(node.id)!;
-      const actorId = node.type === 'orchestrator' ? (node.orchestratorId || (node as any)._id) : agent._id;
-      sessionState.compiledActors.set(node.id, `${sessionId}::${actorId}`);
+      sessionState.compiledActors.set(node.id, `${sessionId}::${resolveActorId(node, agent)}`);
     }
     sessionState.successors = successors;
     sessionState.predecessors = predecessors;
@@ -656,10 +652,17 @@ router.post('/runtime/workflow/compile', async (req, res) => {
       }
     }
 
-    // Return newly compiled agents separately so frontend knows what to add
-    const newAgents = Array.from(actorMap.entries())
-      .filter(([nodeId]) => newlyBuiltNodeIds.has(nodeId))
-      .map(([_, { agent }]) => ({ name: agent.name, id: agent._id }));
+    // Build agent info list with correct IDs for both agents and orchestrators
+    const buildAgentInfo = (nodeId: string) => {
+      const node = allActorNodes.find((n) => n.id === nodeId)!;
+      const { agent } = actorMap.get(nodeId)!;
+      return { name: agent.name, id: resolveActorId(node, agent) };
+    };
+
+    const allAgentInfos = Array.from(actorMap.keys()).map(buildAgentInfo);
+    const newAgents = Array.from(actorMap.keys())
+      .filter((nodeId) => newlyBuiltNodeIds.has(nodeId))
+      .map(buildAgentInfo);
 
     res.json({
       success: true,
@@ -668,7 +671,7 @@ router.post('/runtime/workflow/compile', async (req, res) => {
       sessionId,
       incremental: isIncremental,
       activeAgent: { name: firstAgent.name, id: firstActorId },
-      agents: Array.from(actorMap.values()).map(({ agent }) => ({ name: agent.name, id: agent._id })),
+      agents: allAgentInfos,
       newAgents,
       agentDetails,
       executionQueue: executionQueue.map((level) => level.map((n) => ({ id: n.id, type: n.type, name: n.name }))),
