@@ -4,19 +4,25 @@ import SessionStatsPanel from './SessionStatsPanel';
 import { useAgentChat } from '../AgentChatContext';
 import '../pages/ChatPage.css';
 
-const ChatTab = ({ sessionId, onSendRef }) => {
+const ChatTab = ({ sessionId, onSendRef, onMessageSent }) => {
   const bottomRef = useRef(null);
   const { messages, streaming, error, sendMessage, abortAgent, approveToolCall, rejectToolCall } = useAgentChat(sessionId);
 
   const handleSend = useCallback((text) => {
     if (!text || streaming) return;
     sendMessage(text);
-  }, [streaming, sendMessage]);
+    onMessageSent?.();
+  }, [streaming, sendMessage, onMessageSent]);
 
   // Expose sendMessage to parent via ref
   useEffect(() => {
     if (onSendRef) onSendRef.current = sendMessage;
   }, [sendMessage, onSendRef]);
+
+  // Scroll to bottom when tab becomes visible (component mounts)
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView();
+  }, []);
 
   return (
     <div className="wf-terminal-chat-panel">
@@ -34,7 +40,27 @@ const ChatTab = ({ sessionId, onSendRef }) => {
   );
 };
 
-const Terminal = ({ logs, onClose, chatTabs, activeChatTab, onSwitchChatTab }) => {
+const AgentList = ({ chatTabs, activeTab, onSelect }) => {
+  return (
+    <div className="wf-agent-list">
+      <div className="wf-agent-list-header">Agents</div>
+      <div className="wf-agent-list-items">
+        {chatTabs.map((tab) => (
+          <button
+            key={tab.sessionId}
+            className={`wf-agent-list-item${activeTab === tab.sessionId ? ' wf-agent-list-item--active' : ''}`}
+            onClick={() => onSelect(tab.sessionId)}
+          >
+            <span className="wf-agent-list-item-icon">⬡</span>
+            <span className="wf-agent-list-item-name">{tab.agentName}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const Terminal = ({ logs, onClose, chatTabs, activeChatTab, onSwitchChatTab, onMessageSent }) => {
   const logsEndRef = useRef(null);
   const [activeTab, setActiveTab] = useState('runtime');
   const [showStats, setShowStats] = useState(false);
@@ -54,6 +80,11 @@ const Terminal = ({ logs, onClose, chatTabs, activeChatTab, onSwitchChatTab }) =
     if (tab === 'runtime') setShowStats(false);
   };
 
+  const handleAgentSelect = (sessionId) => {
+    handleTabSwitch(sessionId);
+    onSwitchChatTab && onSwitchChatTab(sessionId);
+  };
+
   const isOnChatTab = activeTab !== 'runtime';
 
   return (
@@ -66,15 +97,17 @@ const Terminal = ({ logs, onClose, chatTabs, activeChatTab, onSwitchChatTab }) =
           >
             Runtime
           </button>
-          {chatTabs.map((tab) => (
+          {chatTabs.length > 0 && (
             <button
-              key={tab.sessionId}
-              className={`wf-terminal-tab${activeTab === tab.sessionId ? ' wf-terminal-tab--active' : ''}`}
-              onClick={() => { handleTabSwitch(tab.sessionId); onSwitchChatTab && onSwitchChatTab(tab.sessionId); }}
+              className={`wf-terminal-tab${isOnChatTab ? ' wf-terminal-tab--active' : ''}`}
+              onClick={() => {
+                const target = activeChatTab || chatTabs[0]?.sessionId;
+                if (target) handleAgentSelect(target);
+              }}
             >
-              Chat ({tab.agentName})
+              Agents ({chatTabs.length})
             </button>
-          ))}
+          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           {isOnChatTab && (
@@ -102,11 +135,22 @@ const Terminal = ({ logs, onClose, chatTabs, activeChatTab, onSwitchChatTab }) =
         </div>
       )}
 
-      {chatTabs.map((tab) => (
-        activeTab === tab.sessionId && (
-          <ChatTab key={tab.sessionId} sessionId={tab.sessionId} />
-        )
-      ))}
+      {isOnChatTab && (
+        <div className="wf-terminal-split">
+          <AgentList
+            chatTabs={chatTabs}
+            activeTab={activeTab}
+            onSelect={handleAgentSelect}
+          />
+          <div className="wf-terminal-chat-area">
+            {chatTabs.map((tab) => (
+              activeTab === tab.sessionId && (
+                <ChatTab key={tab.sessionId} sessionId={tab.sessionId} onMessageSent={onMessageSent} />
+              )
+            ))}
+          </div>
+        </div>
+      )}
 
       {showStats && isOnChatTab && (
         <SessionStatsPanel
