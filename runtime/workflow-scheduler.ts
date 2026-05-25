@@ -112,42 +112,37 @@ export function compileGraph(result: ExecutionQueueResult): ExecutionQueueResult
   for (const level of levels) {
     for (const node of level) {
 
-      // Rule 1: agent cannot directly feed into another agent
-      if (node.type === 'agent') {
+      // Rule 1: agent/orchestrator cannot directly feed into another agent/orchestrator
+      if (node.type === 'agent' || node.type === 'orchestrator') {
         const nodeSuccessors = successors.get(node.id) || [];
         for (const succ of nodeSuccessors) {
-          if (succ.type === 'agent') {
+          if (succ.type === 'agent' || succ.type === 'orchestrator') {
             throw new Error(
-              `Invalid workflow: agent "${node.name || node.id}" cannot directly feed into agent "${succ.name || succ.id}" — an interface must sit between them`
+              `Invalid workflow: "${node.name || node.id}" cannot directly feed into "${succ.name || succ.id}" — an interface must sit between them`
             );
           }
         }
       }
 
-      // Rule 2: every interface must be fed by exactly one agent
+      // Rule 2: every interface must be fed by at least one agent or orchestrator
       if (node.type === 'artefact') {
         const nodePredecessors = predecessors.get(node.id) || [];
-        const agentPredecessors = nodePredecessors.filter((n) => n.type === 'agent');
-        if (agentPredecessors.length === 0) {
+        const actorPredecessors = nodePredecessors.filter((n) => n.type === 'agent' || n.type === 'orchestrator');
+        if (actorPredecessors.length === 0) {
           throw new Error(
-            `Invalid workflow: interface "${node.name || node.id}" must be fed by one agent`
-          );
-        }
-        if (agentPredecessors.length > 1) {
-          throw new Error(
-            `Invalid workflow: interface "${node.name || node.id}" must be fed by exactly one agent, but is fed by ${agentPredecessors.length}`
+            `Invalid workflow: interface "${node.name || node.id}" must be fed by at least one agent or orchestrator`
           );
         }
       }
 
-      // Rule 3: only "Delegate" interface can feed multiple agents; others feed 0 or 1
+      // Rule 3: only "Delegate" interface can feed multiple agents/orchestrators; others feed 0 or 1
       if (node.type === 'artefact') {
         const nodeSuccessors = successors.get(node.id) || [];
-        const agentSuccessors = nodeSuccessors.filter((n) => n.type === 'agent');
+        const actorSuccessors = nodeSuccessors.filter((n) => n.type === 'agent' || n.type === 'orchestrator');
         const isDelegate = (node.name || '').toLowerCase() === 'delegate';
-        if (!isDelegate && agentSuccessors.length > 1) {
+        if (!isDelegate && actorSuccessors.length > 1) {
           throw new Error(
-            `Invalid workflow: interface "${node.name || node.id}" can only feed 0 or 1 agent, but feeds ${agentSuccessors.length} — only "Delegate" can feed multiple agents`
+            `Invalid workflow: interface "${node.name || node.id}" can only feed 0 or 1 agent/orchestrator, but feeds ${actorSuccessors.length} — only "Delegate" can feed multiple`
           );
         }
       }

@@ -54,6 +54,17 @@ export function clearSessionHooks(sessionId: string): void {
   }
 }
 
+// ─── Workflow history (in-memory) ────────────────────────────────────────────
+
+export interface WorkflowRecord {
+  id: string;             // sessionId
+  agents: string[];       // agent/orchestrator names
+  createdAt: string;      // ISO timestamp
+  lastInteractedAt: string;
+}
+
+export const workflowHistory: WorkflowRecord[] = [];
+
 // ─── Workflow event bus (SSE broadcast) ──────────────────────────────────────
 
 import { EventEmitter } from 'events';

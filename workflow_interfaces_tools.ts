@@ -92,7 +92,7 @@ export const INTERFACE_TOOL_NAMES = [
   'submit_briefing',
   'submit_plan',
   'submit_report',
-  'submit_delegation',
+  'submit_delegate',
 ] as const;
 
 export type InterfaceToolName = (typeof INTERFACE_TOOL_NAMES)[number];
@@ -102,7 +102,7 @@ export function createDelegateTool(subAgents: Record<string, string>): ToolInput
   const agentList = agentNames.map((name) => `- ${name}: ${subAgents[name]}`).join('\n');
 
   return {
-    name: 'submit_delegation',
+    name: 'submit_delegate',
     label: 'Submit Delegation',
     description:
       'REQUIRED: You must call this tool to delegate tasks to sub-agents. ' +
@@ -117,6 +117,7 @@ export function createDelegateTool(subAgents: Record<string, string>): ToolInput
           context: Type.String({ description: 'Background context the agent needs to complete the task' }),
           expectedOutput: Type.String({ description: 'What the agent should deliver when done' }),
           priority: Type.String({ description: 'Priority level: "high", "medium", or "low"' }),
+          referenceSpecs: Type.Optional(Type.Array(Type.String(), { description: 'Paths to .md spec files relevant for this agent to read before starting (e.g. "specs/api-design.md"). Only include when reference documentation would help the agent.' })),
         }),
         { description: 'List of task delegations, one per sub-agent' }
       ),
