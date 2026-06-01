@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import AgentForm from './AgentForm';
 
-function AgentDetailPanel({ agent, availableTools, onClose, onAgentUpdated }) {
+function AgentDetailPanel({ agent, availableTools, onClose, onAgentUpdated, projectMode }) {
   const [loading, setLoading] = useState(true);
 
   const [formName, setFormName] = useState('');
@@ -56,14 +56,9 @@ function AgentDetailPanel({ agent, availableTools, onClose, onAgentUpdated }) {
       .then((files) => {
         const soul = files.find((f) => f.type === 'soul');
         const skillsFile = files.find((f) => f.type === 'skills');
-        if (soul) {
-          setSystemPromptMode('upload');
-          setSystemPromptFile({ name: 'system_prompt.md', content: soul.content });
-        } else {
-          setSystemPromptMode('write');
-          setSystemPromptText('');
-          setSystemPromptFile(null);
-        }
+        setSystemPromptMode('write');
+        setSystemPromptText(soul ? soul.content : '');
+        setSystemPromptFile(null);
         setSkills(
           skillsFile ? [{ name: 'skills.md', content: skillsFile.content, preloaded: true }] : []
         );
@@ -103,6 +98,13 @@ function AgentDetailPanel({ agent, availableTools, onClose, onAgentUpdated }) {
         ...(compactionInstructions.trim() ? { customInstructions: compactionInstructions.trim() } : {}),
       },
     };
+
+    // In project mode, only update local state — don't persist to DB
+    if (projectMode) {
+      onAgentUpdated({ ...agent, ...payload, _id: agent._id });
+      return;
+    }
+
     try {
       const res = await fetch(`http://localhost:4000/api/agents/${agent._id}`, {
         method: 'PUT',

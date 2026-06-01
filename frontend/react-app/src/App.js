@@ -1,7 +1,10 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AgentChatProvider } from './AgentChatContext';
+import WelcomePage from './pages/WelcomePage';
 import Home from './pages/Home';
+import ProjectsListPage from './pages/ProjectsListPage';
+import WorkspacesPage from './pages/WorkspacesPage';
 import WorkflowBuilder from './WorkflowBuilder';
 import ChatPage from './pages/ChatPage';
 import AgentsPage from './pages/AgentsPage';
@@ -17,7 +20,10 @@ function App() {
     <BrowserRouter>
       <AgentChatProvider>
         <Routes>
-          <Route path="/" element={<Home />} />
+          <Route path="/" element={<WelcomePage />} />
+          <Route path="/hub" element={<Home />} />
+          <Route path="/workspaces" element={<ProjectsListPage />} />
+          <Route path="/workspaces/new" element={<WorkspacesPage />} />
           <Route path="/workflows" element={<WorkflowsPage />} />
           <Route path="/workflow" element={<WorkflowBuilder />} />
           <Route path="/chat" element={<ChatPage />} />

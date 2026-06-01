@@ -11,7 +11,7 @@ import type { ToolInput } from './pi-agent.js';
 export const briefingTool: ToolInput = {
   name: 'submit_briefing',
   label: 'Submit Briefing',
-  description:
+  description:  
     'REQUIRED: You must call this tool to submit a structured briefing about what you have accomplished so far. ' +
     'Include a summary of completed work, current status, key findings, and suggested next steps.',
   parameters: Type.Object({

@@ -1,6 +1,8 @@
 // runtime/routes/workflow.ts
 // Workflow execution — translates the visual graph into runtime agents/orchestrators.
 
+import fs from 'fs';
+import path from 'path';
 import { Router } from 'express';
 import { PiAgent, PiAgentConfig } from '../../pi-agent.js';
 import { createRawAgent } from '../../raw-agent.js';
@@ -21,6 +23,7 @@ import type { SessionHook } from '../state.js';
 import type { AgentData, AgentFile } from '../types.js';
 import { buildExecutionQueue, compileGraph } from '../workflow-scheduler.js';
 import { briefingTool, planTool, reportTool, createDelegateTool, INTERFACE_TOOL_NAMES } from '../../workflow_interfaces_tools.js';
+import { ToolExecutor } from '../tool-executor.js';
 import { Type } from 'typebox';
 
 const router = Router();
@@ -81,6 +84,7 @@ interface WorkflowNode {
   icon?: string;
   agentId?: string;
   toolId?: string;
+  isMcp?: boolean;
   artefactType?: string;
   orchestratorId?: string;
   subAgents?: (AgentData & { files?: AgentFile[]; stateful?: boolean })[];
@@ -126,9 +130,14 @@ router.post('/runtime/workflow/compile', async (req, res) => {
   const existingState = isIncremental ? workflowSessions.get(existingSessionId)! : null;
 
   try {
+    // Pre-declare tool resolution state (populated later, referenced by onToolExecute closures)
+    const dbToolMap = new Map<string, any>();
+    let mcpBridge: Awaited<ReturnType<typeof import('../../mcp-bridge.js').createMcpBridge>> | null = null;
+    const mcpToolMap = new Map<string, { name: string; description: string; inputSchema: Record<string, unknown> }>();
+
     // Build execution queue (Kahn's topological sort) and validate full graph
     const queueResult = buildExecutionQueue(nodes, connections);
-    const { levels: executionQueue, predecessors, successors } = compileGraph(queueResult);
+    const { levels: executionQueue, predecessors, successors, toolLinks } = compileGraph(queueResult);
     console.log(`[runtime] Workflow execution queue (${executionQueue.length} levels):`);
     executionQueue.forEach((level, i) => {
       console.log(`[runtime]   Level ${i}: ${level.map((n) => `${n.name || n.id} (${n.type})`).join(', ')}`);
@@ -155,16 +164,32 @@ router.post('/runtime/workflow/compile', async (req, res) => {
         onToolExecute: async (_toolCallId, toolName, params, _signal) => {
           console.log(`[runtime] Agent "${node.name}" called tool "${toolName}"`, JSON.stringify(params, null, 2));
 
+          // ── MCP tool execution ─────────────────────────────────────────
+          if (mcpBridge && mcpToolMap.has(toolName)) {
+            try {
+              const mcpResult = await mcpBridge.callTool(toolName, params);
+              return { content: mcpResult.content };
+            } catch (err: any) {
+              return { content: [{ type: 'text', text: `MCP tool error: ${err.message}` }] };
+            }
+          }
+
+          // ── DB tool execution ──────────────────────────────────────────
+          const dbToolEntry = Array.from(dbToolMap.values()).find((t) => t.name === toolName);
+          if (dbToolEntry?.executionFunction) {
+            return ToolExecutor.executeSafely(dbToolEntry.executionFunction, params);
+          }
+
+          // ── Interface tool fallback ────────────────────────────────────
           const result = {
             content: [{ type: 'text', text: `${toolName} submitted successfully.` }],
           };
 
-          // Fire session hooks for interface tools
           if ((INTERFACE_TOOL_NAMES as readonly string[]).includes(toolName) && keyRef.current) {
             const hooks = sessionHooks.get(keyRef.current) || [];
             for (const hook of hooks) {
               if (hook.toolName === '*' || hook.toolName === toolName) {
-                try {
+               try {
                   await hook.callback({
                     sessionId: keyRef.current,
                     agentName: node.name,
@@ -336,6 +361,22 @@ router.post('/runtime/workflow/compile', async (req, res) => {
             };
           }
 
+          // ── MCP tool execution ─────────────────────────────────────────
+          if (mcpBridge && mcpToolMap.has(toolName)) {
+            try {
+              const mcpResult = await mcpBridge.callTool(toolName, params);
+              return { content: mcpResult.content };
+            } catch (err: any) {
+              return { content: [{ type: 'text', text: `MCP tool error: ${err.message}` }] };
+            }
+          }
+
+          // ── DB tool execution ──────────────────────────────────────────
+          const dbToolEntry = Array.from(dbToolMap.values()).find((t: any) => t.name === toolName);
+          if (dbToolEntry?.executionFunction) {
+            return ToolExecutor.executeSafely(dbToolEntry.executionFunction, params);
+          }
+
           // Interface tools (briefing, plan, report, etc.)
           const result = {
             content: [{ type: 'text', text: `${toolName} submitted successfully.` }],
@@ -374,6 +415,40 @@ router.post('/runtime/workflow/compile', async (req, res) => {
       });
 
       console.log(`[runtime] Orchestrator "${node.name}" built with ${subAgentPiAgents.size} sub-agent(s): ${Array.from(subAgentPiAgents.keys()).join(', ')}`);
+    }
+
+    // ── Resolve linked tools (DB + MCP) upfront ─────────────────────────────
+    // Collect all tool nodes from toolLinks
+    const allLinkedToolNodes = Array.from(toolLinks.values()).flat();
+    const dbToolIds = allLinkedToolNodes.filter((t) => !t.isMcp && t.toolId).map((t) => t.toolId!);
+    const mcpToolNodes = allLinkedToolNodes.filter((t) => t.isMcp);
+
+    // Bulk-fetch DB tools (populates pre-declared dbToolMap)
+    if (dbToolIds.length > 0) {
+      try {
+        const uniqueIds = [...new Set(dbToolIds)];
+        const res = await fetch(`http://localhost:4000/api/tools`);
+        if (res.ok) {
+          const allDbTools: any[] = await res.json();
+          for (const t of allDbTools) {
+            if (uniqueIds.includes(t._id)) dbToolMap.set(t._id, t);
+          }
+        }
+      } catch (err: any) {
+        console.warn(`[workflow] Failed to fetch DB tools: ${err.message}`);
+      }
+    }
+
+    // Connect MCP bridge if any MCP tools are linked (populates pre-declared mcpBridge/mcpToolMap)
+    if (mcpToolNodes.length > 0) {
+      try {
+        const { createMcpBridge } = await import('../../mcp-bridge.js');
+        const endpoint = process.env.MCP_ENDPOINT || 'http://localhost:8080/mcp';
+        mcpBridge = await createMcpBridge(endpoint, 5000);
+        for (const t of mcpBridge.tools) mcpToolMap.set(t.name, t);
+      } catch (err: any) {
+        console.warn(`[workflow] MCP bridge unavailable: ${err.message}`);
+      }
     }
 
     // Assign interface tools to each agent/orchestrator based on outgoing interfaces
@@ -436,6 +511,46 @@ router.post('/runtime/workflow/compile', async (req, res) => {
           console.log(`[runtime]   Assigned delegateTool to "${node.name}" (delegates to: ${Object.keys(delegateTargets).join(', ')})`);
         }
         console.log(`[runtime] "${node.name}" added tool: ${interfaceName}`);
+      }
+
+      // ── Register linked tools (DB + MCP) via tool-link connections ──────
+      const linkedTools = toolLinks.get(node.id) || [];
+      for (const toolNode of linkedTools) {
+        if (toolNode.isMcp) {
+          // MCP tool — self-executing via bridge
+          const mcpName = (toolNode.toolId || '').replace(/^mcp_/, '');
+          const mcpDef = mcpToolMap.get(mcpName);
+          if (mcpDef && mcpBridge) {
+            const bridge = mcpBridge; // capture for closure
+            piAgent.addTool({
+              name: mcpDef.name,
+              label: mcpDef.name.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()),
+              description: mcpDef.description,
+              parameters: Type.Unsafe(mcpDef.inputSchema),
+              promptSnippet: `${mcpDef.name}: ${mcpDef.description}`,
+            });
+            assignedTools.push(`${mcpDef.name} (mcp)`);
+            console.log(`[runtime]   Assigned MCP tool "${mcpDef.name}" to "${node.name}"`);
+          } else {
+            console.warn(`[runtime]   MCP tool "${mcpName}" not found or bridge unavailable`);
+          }
+        } else {
+          // DB tool — self-executing via ToolExecutor
+          const dbTool = dbToolMap.get(toolNode.toolId!);
+          if (dbTool) {
+            piAgent.addTool({
+              name: dbTool.name,
+              label: dbTool.name,
+              description: dbTool.description,
+              parameters: Type.Unsafe(dbTool.schema || { type: 'object' }),
+              promptSnippet: `${dbTool.name}: ${dbTool.description}`,
+            });
+            assignedTools.push(`${dbTool.name} (db)`);
+            console.log(`[runtime]   Assigned DB tool "${dbTool.name}" to "${node.name}"`);
+          } else {
+            console.warn(`[runtime]   DB tool "${toolNode.toolId}" not found`);
+          }
+        }
       }
 
       agentDetails.push({
@@ -678,6 +793,46 @@ router.post('/runtime/workflow/compile', async (req, res) => {
     });
   } catch (err: any) {
     console.error(`[runtime] Workflow run failed: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Workflow file persistence ──────────────────────────────────────────────────
+
+router.post('/runtime/workflow/save', (req, res) => {
+  try {
+    const { filePath, data } = req.body;
+    if (!filePath || !data) {
+      res.status(400).json({ error: 'filePath and data are required' });
+      return;
+    }
+    const dir = path.dirname(filePath);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+    console.log(`[runtime] Workflow saved to ${filePath}`);
+    res.json({ success: true, filePath });
+  } catch (err: any) {
+    console.error(`[runtime] Workflow save failed: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/runtime/workflow/load', (req, res) => {
+  try {
+    const filePath = req.query.filePath as string;
+    if (!filePath) {
+      res.status(400).json({ error: 'filePath query parameter is required' });
+      return;
+    }
+    if (!fs.existsSync(filePath)) {
+      res.status(404).json({ error: 'Workflow file not found' });
+      return;
+    }
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const data = JSON.parse(content);
+    res.json(data);
+  } catch (err: any) {
+    console.error(`[runtime] Workflow load failed: ${err.message}`);
     res.status(500).json({ error: err.message });
   }
 });

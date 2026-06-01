@@ -11,7 +11,10 @@ const Header = ({
   onExport,
   onImport,
   onRun,
-  onClear
+  onClear,
+  projectMode,
+  contextOpen,
+  onToggleContext,
 }) => {
   const navigate = useNavigate();
   const uploadInputRef = useRef(null);
@@ -122,6 +125,17 @@ const Header = ({
           <i className="bi bi-terminal"></i>
           <span>Terminal</span>
         </button>
+
+        {projectMode && (
+          <button
+            className={`tb-btn${contextOpen ? ' connect-active' : ''}`}
+            onClick={onToggleContext}
+            title="View project context files"
+          >
+            <i className="bi bi-file-earmark-text"></i>
+            <span>Context</span>
+          </button>
+        )}
 
         <button
           className="tb-btn tb-btn--run"

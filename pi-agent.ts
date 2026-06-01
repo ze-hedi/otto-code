@@ -385,6 +385,7 @@ export class PiAgent {
       label: mcpTool.name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
       description: mcpTool.description,
       parameters: Type.Unsafe(mcpTool.inputSchema),
+      promptSnippet: `${mcpTool.name}: ${mcpTool.description}`,
       executionMode: "sequential",
 
       async execute(toolCallId, params, signal) {

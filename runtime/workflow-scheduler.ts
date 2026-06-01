@@ -19,6 +19,8 @@ export interface ExecutionQueueResult {
   levels: WorkflowNode[][];
   predecessors: Map<string, WorkflowNode[]>;
   successors: Map<string, WorkflowNode[]>;
+  /** Map of agentNodeId → tool nodes linked via tool-link connections. */
+  toolLinks: Map<string, WorkflowNode[]>;
 }
 
 /**
@@ -37,6 +39,28 @@ export function buildExecutionQueue(
   nodes: WorkflowNode[],
   connections: WorkflowConnection[]
 ): ExecutionQueueResult {
+  // Index all nodes by ID (including tools, for tool-link resolution)
+  const nodeMap = new Map<string, WorkflowNode>();
+  for (const node of nodes) nodeMap.set(node.id, node);
+
+  // Build tool-link map: agentNodeId → toolNode[]
+  const toolLinkEdges = connections.filter((c) => c.linkType === 'tool-link');
+  const toolLinks = new Map<string, WorkflowNode[]>();
+  for (const edge of toolLinkEdges) {
+    const fromNode = nodeMap.get(edge.from);
+    const toNode = nodeMap.get(edge.to);
+    if (!fromNode || !toNode) continue;
+    const agentId = fromNode.type === 'tool' ? edge.to : edge.from;
+    const toolId = fromNode.type === 'tool' ? edge.from : edge.to;
+    const toolNode = nodeMap.get(toolId);
+    if (!toolNode || toolNode.type !== 'tool') continue;
+    if (!toolLinks.has(agentId)) toolLinks.set(agentId, []);
+    toolLinks.get(agentId)!.push(toolNode);
+  }
+
+  // Exclude tool nodes from execution graph
+  const execNodes = nodes.filter((n) => n.type !== 'tool');
+
   // Only consider execution-flow edges (exclude tool-links)
   const execEdges = connections.filter((c) => c.linkType !== 'tool-link');
 
@@ -46,10 +70,7 @@ export function buildExecutionQueue(
   const predecessors = new Map<string, WorkflowNode[]>();
   const successors = new Map<string, WorkflowNode[]>();
 
-  // Index nodes by ID for O(1) lookup
-  const nodeMap = new Map<string, WorkflowNode>();
-  for (const node of nodes) {
-    nodeMap.set(node.id, node);
+  for (const node of execNodes) {
     inDegree.set(node.id, 0);
     adjacency.set(node.id, []);
     predecessors.set(node.id, []);
@@ -68,7 +89,7 @@ export function buildExecutionQueue(
 
   // Kahn's with level grouping
   const levels: WorkflowNode[][] = [];
-  let currentLevel = nodes.filter((n) => inDegree.get(n.id) === 0);
+  let currentLevel = execNodes.filter((n) => inDegree.get(n.id) === 0);
 
   let visited = 0;
 
@@ -92,11 +113,11 @@ export function buildExecutionQueue(
     currentLevel = nextLevel;
   }
 
-  if (visited < nodes.length) {
+  if (visited < execNodes.length) {
     throw new Error('Cycle detected in workflow graph — cannot determine execution order');
   }
 
-  return { levels, predecessors, successors };
+  return { levels, predecessors, successors, toolLinks };
 }
 
 /**

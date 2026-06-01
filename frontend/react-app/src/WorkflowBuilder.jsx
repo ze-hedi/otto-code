@@ -1,16 +1,23 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import Canvas from './components/Canvas';
 import AgentDetailPanel from './components/AgentDetailPanel';
 import ToolDetailPanel from './components/ToolDetailPanel';
 import PiAgentFormContainer from './components/agents/PiAgentFormContainer';
+import ContextPanel from './components/ContextPanel';
 import Terminal from './components/Terminal';
 import { createSession, sendMessage } from './AgentChatContext';
 import { generateNodeId, NODE_DEFAULT_SIDES } from './utils';
 import './WorkflowBuilder.css';
 
 const WorkflowBuilder = () => {
+  const location = useLocation();
+  const [projectRepos, setProjectRepos] = useState(location.state?.project?.repos || null);
+  const projectId = location.state?.project?._id || null;
+  const projectName = location.state?.project?.name || null;
+  const projectMainRepo = projectRepos?.[0]?.path || null;
   const [nodes, setNodes] = useState([]);
   const [connections, setConnections] = useState([]);
   const [connectionMode, setConnectionMode] = useState(false);
@@ -24,8 +31,6 @@ const WorkflowBuilder = () => {
   const [tools, setTools] = useState([]);
   const [loadingTools, setLoadingTools] = useState(true);
   const [toolsError, setToolsError] = useState(null);
-  const [mcpTools, setMcpTools] = useState([]);
-  const [loadingMcpTools, setLoadingMcpTools] = useState(true);
   const [selectedToolId, setSelectedToolId] = useState(null);
   const [interfaces, setInterfaces] = useState([]);
   const [loadingInterfaces, setLoadingInterfaces] = useState(true);
@@ -34,7 +39,9 @@ const WorkflowBuilder = () => {
   const [loadingOrchestrators, setLoadingOrchestrators] = useState(true);
   const [orchestratorsError, setOrchestratorsError] = useState(null);
   const [selectedAgentId, setSelectedAgentId] = useState(null);
+  const [contextPanelOpen, setContextPanelOpen] = useState(false);
   const [creatingPiAgent, setCreatingPiAgent] = useState(false);
+  const [createAgentRepoIndex, setCreateAgentRepoIndex] = useState(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [terminalLogs, setTerminalLogs] = useState([]);
@@ -174,8 +181,14 @@ const WorkflowBuilder = () => {
     setHistory(prev => [...prev, { nodes: snapshotRef.current.nodes, connections: snapshotRef.current.connections }]);
   }, []);
 
-  // Fetch agents from database on mount
+  // Fetch agents: use project agents in project mode, otherwise fetch from DB
   useEffect(() => {
+    if (projectRepos) {
+      const projectAgents = projectRepos.flatMap(r => r.agents);
+      setAgents(projectAgents);
+      setLoadingAgents(false);
+      return;
+    }
     setLoadingAgents(true);
     fetch('http://localhost:4000/api/agents')
       .then(res => {
@@ -191,30 +204,37 @@ const WorkflowBuilder = () => {
         setAgentsError(err.message);
         setLoadingAgents(false);
       });
-  }, []);
+  }, [projectRepos]);
 
-  // Fetch tools from database on mount
+  // Auto-load workflow from project repo on mount
   useEffect(() => {
-    setLoadingTools(true);
-    fetch('http://localhost:4000/api/tools')
+    if (!projectMainRepo || !projectName) return;
+    const safeName = projectName.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filePath = `${projectMainRepo}/workflows/${safeName}.json`;
+    fetch(`http://localhost:5000/runtime/workflow/load?filePath=${encodeURIComponent(filePath)}`)
       .then(res => {
-        if (!res.ok) throw new Error('Failed to fetch tools');
+        if (!res.ok) return null;
         return res.json();
       })
       .then(data => {
-        setTools(data);
-        setLoadingTools(false);
+        if (!data || !Array.isArray(data.nodes) || !Array.isArray(data.connections)) return;
+        const importedNodes = data.nodes.map((n) => {
+          const base = { id: n.id, type: n.type, x: n.x, y: n.y };
+          if (n.type === 'agent') return { ...base, agentId: n.agentId, agentName: n.name, agentIcon: n.icon || '🤖', sessionId: n.sessionId, workingDir: n.workingDir };
+          if (n.type === 'orchestrator') return { ...base, orchestratorId: n.orchestratorId, orchestratorName: n.name, orchestratorIcon: n.icon || '🧠' };
+          if (n.type === 'tool') return { ...base, toolId: n.toolId, toolName: n.name, toolIcon: n.icon || '🔧', isMcp: n.isMcp || false };
+          if (n.type === 'artefact') return { ...base, artefactType: n.artefactType, label: n.name, icon: n.icon };
+          return base;
+        });
+        setNodes(importedNodes);
+        setConnections(data.connections);
       })
-      .catch(err => {
-        console.error('Error fetching tools:', err);
-        setToolsError(err.message);
-        setLoadingTools(false);
-      });
-  }, []);
+      .catch(() => {}); // Silently ignore — no saved workflow yet
+  }, [projectMainRepo, projectName]);
 
   // Fetch MCP tools from gateway on mount
   useEffect(() => {
-    setLoadingMcpTools(true);
+    setLoadingTools(true);
     fetch('http://localhost:5000/runtime/mcp-tools')
       .then(res => {
         if (!res.ok) throw new Error('MCP gateway unavailable');
@@ -229,13 +249,14 @@ const WorkflowBuilder = () => {
           isMcp: true,
           inputSchema: t.inputSchema,
         }));
-        setMcpTools(mapped);
-        setLoadingMcpTools(false);
+        setTools(mapped);
+        setLoadingTools(false);
       })
       .catch(err => {
         console.error('MCP tools unavailable:', err.message);
-        setMcpTools([]);
-        setLoadingMcpTools(false);
+        setTools([]);
+        setToolsError(err.message);
+        setLoadingTools(false);
       });
   }, []);
 
@@ -286,6 +307,42 @@ const WorkflowBuilder = () => {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // Add an agent from DB to a project repo
+  const handleAddAgentToRepo = useCallback((agent, repoIndex) => {
+    if (!projectRepos) return;
+    const repo = projectRepos[repoIndex];
+    const existingCount = repo.agents.filter(a => a._id === agent._id).length;
+    const enrichedAgent = {
+      ...agent,
+      sessionId: `${projectName}:${agent._id}:${existingCount}`,
+      workingDir: repo.path,
+      playground: repo.path,
+    };
+    const updatedRepos = projectRepos.map((r, i) =>
+      i === repoIndex ? { ...r, agents: [...r.agents, enrichedAgent] } : r
+    );
+    setProjectRepos(updatedRepos);
+    setAgents(prev => {
+      if (prev.some(a => a._id === agent._id)) return prev;
+      return [...prev, enrichedAgent];
+    });
+
+    // Persist to MongoDB
+    if (projectId) {
+      const dbRepos = updatedRepos.map(r => ({
+        label: r.label,
+        path: r.path,
+        agents: r.agents.map(a => a._id),
+        orchestrators: (r.orchestrators || []).map(o => o._id || o),
+      }));
+      fetch(`/api/projects/${projectId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repos: dbRepos }),
+      }).catch(err => console.error('Failed to update project:', err));
+    }
+  }, [projectRepos, projectName, projectId]);
+
   // Sync updated agent back to sidebar list and canvas nodes
   const handleAgentUpdated = useCallback((updatedAgent) => {
     setAgents((prev) => prev.map((a) => (a._id === updatedAgent._id ? updatedAgent : a)));
@@ -303,6 +360,7 @@ const WorkflowBuilder = () => {
     setSelectedAgentId(null);
     setSelectedToolId(null);
     setCreatingPiAgent(false);
+    setContextPanelOpen(false);
   }, []);
 
   // Open empty PI agent creation form in the right panel
@@ -313,9 +371,14 @@ const WorkflowBuilder = () => {
 
   // Handle newly created PI agent — append to sidebar list and close panel
   const handlePiAgentCreated = useCallback((newAgent) => {
-    setAgents((prev) => [...prev, newAgent]);
+    if (createAgentRepoIndex !== null && projectRepos) {
+      handleAddAgentToRepo(newAgent, createAgentRepoIndex);
+      setCreateAgentRepoIndex(null);
+    } else {
+      setAgents((prev) => [...prev, newAgent]);
+    }
     setCreatingPiAgent(false);
-  }, []);
+  }, [createAgentRepoIndex, projectRepos, handleAddAgentToRepo]);
 
 
   // Persist a tool-link add/remove to the agent's DB record
@@ -367,6 +430,7 @@ const WorkflowBuilder = () => {
         toolId: data.toolId,
         toolName: data.toolName,
         toolIcon: data.toolIcon,
+        isMcp: data.isMcp || false,
         x: x - 55,
         y: y - 40,
       };
@@ -391,6 +455,8 @@ const WorkflowBuilder = () => {
         agentId: data.agentId,
         agentName: data.agentName,
         agentIcon: data.agentIcon || '🤖',
+        ...(data.sessionId ? { sessionId: data.sessionId } : {}),
+        ...(data.workingDir ? { workingDir: data.workingDir } : {}),
         x: x - 55,
         y: y - 40,
       };
@@ -597,7 +663,7 @@ const WorkflowBuilder = () => {
       nodes: nodes.map((n) => {
         const base = { id: n.id, type: n.type, x: n.x, y: n.y };
         if (n.type === 'agent') return { ...base, name: n.agentName, icon: n.agentIcon, agentId: n.agentId };
-        if (n.type === 'tool') return { ...base, name: n.toolName, icon: n.toolIcon, toolId: n.toolId };
+        if (n.type === 'tool') return { ...base, name: n.toolName, icon: n.toolIcon, toolId: n.toolId, isMcp: n.isMcp || false };
         if (n.type === 'artefact') return { ...base, name: n.label, icon: n.icon, artefactType: n.artefactType };
         return base;
       }),
@@ -628,7 +694,7 @@ const WorkflowBuilder = () => {
     const importedNodes = data.nodes.map((n) => {
       const base = { id: n.id, type: n.type, x: n.x, y: n.y };
       if (n.type === 'agent') return { ...base, agentId: n.agentId, agentName: n.name, agentIcon: n.icon || '🤖' };
-      if (n.type === 'tool') return { ...base, toolId: n.toolId, toolName: n.name, toolIcon: n.icon || '🔧' };
+      if (n.type === 'tool') return { ...base, toolId: n.toolId, toolName: n.name, toolIcon: n.icon || '🔧', isMcp: n.isMcp || false };
       if (n.type === 'artefact') return { ...base, artefactType: n.artefactType, label: n.name, icon: n.icon };
       return base;
     });
@@ -664,7 +730,11 @@ const WorkflowBuilder = () => {
           const filesRes = await fetch(`http://localhost:4000/api/agents/${n.agentId}/files`);
           if (filesRes.ok) files = await filesRes.json();
         } catch {}
-        return { ...base, ...agentData, files };
+        return {
+          ...base, ...agentData, files,
+          ...(n.workingDir ? { workingDir: n.workingDir, playground: n.workingDir } : {}),
+          ...(n.sessionId ? { sessionId: n.sessionId } : {}),
+        };
       }
       if (n.type === 'orchestrator') {
         // Fetch full orchestrator data with populated sub-agents
@@ -697,7 +767,7 @@ const WorkflowBuilder = () => {
         } catch {}
         return { ...base, ...orchData, orchestratorId: n.orchestratorId, subAgents, files: orchFiles };
       }
-      if (n.type === 'tool') return { ...base, name: n.toolName, icon: n.toolIcon, toolId: n.toolId };
+      if (n.type === 'tool') return { ...base, name: n.toolName, icon: n.toolIcon, toolId: n.toolId, isMcp: n.isMcp || false };
       if (n.type === 'artefact') return { ...base, name: n.label, icon: n.icon, artefactType: n.artefactType };
       return base;
     }));
@@ -760,6 +830,33 @@ const WorkflowBuilder = () => {
           setActiveChatTab(firstCompositeKey);
         }
       }
+      // Auto-save workflow to project repo (silent, fire-and-forget)
+      if (projectMainRepo && projectName) {
+        const safeName = projectName.replace(/[^a-zA-Z0-9_-]/g, '_');
+        const workflowFilePath = `${projectMainRepo}/workflows/${safeName}.json`;
+        const workflowData = {
+          exportedAt: new Date().toISOString(),
+          projectName,
+          nodes: nodes.map((n) => {
+            const base = { id: n.id, type: n.type, x: n.x, y: n.y };
+            if (n.type === 'agent') return { ...base, name: n.agentName, icon: n.agentIcon, agentId: n.agentId, sessionId: n.sessionId, workingDir: n.workingDir };
+            if (n.type === 'orchestrator') return { ...base, name: n.orchestratorName, icon: n.orchestratorIcon, orchestratorId: n.orchestratorId };
+            if (n.type === 'tool') return { ...base, name: n.toolName, icon: n.toolIcon, toolId: n.toolId, isMcp: n.isMcp || false };
+            if (n.type === 'artefact') return { ...base, name: n.label, icon: n.icon, artefactType: n.artefactType };
+            return base;
+          }),
+          connections: connections.map((c) => ({
+            from: c.from, fromSide: c.fromSide, to: c.to, toSide: c.toSide,
+            ...(c.linkType ? { linkType: c.linkType } : {}),
+          })),
+        };
+        fetch('http://localhost:5000/runtime/workflow/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filePath: workflowFilePath, data: workflowData }),
+        }).catch((err) => addLog('error', `Workflow auto-save failed: ${err.message}`));
+      }
+
       addLog('info', `Workflow started (${data.mode})`);
       addLog('info', `Session: ${data.sessionId}`);
       if (data.agentDetails) {
@@ -781,7 +878,7 @@ const WorkflowBuilder = () => {
     } catch (err) {
       addLog('error', `Failed: ${err.message}`);
     }
-  }, [nodes, connections, agents, addLog, workflowSessionId]);
+  }, [nodes, connections, agents, addLog, workflowSessionId, projectMainRepo, projectName]);
 
   const handleClear = useCallback(() => {
     saveSnapshot();
@@ -809,14 +906,24 @@ const WorkflowBuilder = () => {
         onImport={handleImport}
         onRun={handleRun}
         onClear={handleClear}
+        projectMode={!!projectMainRepo}
+        contextOpen={contextPanelOpen}
+        onToggleContext={() => {
+          if (contextPanelOpen) {
+            setContextPanelOpen(false);
+          } else {
+            closeAllPanels();
+            setContextPanelOpen(true);
+          }
+        }}
       />
       <div className="wf-body">
         <Sidebar
           agents={agents}
           loadingAgents={loadingAgents}
           agentsError={agentsError}
-          tools={[...tools, ...mcpTools]}
-          loadingTools={loadingTools || loadingMcpTools}
+          tools={tools}
+          loadingTools={loadingTools}
           toolsError={toolsError}
           interfaces={interfaces}
           loadingInterfaces={loadingInterfaces}
@@ -832,6 +939,13 @@ const WorkflowBuilder = () => {
           onBuildPiAgent={handleBuildPiAgent}
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
+          projectRepos={projectRepos}
+          onAddAgentToRepo={handleAddAgentToRepo}
+          onCreateAgentForRepo={(repoIndex) => {
+            closeAllPanels();
+            setCreateAgentRepoIndex(repoIndex);
+            setCreatingPiAgent(true);
+          }}
         />
         <div className={`wf-canvas-area${terminalOpen ? ' wf-canvas-area--split' : ''}`}>
           <Canvas
@@ -866,11 +980,12 @@ const WorkflowBuilder = () => {
             availableTools={tools}
             onClose={() => setSelectedAgentId(null)}
             onAgentUpdated={handleAgentUpdated}
+            projectMode={!!projectRepos}
           />
         )}
         {selectedToolId && (
           <ToolDetailPanel
-            tool={[...tools, ...mcpTools].find((t) => t._id === selectedToolId)}
+            tool={tools.find((t) => t._id === selectedToolId)}
             onClose={() => setSelectedToolId(null)}
           />
         )}
@@ -884,10 +999,17 @@ const WorkflowBuilder = () => {
               <PiAgentFormContainer
                 onCreated={handlePiAgentCreated}
                 onUpdated={() => {}}
-                onCancel={() => setCreatingPiAgent(false)}
+                onCancel={() => { setCreatingPiAgent(false); setCreateAgentRepoIndex(null); }}
+                initialPlayground={createAgentRepoIndex !== null && projectRepos ? projectRepos[createAgentRepoIndex]?.path : undefined}
               />
             </div>
           </div>
+        )}
+        {contextPanelOpen && projectMainRepo && (
+          <ContextPanel
+            projectMainRepo={projectMainRepo}
+            onClose={() => setContextPanelOpen(false)}
+          />
         )}
       </div>
       

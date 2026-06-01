@@ -1,0 +1,9 @@
+[project]
+name = "tui"
+version = "0.1.0"
+description = "A CLI chat app built with Textual"
+requires-python = ">=3.10"
+dependencies = [
+    "textual",
+    "httpx",
+]

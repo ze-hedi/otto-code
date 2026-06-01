@@ -5,14 +5,14 @@ import AgentForm from '../AgentForm';
  * Self-contained container for the Pi agent form.
  * Owns all form state; delegates rendering to the existing AgentForm component.
  */
-function PiAgentFormContainer({ editingAgent, onCreated, onUpdated, onCancel }) {
+function PiAgentFormContainer({ editingAgent, onCreated, onUpdated, onCancel, initialPlayground }) {
   const [formName, setFormName]             = useState(editingAgent?.name        || '');
   const [formDescription, setFormDescription] = useState(editingAgent?.description || '');
   const [model, setModel]                   = useState(editingAgent?.model        || '');
   const [thinkingLevel, setThinkingLevel]   = useState(editingAgent?.thinkingLevel || 'medium');
   const [sessionMode, setSessionMode]       = useState(editingAgent?.sessionMode  || 'memory');
   const [workingDir, setWorkingDir]         = useState(editingAgent?.workingDir   || '');
-  const [playground, setPlayground]         = useState(editingAgent?.playground   || '');
+  const [playground, setPlayground]         = useState(editingAgent?.playground   || initialPlayground || '');
   const [systemPromptMode, setSystemPromptMode] = useState('write');
   const [systemPromptText, setSystemPromptText] = useState('');
   const [systemPromptFile, setSystemPromptFile] = useState(null);
@@ -49,10 +49,9 @@ function PiAgentFormContainer({ editingAgent, onCreated, onUpdated, onCancel }) 
       .then((files) => {
         const soul      = files.find((f) => f.type === 'soul');
         const skillsFile = files.find((f) => f.type === 'skills');
-        if (soul) {
-          setSystemPromptMode('upload');
-          setSystemPromptFile({ name: 'system_prompt.md', content: soul.content });
-        }
+        setSystemPromptMode('write');
+        setSystemPromptText(soul ? soul.content : '');
+        setSystemPromptFile(null);
         if (skillsFile) {
           setSkills([{ name: 'skills.md', content: skillsFile.content, preloaded: true }]);
         }

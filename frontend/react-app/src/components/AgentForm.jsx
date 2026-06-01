@@ -240,24 +240,26 @@ function AgentForm({
         <div className="form-group">
           <div className="form-label-row">
             <label className="form-label">System Prompt Suffix</label>
-            <div className="tab-toggle">
-              <button
-                type="button"
-                className={`tab-btn${systemPromptMode === 'write' ? ' active' : ''}`}
-                onClick={() => setSystemPromptMode('write')}
-              >
-                Write
-              </button>
-              <button
-                type="button"
-                className={`tab-btn${systemPromptMode === 'upload' ? ' active' : ''}`}
-                onClick={() => setSystemPromptMode('upload')}
-              >
-                Upload
-              </button>
-            </div>
+            {!editingAgent && (
+              <div className="tab-toggle">
+                <button
+                  type="button"
+                  className={`tab-btn${systemPromptMode === 'write' ? ' active' : ''}`}
+                  onClick={() => setSystemPromptMode('write')}
+                >
+                  Write
+                </button>
+                <button
+                  type="button"
+                  className={`tab-btn${systemPromptMode === 'upload' ? ' active' : ''}`}
+                  onClick={() => setSystemPromptMode('upload')}
+                >
+                  Upload
+                </button>
+              </div>
+            )}
           </div>
-          {systemPromptMode === 'write' ? (
+          {editingAgent || systemPromptMode === 'write' ? (
             <textarea
               className="form-textarea"
               placeholder="Additional instructions appended to Pi's default system prompt..."

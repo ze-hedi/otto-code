@@ -10,6 +10,7 @@ const Interface = require('./models/Interface');
 const MultiAgentPattern = require('./models/MultiAgentPattern');
 const Orchestrator = require('./models/Orchestrator');
 const MemoryAgent = require('./models/MemoryAgent');
+const Project = require('./models/Project');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -470,6 +471,106 @@ app.delete('/api/orchestrators/:id', async (req, res) => {
     await Orchestrator.deleteOne({ orchestrator_id: agent._id });
     await AgentFile.deleteMany({ agent_id: agent._id });
     res.json({ message: 'Orchestrator deleted successfully', agent });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ── Project endpoints ───────────────────────────────────────────────────────
+
+app.get('/api/projects', async (req, res) => {
+  try {
+    const projects = await Project.find()
+      .populate('repos.agents')
+      .populate('repos.orchestrators')
+      .sort({ createdAt: -1 });
+    res.json(projects);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/projects', async (req, res) => {
+  try {
+    const { name, description, repos } = req.body;
+    if (!name || !description || !repos?.length) {
+      return res.status(400).json({ error: 'name, description, and repos are required' });
+    }
+    const project = await Project.create({ name, description, repos });
+    res.status(201).json(project);
+  } catch (err) {
+    if (err.code === 11000) {
+      res.status(400).json({ error: 'A project with this name already exists' });
+    } else {
+      res.status(400).json({ error: err.message });
+    }
+  }
+});
+
+app.get('/api/projects/:id', async (req, res) => {
+  try {
+    const project = await Project.findById(req.params.id)
+      .populate('repos.agents')
+      .populate('repos.orchestrators');
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    res.json(project);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.put('/api/projects/:id', async (req, res) => {
+  try {
+    const { name, description, repos } = req.body;
+    const project = await Project.findByIdAndUpdate(
+      req.params.id,
+      { name, description, repos },
+      { returnDocument: 'after', runValidators: true }
+    );
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    res.json(project);
+  } catch (err) {
+    if (err.code === 11000) {
+      res.status(400).json({ error: 'A project with this name already exists' });
+    } else {
+      res.status(400).json({ error: err.message });
+    }
+  }
+});
+
+app.delete('/api/projects/:id', async (req, res) => {
+  try {
+    const project = await Project.findByIdAndDelete(req.params.id);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    res.json({ message: 'Project deleted successfully', project });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/projects/:id/sessions', async (req, res) => {
+  try {
+    const { sessionId, filename, filePath } = req.body;
+    if (!sessionId || !filename || !filePath) {
+      return res.status(400).json({ error: 'sessionId, filename, and filePath are required' });
+    }
+    const project = await Project.findByIdAndUpdate(
+      req.params.id,
+      { $push: { sessions: { sessionId, filename, filePath } } },
+      { returnDocument: 'after' }
+    );
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    res.status(201).json(project.sessions[project.sessions.length - 1]);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/api/projects/:id/sessions', async (req, res) => {
+  try {
+    const project = await Project.findById(req.params.id);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    res.json(project.sessions);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
