@@ -120,23 +120,28 @@ class ChatScreen(Screen):
         message_area = self.query_one("#message-area")
 
         self._current_text = ""
-        self._current_bubble = AssistantBubble()
-        message_area.mount(self._current_bubble)
+        self._current_bubble = None
+        needs_new_bubble = True
 
         try:
             async for event in stream_chat(self.session_id, text):
                 event_type = event.get("type")
 
                 if event_type == "delta":
+                    if needs_new_bubble or self._current_bubble is None:
+                        self._current_text = ""
+                        self._current_bubble = AssistantBubble()
+                        message_area.mount(self._current_bubble)
+                        needs_new_bubble = False
                     self._current_text += event.get("text", "")
                     self._current_bubble.update(self._current_text)
-                    message_area.scroll_end(animate=False)
+                    self.call_after_refresh(message_area.scroll_end, animate=False)
 
                 elif event_type == "tool_start":
                     name = event.get("name", "unknown")
                     info = Static(f"  [tool: {name}]", classes="tool-info")
                     message_area.mount(info)
-                    message_area.scroll_end(animate=False)
+                    self.call_after_refresh(message_area.scroll_end, animate=False)
 
                 elif event_type == "sub_agents_spawned":
                     sub_agents = event.get("subAgents", [])
@@ -149,7 +154,8 @@ class ChatScreen(Screen):
                     status = "error" if is_error else "done"
                     info = Static(f"  [tool: {name} — {status}]", classes="tool-info")
                     message_area.mount(info)
-                    message_area.scroll_end(animate=False)
+                    self.call_after_refresh(message_area.scroll_end, animate=False)
+                    needs_new_bubble = True
 
                     if name == "explore_repos":
                         self._collapse_panels()
@@ -159,6 +165,9 @@ class ChatScreen(Screen):
 
                 elif event_type == "error":
                     error_msg = event.get("message", "Unknown error")
+                    if self._current_bubble is None:
+                        self._current_bubble = AssistantBubble()
+                        message_area.mount(self._current_bubble)
                     self._current_bubble.update(
                         self._current_text + f"\n\n**Error:** {error_msg}"
                     )
@@ -221,7 +230,7 @@ class ChatScreen(Screen):
                     bubble.update(self._panel_texts[agent_id])
                     panel = bubble.parent
                     if panel:
-                        panel.scroll_end(animate=False)
+                        self.call_after_refresh(panel.scroll_end, animate=False)
 
                 elif event_type == "tool_start":
                     name = event.get("name", "unknown")
@@ -229,7 +238,7 @@ class ChatScreen(Screen):
                     panel = bubble.parent
                     if panel:
                         panel.mount(info)
-                        panel.scroll_end(animate=False)
+                        self.call_after_refresh(panel.scroll_end, animate=False)
 
                 elif event_type == "tool_end":
                     name = event.get("name", "unknown")
@@ -239,7 +248,7 @@ class ChatScreen(Screen):
                     panel = bubble.parent
                     if panel:
                         panel.mount(info)
-                        panel.scroll_end(animate=False)
+                        self.call_after_refresh(panel.scroll_end, animate=False)
 
                 elif event_type == "done":
                     break
