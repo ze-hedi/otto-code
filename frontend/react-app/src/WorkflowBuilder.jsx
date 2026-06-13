@@ -7,6 +7,7 @@ import AgentDetailPanel from './components/AgentDetailPanel';
 import ToolDetailPanel from './components/ToolDetailPanel';
 import PiAgentFormContainer from './components/agents/PiAgentFormContainer';
 import ContextPanel from './components/ContextPanel';
+import ScrumRoomPanel from './components/ScrumRoomPanel';
 import Terminal from './components/Terminal';
 import { createSession, sendMessage } from './AgentChatContext';
 import { generateNodeId, NODE_DEFAULT_SIDES } from './utils';
@@ -48,6 +49,7 @@ const WorkflowBuilder = () => {
   const [activeSessionAgent, setActiveSessionAgent] = useState(null);
   const [workflowSessionId, setWorkflowSessionId] = useState(null);
   const [hookPopup, setHookPopup] = useState(null);
+  const [selectedScrumRoomNodeId, setSelectedScrumRoomNodeId] = useState(null);
   const [hookProgress, setHookProgress] = useState(null); // { interfaceName, received, expected }
   const [chatTabs, setChatTabs] = useState([]);
   const [activeChatTab, setActiveChatTab] = useState(null);
@@ -269,7 +271,8 @@ const WorkflowBuilder = () => {
         return res.json();
       })
       .then(data => {
-        setInterfaces(data);
+        const scrumRoom = { _id: 'scrum-room', name: 'Scrum Room', icon: '🏉', description: 'A collaborative scrum room interface for team coordination' };
+        setInterfaces([scrumRoom, ...data]);
         setLoadingInterfaces(false);
       })
       .catch(err => {
@@ -361,6 +364,7 @@ const WorkflowBuilder = () => {
     setSelectedToolId(null);
     setCreatingPiAgent(false);
     setContextPanelOpen(false);
+    setSelectedScrumRoomNodeId(null);
   }, []);
 
   // Open empty PI agent creation form in the right panel
@@ -511,6 +515,9 @@ const WorkflowBuilder = () => {
       if (node?.type === 'agent') {
         closeAllPanels();
         setSelectedAgentId(node.agentId);
+      } else if (node?.type === 'artefact' && node.artefactType === 'scrum-room') {
+        closeAllPanels();
+        setSelectedScrumRoomNodeId(node.id);
       }
       return;
     }
@@ -1004,6 +1011,12 @@ const WorkflowBuilder = () => {
               />
             </div>
           </div>
+        )}
+        {selectedScrumRoomNodeId && (
+          <ScrumRoomPanel
+            node={nodes.find((n) => n.id === selectedScrumRoomNodeId)}
+            onClose={() => setSelectedScrumRoomNodeId(null)}
+          />
         )}
         {contextPanelOpen && projectMainRepo && (
           <ContextPanel

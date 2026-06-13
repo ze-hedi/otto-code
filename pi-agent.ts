@@ -164,6 +164,12 @@ export interface ToolInput {
   promptGuidelines?: string[];
   /** Optional: Execution mode override */
   executionMode?: "sequential" | "parallel";
+  /** Execute handler for this tool */
+  execute: (
+    toolCallId: string,
+    params: any,
+    signal?: AbortSignal
+  ) => Promise<{ content: any[]; details?: any }>;
 }
 
 export interface PiAgentConfig {
@@ -193,16 +199,6 @@ export interface PiAgentConfig {
   handlers?: PiAgentEventHandlers;
   /** Custom tools to register at construction time */
   tools?: ToolInput[];
-  /**
-   * External tool execution handler.
-   * Called when a custom tool needs to execute.
-   */
-  onToolExecute?: (
-    toolCallId: string,
-    toolName: string,
-    params: any,
-    signal?: AbortSignal
-  ) => Promise<{ content: any[]; details?: any }>;
   /** Override directory for session persistence (used by SessionManager.create). */
   sessionDir?: string;
   /** Mem0 configuration. When provided, a Mem0 instance is created with a per-agent history DB. */
@@ -238,13 +234,12 @@ export class PiAgent {
   private modelRegistry: ModelRegistry;
   private model: Model<Api>;
   private config: Required<
-    Omit<PiAgentConfig, "apiKey" | "workingDir" | "playground" | "model" | "skills" | "handlers" | "tools" | "onToolExecute" | "mem0Config" | "compaction" | "sessionDir" | "name" | "toolCallGuardrails" | "mcpEndpoint" | "mcpConnectionTimeout">
+    Omit<PiAgentConfig, "apiKey" | "workingDir" | "playground" | "model" | "skills" | "handlers" | "tools" | "mem0Config" | "compaction" | "sessionDir" | "name" | "toolCallGuardrails" | "mcpEndpoint" | "mcpConnectionTimeout">
   > & {
     workingDir: string;
     playground: string;
     skills: SkillInput[];
     handlers: PiAgentEventHandlers;
-    onToolExecute?: PiAgentConfig["onToolExecute"];
   };
   private currentSession: AgentSession | null = null;
   private skillsTmpDir: string | null = null;
@@ -295,7 +290,6 @@ export class PiAgent {
       playground: config.playground ?? process.cwd(),
       skills: config.skills ?? [],
       handlers: config.handlers ?? {},
-      onToolExecute: config.onToolExecute,
     };
 
     // Store optional overrides for session creation
@@ -328,8 +322,6 @@ export class PiAgent {
    * The execute function delegates to the external handler.
    */
   private _createToolDefinition(toolInput: ToolInput): ToolDefinition {
-    const onToolExecute = this.config.onToolExecute;
-
     return {
       name: toolInput.name,
       label: toolInput.label,
@@ -339,16 +331,9 @@ export class PiAgent {
       promptGuidelines: toolInput.promptGuidelines,
       executionMode: toolInput.executionMode,
 
-      // Execute function delegates to external handler
       async execute(toolCallId, params, signal, _onUpdate, _ctx) {
-        if (!onToolExecute) {
-          throw new Error(
-            `Tool "${toolInput.name}" was called but no onToolExecute handler is configured`
-          );
-        }
-
         try {
-          const result = await onToolExecute(toolCallId, toolInput.name, params, signal);
+          const result = await toolInput.execute(toolCallId, params, signal);
           return {
             content: result.content,
             details: result.details ?? {},
