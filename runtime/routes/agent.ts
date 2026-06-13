@@ -17,6 +17,7 @@ import {
   clearSessionHooks,
   setCurrentAgentId,
   resolveModel,
+  workflowEvents,
 } from '../state.js';
 import type { RunRequest, AgentFile } from '../types.js';
 
@@ -216,6 +217,12 @@ router.post('/runtime/chat/:id', async (req, res) => {
     send({ type: 'tool_approval_required', toolCallId, name: toolName, args });
   });
 
+  // Forward sub_agents_spawned events to the SSE client
+  const onSubAgentsSpawned = (data: { subAgents: string[] }) => {
+    send({ type: 'sub_agents_spawned', subAgents: data.subAgents });
+  };
+  workflowEvents.on('sub_agents_spawned', onSubAgentsSpawned);
+
   try {
     await piAgent.chat(message.trim(), (event) => {
       handleEvent(event) ;
@@ -224,8 +231,67 @@ router.post('/runtime/chat/:id', async (req, res) => {
   } catch (err: any) {
     send({ type: 'error', message: err?.message ?? String(err) });
   } finally {
+    workflowEvents.off('sub_agents_spawned', onSubAgentsSpawned);
     res.end();
   }
+});
+
+/**
+ * GET /runtime/agents/:id/observe
+ *
+ * Subscribes to an already-running agent's event stream via SSE.
+ * Does NOT send a message — just taps into the live session events.
+ * Useful for observing sub-agents spawned by tools like explore_repos.
+ */
+router.get('/runtime/agents/:id/observe', async (req, res) => {
+  const { id } = req.params;
+  const piAgent = activeAgents.get(id);
+
+  if (!piAgent) {
+    res.status(404).json({ error: 'Agent not found in runtime.' });
+    return;
+  }
+
+  const session = piAgent.getCurrentSession();
+  if (!session) {
+    res.status(404).json({ error: 'Agent has no active session.' });
+    return;
+  }
+
+  // Set up SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  let closed = false;
+  res.on('close', () => { closed = true; });
+
+  const send = (payload: object) => {
+    if (!closed) res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
+
+  console.log(`[runtime] observe → agent ${id}`);
+
+  const unsubscribe = session.subscribe((event: any) => {
+    handleEventWithClient(event, send);
+  });
+
+  // Keep connection open until client disconnects or agent finishes
+  // We detect agent_end to close the stream
+  const unsubEnd = session.subscribe((event: any) => {
+    if (event.type === 'agent_end') {
+      send({ type: 'done' });
+      unsubscribe();
+      unsubEnd();
+      res.end();
+    }
+  });
+
+  res.on('close', () => {
+    unsubscribe();
+    unsubEnd();
+  });
 });
 
 /**

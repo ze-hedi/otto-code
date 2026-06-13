@@ -209,6 +209,13 @@ export interface PiAgentConfig {
   mcpEndpoint?: string;
   /** MCP connection timeout in ms (default: 5000). */
   mcpConnectionTimeout?: number;
+  /**
+   * Which built-in tools the agent is allowed to use.
+   * Defaults to ["read", "bash", "edit", "write"] (the SDK default).
+   * Pass a subset to restrict (e.g. ["read", "bash", "grep", "ls"] for read-only agents).
+   * Pass [] to disable all built-in tools.
+   */
+  builtInTools?: string[];
   /** Compaction (context compression) settings */
   compaction?: {
     /** Enable/disable auto-compaction (default: true) */
@@ -257,6 +264,7 @@ export class PiAgent {
   private _mcpEndpoint: string | undefined;
   private _mcpConnectionTimeout: number;
   private _mcpToolNames: Set<string> = new Set();
+  private _builtInTools: string[];
 
   constructor(config: PiAgentConfig) {
     const [provider, modelName] = config.model.split("/");
@@ -299,6 +307,7 @@ export class PiAgent {
     this._toolCallGuardrails = config.toolCallGuardrails ?? false;
     this._mcpEndpoint = config.mcpEndpoint;
     this._mcpConnectionTimeout = config.mcpConnectionTimeout ?? 5000;
+    this._builtInTools = config.builtInTools ?? ["read", "bash", "edit", "write"];
 
     // Initialize mem0 if configured
     if (config.mem0Config) {
@@ -671,6 +680,7 @@ export class PiAgent {
       modelRegistry: this.modelRegistry,
       thinkingLevel: this.config.thinkingLevel,
       resourceLoader,
+      tools: this._builtInTools,
       ...(settingsManager ? { settingsManager } : {}),
       // Add custom tools if any are registered
       ...(this.toolDefinitions.size > 0 ? { customTools: Array.from(this.toolDefinitions.values()) } : {}),

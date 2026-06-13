@@ -1,27 +1,27 @@
 import "dotenv/config";
-import readline from "readline"
 import fs from "fs";
 import path from "path";
 import { Type } from "typebox";
 import { PiAgent, ToolInput } from "../pi-agent.js";
+import { activeAgents, sessionAgentMap, workflowEvents } from "../runtime/state.js";
 
-const subAgentPrompt = fs.readFileSync(
+export const subAgentPrompt = fs.readFileSync(
   path.join(import.meta.dirname, "explorer_system_prompt.md"),
   "utf-8"
 );
 
-const orchestratorPrompt = fs.readFileSync(
+export const orchestratorPrompt = fs.readFileSync(
   path.join(import.meta.dirname, "explorer_orchestrator_prompt.md"),
   "utf-8"
 );
 
-const PLAYGROUND = path.join(process.env.HOME!, "code/otto_code");
-const MODEL = "deepseek/deepseek-v4-pro";
-const THINKING: "high" = "high";
+export const PLAYGROUND = path.join(process.env.HOME!, "code/otto_code");
+export const EXPLORER_MODEL = "deepseek/deepseek-v4-pro";
+export const EXPLORER_THINKING: "high" = "high";
 
 // ── explore_repos tool ──────────────────────────────────────────────────────────
 
-const exploreReposTool: ToolInput = {
+export const exploreReposTool: ToolInput = {
   name: "explore_repos",
   label: "Explore Repos",
   description:
@@ -61,53 +61,62 @@ const exploreReposTool: ToolInput = {
       }
     }
 
-    // Spawn sub-agents in parallel — each shares the orchestrator's playground
-    // so they retain the bigger picture. The repo focus is in the prompt.
+    // Create sub-agents and register them in the runtime so the TUI can observe
+    const subAgentIds: string[] = [];
+    const subAgents: { id: string; agent: PiAgent; repoPath: string; repoName: string; focusPrompt: string }[] = [];
+
+    for (const repoPath of resolved) {
+      const repoName = path.basename(repoPath);
+      const subId = `explorer-sub-${repoName}`;
+
+      const focusPrompt = [
+        `Task: ${task}`,
+        `Focus directory: ${repoPath}`,
+        `Concentrate your exploration on the directory above, but you have access to the entire playground (${PLAYGROUND}) for cross-referencing dependencies, shared configs, or sibling repos when needed.`,
+        ...(directives ? [`Directives: ${directives}`] : []),
+      ].join("\n");
+
+      const subAgent = new PiAgent({
+        name: `explorer-${repoName}`,
+        model: EXPLORER_MODEL,
+        systemPromptSuffix: subAgentPrompt,
+        builtInTools: ["read", "bash"],
+        playground: PLAYGROUND,
+        sessionMode: "memory",
+        thinkingLevel: EXPLORER_THINKING,
+      });
+
+      // Register in runtime so /runtime/agents/:id/observe can tap in
+      activeAgents.set(subId, subAgent);
+      sessionAgentMap.set(subId, subId);
+      subAgentIds.push(subId);
+      subAgents.push({ id: subId, agent: subAgent, repoPath, repoName, focusPrompt });
+
+      console.log(`[explore_repos] registered sub-agent "${subId}"`);
+    }
+
+    // Create sessions before notifying TUI (so observe endpoint finds them)
+    for (const { agent: subAgent } of subAgents) {
+      await subAgent.getSession();
+    }
+
+    // Notify TUI about the sub-agents before starting execution
+    workflowEvents.emit('sub_agents_spawned', { subAgents: subAgentIds });
+
+    // Spawn sub-agents in parallel
     const results = await Promise.all(
-      resolved.map(async (repoPath) => {
-        const repoName = path.basename(repoPath);
-
-        const focusPrompt = [
-          `Task: ${task}`,
-          `Focus directory: ${repoPath}`,
-          `Concentrate your exploration on the directory above, but you have access to the entire playground (${PLAYGROUND}) for cross-referencing dependencies, shared configs, or sibling repos when needed.`,
-          ...(directives ? [`Directives: ${directives}`] : []),
-        ].join("\n");
-
+      subAgents.map(async ({ id: subId, agent: subAgent, repoPath, repoName, focusPrompt }) => {
         try {
-          const subAgent = new PiAgent({
-            name: `explorer-${repoName}`,
-            model: MODEL,
-            systemPromptSuffix: subAgentPrompt,
-            playground: PLAYGROUND,
-            sessionMode: "memory",
-            thinkingLevel: THINKING,
-            // No tools — sub-agents are leaf explorers, no recursion
-          });
-
-
-          console.log({
-            name: `explorer-${repoName}`,
-            model: MODEL,
-            systemPromptSuffix: subAgentPrompt,
-            playground: PLAYGROUND,
-            sessionMode: "memory",
-            thinkingLevel: THINKING,
-            // No tools — sub-agents are leaf explorers, no recursion
-          })
-
           const start = performance.now();
-          console.log("sub prompt ", focusPrompt);
-          await subAgent.execute(focusPrompt);
-          const elapsed = performance.now() - start; // milliseconds (float)
-          console.log(`Took ${elapsed.toFixed(3)} ms`);
+          console.log(`[explore_repos] starting ${subId}`);
+          await subAgent.chat(focusPrompt);
+          const elapsed = performance.now() - start;
+          console.log(`[explore_repos] ${subId} took ${elapsed.toFixed(0)} ms`);
 
-          // Extract text from the last assistant message only (the final report)
+          // Extract text from the last assistant message
           const messages = await subAgent.getMessages();
-          console.log(`[${repoName}] total messages: ${messages.length}`, messages.map(m => ({ role: m.role, contentPreview: typeof m.content === 'string' ? m.content.slice(0, 200) : Array.isArray(m.content) ? m.content.map((b: any) => b.type).join(',') : '???' })));
           const lastAssistant = messages.filter((m) => m.role === "assistant").at(-1);
-          console.log(`[${repoName}] lastAssistant:`, JSON.stringify(lastAssistant, null, 2).slice(0, 1000));
-          
+
           let output = "";
           if (lastAssistant) {
             if (typeof lastAssistant.content === "string") {
@@ -132,6 +141,13 @@ const exploreReposTool: ToolInput = {
       })
     );
 
+    // Clean up sub-agents from runtime
+    for (const subId of subAgentIds) {
+      activeAgents.delete(subId);
+      sessionAgentMap.delete(subId);
+      console.log(`[explore_repos] cleaned up sub-agent "${subId}"`);
+    }
+
     // Combine reports
     const combined = results
       .map((r) => {
@@ -141,9 +157,6 @@ const exploreReposTool: ToolInput = {
       })
       .join("\n\n---\n\n");
 
-
-    console.log("sub agents results combined ") ; 
-    console.log(combined) ; 
     return { content: [{ type: "text", text: combined }] };
   },
 };
@@ -152,11 +165,12 @@ const exploreReposTool: ToolInput = {
 
 export const explorer = new PiAgent({
   name: "explorer",
-  model: MODEL,
+  model: EXPLORER_MODEL,
   systemPromptSuffix: orchestratorPrompt,
+  builtInTools: ["read", "bash"],
   playground: PLAYGROUND,
   sessionMode: "memory",
-  thinkingLevel: THINKING,
+  thinkingLevel: EXPLORER_THINKING,
   tools: [exploreReposTool],
   handlers: {
   //   onAgentStart: () => console.log("\n[agent] started"),
@@ -190,40 +204,30 @@ export const explorer = new PiAgent({
 });
 
 
-console.log("system prompt ")
-const session = await explorer.getSession();
-console.log(session.systemPrompt);
-// console.log("\n\n=== TOOLS ===\n");
-// console.log(JSON.stringify(session.getAllTools(), null, 2));
+// CLI entry point — only runs when this file is executed directly
+const isDirectRun = process.argv[1]?.includes("explorer");
+if (isDirectRun) {
+  const readline = await import("readline");
 
+  console.log("system prompt ");
+  const session = await explorer.getSession();
+  console.log(session.systemPrompt);
 
-// console.log("\n\n\n") ;   
-// explorer.execute("explore the whole code base. Before delegating to sub agent. you need to do a rapid scan of the whole code base to identify different "+
-//   "elevant parts or repos then you can get the explorer sub agents to do check these parts. One your analysis is done i want to generate an artifact called code_overview.md that will be fed to wiki creator agent. "+
-//   "The wiki creator agent is an agent that is supposed to create a wiki like repo with multiple md files that keep an overview with details about the code. that will be used by other agent when they start exploring the code instead of doing grep that consumes lots of tokens for nothing ")
+  while (true) {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+    const answer = await new Promise<string>((resolve) => {
+      rl.question("enter query ", resolve);
+    });
 
-while (true)
-{
+    if (answer === "exit") {
+      rl.close();
+      break;
+    }
 
-  const rl = readline.createInterface({
-    input : process.stdin, 
-    output : process.stdout
-  }) ; 
-  const answer = await new Promise<string>((resolve) => {
-    rl.question("enter query " , resolve) ;
-  }); 
-  
-  if (answer == "exit")
-  {
-    rl.close() ; 
-    break ; 
-
+    await explorer.chat(answer);
   }
-  
-  await explorer.chat(
-    answer 
-    
-  );
-
 }
 

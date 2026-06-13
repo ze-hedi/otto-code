@@ -8,6 +8,7 @@ import './load-env.js';
 import express from 'express';
 import cors from 'cors';
 import { activeAgents, sessionAgentMap, currentAgentId } from './state.js';
+import { registerDefaultAgents } from './default-agents.js';
 import agentRoutes from './routes/agent.js';
 import orchestratorRoutes from './routes/orchestrator.js';
 import filesRoutes from './routes/files.js';
@@ -71,6 +72,7 @@ app.get('/runtime/mcp-tools', async (_req, res) => {
 
 // ─── Start ───────────────────────────────────────────────────────────────────
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Runtime server running on http://localhost:${PORT}`);
+  await registerDefaultAgents();
 });
