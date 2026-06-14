@@ -1,9 +1,18 @@
 from textual.app import ComposeResult
 from textual.containers import Horizontal, VerticalScroll
 from textual.screen import Screen
-from textual.widgets import Footer, Header, Input, Markdown, Static
+from textual.widgets import Footer, Header, Input, Markdown, OptionList, Static
+from textual.widgets.option_list import Option
 
 from components.api import observe_agent, stream_chat
+
+SLASH_ITEMS = [
+    {"label": "explorer", "kind": "agent"},
+    {"label": "planner", "kind": "agent"},
+    {"label": "wiki-writer", "kind": "agent"},
+    {"label": "explore-and-plan", "kind": "workflow"},
+    {"label": "full-implementation", "kind": "workflow"},
+]
 
 
 class UserBubble(Static):
@@ -34,6 +43,21 @@ class ChatScreen(Screen):
         dock: bottom;
         width: 100%;
         margin: 0 2 1 2;
+    }
+
+    #slash-menu {
+        height: 1fr;
+        width: 100%;
+        padding: 1 2;
+        display: none;
+    }
+
+    #slash-menu.visible {
+        display: block;
+    }
+
+    #message-area.hidden {
+        display: none;
     }
 
     .user {
@@ -94,12 +118,63 @@ class ChatScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header()
         yield VerticalScroll(id="message-area")
+        yield OptionList(id="slash-menu")
         yield Input(placeholder="Type a message...", id="chat-input")
         yield Footer()
 
     def on_mount(self) -> None:
         self.sub_title = self.agent_name
         self.query_one("#chat-input", Input).focus()
+
+    def _show_slash_menu(self, query: str = "") -> None:
+        menu = self.query_one("#slash-menu", OptionList)
+        message_area = self.query_one("#message-area")
+
+        matches = [item for item in SLASH_ITEMS if query in item["label"].lower()]
+
+        menu.clear_options()
+        for item in matches:
+            kind_tag = f"[dim]{item['kind']}[/dim]"
+            menu.add_option(Option(f"/{item['label']}  {kind_tag}", id=item["label"]))
+
+        if matches:
+            message_area.add_class("hidden")
+            menu.add_class("visible")
+            menu.highlighted = 0
+        else:
+            self._hide_slash_menu()
+
+    def _hide_slash_menu(self) -> None:
+        self.query_one("#slash-menu", OptionList).remove_class("visible")
+        self.query_one("#message-area").remove_class("hidden")
+        self.query_one("#chat-input", Input).focus()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        text = event.value
+        if text.startswith("/"):
+            self._show_slash_menu(text[1:].lower())
+        else:
+            self._hide_slash_menu()
+
+    def on_key(self, event) -> None:
+        menu = self.query_one("#slash-menu", OptionList)
+        if not menu.has_class("visible"):
+            return
+
+        if event.key in ("up", "down"):
+            event.prevent_default()
+            menu.focus()
+        elif event.key == "escape":
+            self._hide_slash_menu()
+            self.query_one("#chat-input", Input).clear()
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        self._hide_slash_menu()
+
+        chat_input = self.query_one("#chat-input", Input)
+        chat_input.value = f"/{event.option_id} "
+        chat_input.focus()
+        chat_input.cursor_position = len(chat_input.value)
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         text = event.value.strip()
