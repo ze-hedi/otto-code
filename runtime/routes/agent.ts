@@ -9,8 +9,6 @@ import { handleEvent, handleEventWithClient } from '../../pi-agent-utils.js';
 import { agentLogger } from '../agent-logger.js';
 import {
   activeAgents,
-  activeOrchestrators,
-  orchestratorSubAgents,
   sessionAgentMap,
   sessionFileMap,
   agentToSessionMap,
@@ -444,18 +442,6 @@ router.delete('/runtime/agents/:id', (req, res) => {
   // Clean up sessionFileMap entry pointing to this session
   for (const [file, sid] of sessionFileMap) {
     if (sid === id) { sessionFileMap.delete(file); break; }
-  }
-  if (activeOrchestrators.has(id)) {
-    // Clean up sub-agent composite keys
-    const subAgents = orchestratorSubAgents.get(id);
-    if (subAgents) {
-      for (const agent of subAgents) {
-        activeAgents.delete(`${id}::${agent._id}`);
-      }
-    }
-    activeOrchestrators.delete(id);
-    orchestratorSubAgents.delete(id);
-    console.log(`[runtime] Orchestrator session ${id} removed`);
   }
   if (id === global.activeAgentId) {
     setCurrentAgentId(null);

@@ -110,16 +110,6 @@ async function detailedLoggingExample() {
   const agent = new PiAgent({
     model: "anthropic/claude-sonnet-4-5",
     apiKey: process.env.ANTHROPIC_API_KEY,
-    handlers: {
-      onTextDelta: (delta) => process.stdout.write(delta),
-      onToolStart: (_, toolName, args) =>
-        console.log(`\n\n⚙️  Tool: ${toolName}\n   Input: ${JSON.stringify(args, null, 2)}`),
-      onToolEnd: (_, toolName, result) =>
-        console.log(`✅  Tool finished: ${toolName}\n   Output preview: ${String(result).slice(0, 100)}...`),
-      onMessageEnd: () => console.log("\n--- Turn complete ---"),
-      onAgentEnd: () => console.log("\n🏁 Agent finished"),
-      onCompactionStart: () => console.log("\n⚠️  Context compacted (approaching token limit)"),
-    },
   });
 
   console.log("=== Detailed Logging ===\n");

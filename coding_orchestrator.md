@@ -35,8 +35,6 @@ runtime/server.ts:1-83
 ```typescript
 // runtime/state.ts
 activeAgents         // Map<sessionId, PiAgent>
-activeOrchestrators  // Map<sessionId, PiOrchestrator>
-orchestratorSubAgents// Map<sessionId, AgentData[]>
 sessionAgentMap      // Map<sessionId, agentId>
 sessionFileMap       // Map<sessionFile path, sessionId>
 agentToSessionMap    // Map<agentId, compositeKey>
@@ -67,16 +65,7 @@ All routes live under `runtime/routes/`. Each module exports a default Express `
 | `GET` | `/runtime/agents/:id/stats` | Get context usage + session stats |
 | `DELETE` | `/runtime/agents/:id` | Remove agent from memory |
 
-### 3.2 Orchestrator Routes (`routes/orchestrator.ts`)
-
-| Method | Path | Purpose |
-|--------|------|---------|
-| `POST` | `/runtime/orchestrator/run` | Create orchestrator + sub-agents |
-| `GET` | `/runtime/orchestrator/:id/subagents` | List sub-agents |
-| `GET` | `/runtime/orchestrator/:orchId/subagent/:agentId/messages` | Sub-agent conversation history |
-| `GET` | `/runtime/orchestrator/:id/stats` | Aggregated orchestrator + sub-agent stats |
-
-### 3.3 Workflow Routes (`routes/workflow.ts`)
+### 3.2 Workflow Routes (`routes/workflow.ts`)
 
 | Method | Path | Purpose |
 |--------|------|---------|
@@ -87,21 +76,21 @@ All routes live under `runtime/routes/`. Each module exports a default Express `
 | `POST` | `/runtime/workflow/save` | Persist workflow to disk |
 | `GET` | `/runtime/workflow/load` | Load workflow from disk |
 
-### 3.4 Files Routes (`routes/files.ts`)
+### 3.3 Files Routes (`routes/files.ts`)
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | `GET` | `/runtime/agents/:id/files/tree` | Walk agent workspace (8 levels deep) |
 | `GET` | `/runtime/agents/:id/files/read?path=` | Read file content (≤1MB, path escape protected) |
 
-### 3.5 Logs Routes (`routes/logs.ts`)
+### 3.4 Logs Routes (`routes/logs.ts`)
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | `GET` | `/runtime/logs/:id` | Get formatted logs for one agent |
 | `GET` | `/runtime/logs` | Get logs for all agents |
 
-### 3.6 Context Routes (`routes/context.ts`)
+### 3.5 Context Routes (`routes/context.ts`)
 
 | Method | Path | Purpose |
 |--------|------|---------|
@@ -133,21 +122,7 @@ runtime/routes/agent.ts:37-161
 8. Stored in global state maps: `activeAgents`, `sessionAgentMap`, `sessionFileMap`
 9. Sets `global.activeAgent` and `global.activeAgentId` (backward compatibility)
 
-### 4.2 Orchestrator (`POST /runtime/orchestrator/run`)
-
-```
-runtime/routes/orchestrator.ts:32-118
-```
-
-1. Client sends `{ orchestratorId, systemPrompt, model?, agents: AgentData[] }`
-2. For each sub-agent: fetches files from DB (`GET localhost:4000/api/agents/:id/files`), builds `PiAgentConfig`, creates `PiAgent` → stored in `activeAgents` under composite key `${sessionId}::${agent._id}`
-3. Creates `PiOrchestrator` (from `pi-orchestrator.ts`):
-   - The orchestrator wraps a "raw agent" (no built-in bash/read/edit/write tools)
-   - Its only tool is `delegate` — accepts `{agents: [{name, task}]}`, fans out work in parallel
-   - Sub-agents run via `agent.chat()` (stateful) or `agent.execute()` (one-shot)
-4. Stores orchestrator in `activeOrchestrators`, sub-agents metadata in `orchestratorSubAgents`, underlying PiAgent in `activeAgents` (keyed by sessionId)
-
-### 4.3 Workflow Agents (`POST /runtime/workflow/compile`)
+### 4.2 Workflow Agents (`POST /runtime/workflow/compile`)
 
 ```
 runtime/routes/workflow.ts:125-540
@@ -155,19 +130,18 @@ runtime/routes/workflow.ts:125-540
 
 This is the most complex endpoint. It:
 
-1. **Parses the visual graph** — nodes (`agent` | `orchestrator` | `tool` | `artefact`) + connections (execution flow and `tool-link` edges)
+1. **Parses the visual graph** — nodes (`agent` | `tool` | `artefact`) + connections (execution flow and `tool-link` edges)
 2. **Validates the graph** via `workflow-scheduler.ts`:
    - Kahn's algorithm → topological sort into parallel levels
    - Agents cannot directly feed into other agents — an `artefact` (interface) must sit between them
-   - Interfaces must have at least one agent/orchestrator predecessor
+   - Interfaces must have at least one agent predecessor
    - Only the "Delegate" interface can feed multiple downstream actors
 3. **Builds agents** for each `agent` node — same config assembly as single agent, but with an `onToolExecute` callback that routes through MCP tools, DB tools, or interface tools (briefing/plan/report/delegate)
-4. **Builds orchestrators** from `orchestrator` nodes — creates sub-agent PiAgents, builds delegate tool, creates raw agent via `createRawAgent()`
-5. **Resolves linked tools** — bulk-fetches DB tools from `localhost:4000/api/tools`, connects MCP bridge for MCP tools
-6. **Assigns interface tools** — each agent gets `briefingTool`, `planTool`, `reportTool`, and/or `delegateTool` based on outgoing artefact connections
-7. **Wires hooks** — `sessionHooks` per composite key catch all interface tool calls (`'*'`) and emit `workflowEvents` (SSE broadcast). Multi-entry interfaces accumulate submissions before emitting.
-8. **Stores** composite keys in `activeAgents`, `agentToSessionMap`, `orchestratorSubAgents`
-9. **Incremental recompilation** — if `existingSessionId` is provided, reuses already-compiled agents but re-wires hooks for changed graph connections
+4. **Resolves linked tools** — bulk-fetches DB tools from `localhost:4000/api/tools`, connects MCP bridge for MCP tools
+5. **Assigns interface tools** — each agent gets `briefingTool`, `planTool`, `reportTool`, and/or `delegateTool` based on outgoing artefact connections
+6. **Wires hooks** — `sessionHooks` per composite key catch all interface tool calls (`'*'`) and emit `workflowEvents` (SSE broadcast). Multi-entry interfaces accumulate submissions before emitting.
+7. **Stores** composite keys in `activeAgents`, `agentToSessionMap`
+8. **Incremental recompilation** — if `existingSessionId` is provided, reuses already-compiled agents but re-wires hooks for changed graph connections
 
 ---
 
@@ -229,7 +203,6 @@ POST /runtime/workflow/compile
   │     └─ Rule 3: only "Delegate" artefact feeds multiple actors
   │
   ├─► Build PiAgent for each agent node
-  ├─► Build orchestrator (raw agent + delegate) for each orchestrator node
   ├─► Resolve linked tools (DB fetch + MCP bridge)
   ├─► Assign interface tools per outgoing artefact connections
   ├─► Wire sessionHooks → workflowEvents for SSE broadcast
@@ -313,8 +286,6 @@ Manual `.env` parser. Iterates lines, splits on first `=`, sets `process.env[key
 | Module | File | Role |
 |--------|------|------|
 | `PiAgent` | `pi-agent.ts` | Wraps `@mariozechner/pi-coding-agent` SDK. Manages model auth, session lifecycle, tool registry, compaction, chat/execute |
-| `PiOrchestrator` | `pi-orchestrator.ts` | Delegation orchestrator. Wraps a raw agent with only a `delegate` tool. Fans out sub-agent execution in parallel |
-| `createRawAgent` | `raw-agent.ts` | Factory that patches `PiAgent._createSession` to suppress built-in tools (bash/read/edit/write), skills, themes, context files |
 | `workflow_interfaces_tools` | `workflow_interfaces_tools.ts` | TypeBox schema definitions for `briefingTool`, `planTool`, `reportTool`, `createDelegateTool()` |
 | `mcp-bridge.ts` | `mcp-bridge.ts` | Thin wrapper around `@modelcontextprotocol/sdk` — connects to MCP gateway, discovers tools, calls them |
 | `pi-agent-utils.ts` | `pi-agent-utils.ts` | `handleEvent()` (console logging) and `handleEventWithClient()` (SSE forwarding) |
@@ -354,18 +325,15 @@ POST /runtime/chat/:id           activeAgents.get(id)
 
 ### 10.1 Composite Key Strategy
 
-Agents belonging to orchestrators or workflows use **composite keys**: `${sessionId}::${agentId}`. This allows multiple orchestrators/workflows to each have sub-agents with the same MongoDB `_id` without collision.
+Agents belonging to workflows use **composite keys**: `${sessionId}::${agentId}`. This allows multiple workflows to each have sub-agents with the same MongoDB `_id` without collision.
 
 - `activeAgents` keyed by composite key for sub-agents
-- `activeAgents` keyed by bare sessionId for the orchestrator's own PiAgent
 - `agentToSessionMap` maps agentId → composite key for reverse lookup
-- `orchestratorSubAgents` maps sessionId → AgentData[] for UI
 
 ### 10.2 State Hygiene on Deletion
 
-`DELETE /runtime/agents/:id` (`agent.ts:359-397`):
+`DELETE /runtime/agents/:id` (`agent.ts`):
 - Removes from `activeAgents`, `sessionAgentMap`, `sessionFileMap`
-- If it was an orchestrator, also cleans up all sub-agent composite keys and `orchestratorSubAgents`
 - Resets `currentAgentId` and globals if it was the active agent
 - Calls `clearSessionHooks()` and `agentLogger.clearLogs()`
 

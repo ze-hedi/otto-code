@@ -2,19 +2,12 @@
 // Global runtime state shared across all route modules.
 
 import { PiAgent } from '../pi-agent.js';
-import { PiOrchestrator } from '../pi-orchestrator.js';
 import type { AgentData } from './types.js';
 
 // ─── Global state ─────────────────────────────────────────────────────────────
 
 // Map of sessionId → PiAgent instance
 export const activeAgents = new Map<string, PiAgent>();
-
-// Map of orchestratorId → PiOrchestrator instance
-export const activeOrchestrators = new Map<string, PiOrchestrator>();
-
-// Map of orchestratorId → sub-agent metadata (for the UI)
-export const orchestratorSubAgents = new Map<string, AgentData[]>();
 
 // Map of sessionId → agentId (so we can look up which agent a session belongs to)
 export const sessionAgentMap = new Map<string, string>();

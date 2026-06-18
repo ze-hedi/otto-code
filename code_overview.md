@@ -43,8 +43,6 @@ Frontend (React) ──HTTP REST──► Database (MongoDB)  ← agent/tool CRU
 otto_code/
 ├── pi-agent.ts              [1075L] Core PiAgent class — the main wrapper
 ├── pi-agent-utils.ts        [~200L] Event handlers (SSE forwarder, console logger)
-├── pi-orchestrator.ts       [~220L] Multi-agent orchestrator with delegate tool
-├── raw-agent.ts             [~105L] Factory for bare/no-tools PiAgent
 ├── workflow_interfaces_tools.ts [~200L] Structured output tools (briefing, report, plan)
 ├── mcp-bridge.ts            [~55L]  MCP client over Streamable HTTP
 ├── mem0.ts                  [~250L] mem0ai wrapper for persistent memory
@@ -139,8 +137,6 @@ otto_code/
 ├── tests/                           [7] Test files
 │   ├── test-pi-agent.ts
 │   ├── test-pi-agent-2.ts
-│   ├── test-raw-agent.ts
-│   ├── test-orchestrator.ts
 │   ├── test-tool-execution.ts
 │   ├── test-tool-execution.cjs
 │   ├── test-custom-tools.ts
@@ -183,30 +179,14 @@ The central abstraction of the entire platform. Wraps `@mariozechner/pi-coding-a
 - **`abort()`** — Cancel running session.
 - **`getMessages()`** — Full transcript.
 - **`getConfig()`** — Current config.
-- **Event system** — `PiAgentEventHandlers` interface with 20+ granular hooks: `onAgentStart`, `onAgentEnd`, `onTurnStart`, `onTurnEnd`, `onTextDelta`, `onThinkingDelta`, `onToolCallStreamed`, `onToolStart`, `onToolUpdate`, `onToolEnd`, `onStreamDone`, `onStreamError`, etc.
+- **Event system** — Per-call `EventCallback` receives raw `AgentSessionEvent` from the SDK. Utilities in `pi-agent-utils.ts` provide `handleEvent` (console logger) and `handleEventWithClient` (SSE forwarder).
 - **Tool registration** — Supports custom tools via `ToolInput` (name, description, parameters via TypeBox schemas, execute function). Built-in tools come from the SDK (bash, read, write, edit).
 - **Skills** — Markdown skill definitions passed to the resource loader.
 - **MCP Bridge** — Integrates external MCP tools as callable tools.
 - **mem0 Integration** — Auto-memory via `Mem0` wrapper class.
 - **Compaction** — Automatic context window management.
 
-### 3.2. `pi-orchestrator.ts` — Multi-Agent Orchestrator (~220 lines)
-
-**Class: `PiOrchestrator`**
-- Implements a **delegate pattern**: the orchestrator LLM receives a "delegate" tool that fans out tasks to sub-agents in parallel.
-- **`addSubAgent(def)`** — Register sub-agent (name, description, PiAgent instance).
-- **`initialize()`** — Builds delegate tool from registered sub-agents. Creates a raw agent (no built-in tools) with only the delegate tool.
-- **`chat(prompt, callback?)`** / **`execute(prompt, callback?)`** — Run orchestrator.
-- Sub-agents execute in **parallel** via `Promise.all`.
-
-### 3.3. `raw-agent.ts` — Bare Agent Factory (~105 lines)
-
-**Function: `createRawAgent(config)`**
-- Creates a PiAgent with **no tools** (suppresses bash/read/write/edit), **no skills**, **no prompt templates**, **no themes**, **no project context files**.
-- Used by orchestrator to create a clean delegate-only agent.
-- Achieved by monkey-patching `_createSession` after construction with `noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true`.
-
-### 3.4. `mem0.ts` — Memory Integration (~250 lines)
+### 3.2. `mem0.ts` — Memory Integration (~250 lines)
 
 **Class: `Mem0`**
 - Wraps `mem0ai/oss` `Memory` class.
@@ -220,7 +200,7 @@ The central abstraction of the entire platform. Wraps `@mariozechner/pi-coding-a
 - **`deleteAll(options)`** / **`delete(memoryId)`** — Delete memories.
 - Scoped by `userId`, `agentId`, `runId`.
 
-### 3.5. `mcp-bridge.ts` — MCP Client (~55 lines)
+### 3.3. `mcp-bridge.ts` — MCP Client (~55 lines)
 
 **Function: `createMcpBridge(endpoint, timeoutMs)`**
 - Creates an MCP client connected to a Streamable HTTP transport.
@@ -228,7 +208,7 @@ The central abstraction of the entire platform. Wraps `@mariozechner/pi-coding-a
 - `tools` — List of `McpToolEntry` (name, description, inputSchema).
 - `callTool(name, args)` — Invokes a remote MCP tool.
 
-### 3.6. `workflow_interfaces_tools.ts` — Structured Output Tools (~200 lines)
+### 3.4. `workflow_interfaces_tools.ts` — Structured Output Tools (~200 lines)
 
 Defines 4 forced-output tools for inter-agent communication:
 - **`briefingTool`** — Structured briefing (title, summary, completedSteps, currentStatus, keyFindings, nextSteps).
@@ -245,9 +225,7 @@ Defines 4 forced-output tools for inter-agent communication:
 
 | Map | Key | Value | Purpose |
 |---|---|---|---|
-| `activeAgents` | sessionId (or `orchestratorId::agentId`) | `PiAgent` | All running agent instances |
-| `activeOrchestrators` | orchestratorId | `PiOrchestrator` | Running orchestrator instances |
-| `orchestratorSubAgents` | orchestratorId | `AgentData[]` | Sub-agent metadata for UI |
+| `activeAgents` | sessionId | `PiAgent` | All running agent instances |
 | `sessionAgentMap` | sessionId | agentId (MongoDB _id) | Which agent a session belongs to |
 | `sessionFileMap` | sessionFile path | sessionId | Disk session deduplication |
 | `agentToSessionMap` | agentId (MongoDB _id) | compositeKey | Reverse lookup |
@@ -260,7 +238,6 @@ Defines 4 forced-output tools for inter-agent communication:
 | Route File | Key Endpoints | Lines |
 |---|---|---|
 | `agent.ts` | `POST /runtime/run` — Create agent from DB config; `POST /runtime/chat` — Multi-turn chat via SSE; `POST /runtime/abort` — Cancel running; `GET /runtime/agent/:id/stats` — Token counts; `DELETE /runtime/agent/:id` — Cleanup | ~400L |
-| `orchestrator.ts` | `POST /runtime/orchestrator/run` — Create orchestrator with sub-agents; `POST /runtime/orchestrator/chat` — Orchestrator chat via SSE; `GET /runtime/orchestrator/stats` | ~290L |
 | `workflow.ts` | `POST /runtime/workflow/compile` — Compile DAG → execution queue; `POST /runtime/workflow/run` — Execute compiled workflow; `POST /runtime/workflow/chat/:nodeId` — Chat with a workflow node; `POST /runtime/workflow/run-all` — Execute all levels sequentially; `POST /runtime/workflow/abort` | ~840L |
 | `context.ts` | `GET /runtime/context/list`, `GET /runtime/context/read`, `PUT /runtime/context/write` — CRUD for project `context/*.md` files | ~130L |
 | `files.ts` | `GET /runtime/files/:id` — Browse agent workspace; `GET /runtime/files/content/:id` — Read file content | ~140L |
@@ -439,8 +416,6 @@ upstreams:
 |---|---|
 | `tests/test-pi-agent.ts` | Basic PiAgent instantiation and query |
 | `tests/test-pi-agent-2.ts` | Advanced PiAgent scenarios |
-| `tests/test-raw-agent.ts` | Raw agent factory |
-| `tests/test-orchestrator.ts` | PiOrchestrator with sub-agents |
 | `tests/test-tool-execution.ts` | ToolExecutor parsing and execution |
 | `tests/test-tool-execution.cjs` | CommonJS tool execution variant |
 | `tests/test-custom-tools.ts` | Custom tool registration and invocation |

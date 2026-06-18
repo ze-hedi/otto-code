@@ -20,7 +20,6 @@ import cors from 'cors';
 import { activeAgents, sessionAgentMap, currentAgentId } from './state.js';
 import { registerDefaultAgents } from './default-agents.js';
 import agentRoutes from './routes/agent.js';
-import orchestratorRoutes from './routes/orchestrator.js';
 import filesRoutes from './routes/files.js';
 import logsRoutes from './routes/logs.js';
 import workflowRoutes from './routes/workflow.js';
@@ -35,7 +34,6 @@ app.use(express.json());
 // ─── Route modules ───────────────────────────────────────────────────────────
 
 app.use(agentRoutes);
-app.use(orchestratorRoutes);
 app.use(filesRoutes);
 app.use(logsRoutes);
 app.use(workflowRoutes);

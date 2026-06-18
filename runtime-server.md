@@ -2,7 +2,7 @@
 
 Base URL: `http://localhost:5000`
 
-The runtime server manages PiAgent sessions. It handles agent lifecycle (create, chat, abort, delete) and orchestrator workflows (multi-agent coordination). All request/response bodies are JSON unless noted otherwise.
+The runtime server manages PiAgent sessions. It handles agent lifecycle (create, chat, abort, delete) and workflow coordination. All request/response bodies are JSON unless noted otherwise.
 
 ---
 
@@ -23,7 +23,7 @@ The runtime server manages PiAgent sessions. It handles agent lifecycle (create,
   "workingDir": "string (optional) — required when sessionMode is 'disk' or 'continue'",
   "playground": "string (optional)",
   "apiKey": "string (optional) — falls back to server's ANTHROPIC_API_KEY env var",
-  "stateful": "boolean (optional, default false) — used by orchestrator to decide sub-agent statefulness"
+  "stateful": "boolean (optional, default false)"
 }
 ```
 
@@ -208,11 +208,11 @@ Returns context window usage and session statistics.
 
 **`DELETE /runtime/agents/:id`**
 
-Removes an agent (or orchestrator) from memory and clears its logs.
+Removes an agent from memory and clears its logs.
 
 **URL params:**
 
-- `id` — the agent ID or orchestrator ID
+- `id` — the agent ID
 
 **Success response (200):**
 
@@ -291,95 +291,6 @@ Returns logs for every agent.
 
 ---
 
-## Orchestrator Endpoints
-
-Orchestrators coordinate multiple sub-agents. The orchestrator itself is stored as an agent in the runtime, so you can use `/runtime/chat/:id`, `/runtime/agents/:id/abort`, `/runtime/agents/:id/stats`, and `DELETE /runtime/agents/:id` with the orchestrator's ID.
-
-### 10. Start an Orchestrator
-
-**`POST /runtime/orchestrator/run`**
-
-Creates a PiOrchestrator with the given sub-agents.
-
-**Request body:**
-
-```json
-{
-  "orchestratorId": "string (required)",
-  "systemPrompt": "string — system prompt for the orchestrator agent",
-  "model": "string (optional, default 'claude-sonnet-4-6')",
-  "playground": "string (optional)",
-  "agents": AgentData[]  // required, at least one
-}
-```
-
-Sub-agent files (soul/skills) are fetched automatically from `http://localhost:4000/api/agents/:id/files`.
-
-**Success response (200):**
-
-```json
-{
-  "success": true,
-  "orchestratorId": "string",
-  "model": "string",
-  "subAgents": ["agent-name-1", "agent-name-2"]
-}
-```
-
-**Errors:**
-
-| Status | Condition |
-|--------|-----------|
-| 400 | Missing `orchestratorId` |
-| 400 | Empty `agents` array |
-| 400 | A sub-agent is missing `_id` or `model` |
-| 500 | Instantiation failure |
-
----
-
-### 11. Get Orchestrator Sub-Agents
-
-**`GET /runtime/orchestrator/:id/subagents`**
-
-Returns the list of sub-agent metadata for an orchestrator.
-
-**URL params:**
-
-- `id` — the orchestrator ID
-
-**Success response (200):** `AgentData[]`
-
-**Errors:**
-
-| Status | Condition |
-|--------|-----------|
-| 404 | Orchestrator not found |
-
----
-
-### 12. Get Sub-Agent Messages
-
-**`GET /runtime/orchestrator/:orchId/subagent/:agentId/messages`**
-
-Returns the full conversation history for a specific sub-agent within an orchestrator.
-
-**URL params:**
-
-- `orchId` — the orchestrator ID
-- `agentId` — the sub-agent ID
-
-**Success response (200):** Array of messages from the sub-agent's conversation.
-
-**Errors:**
-
-| Status | Condition |
-|--------|-----------|
-| 404 | Orchestrator not found |
-| 404 | Sub-agent not found |
-| 500 | Failed to retrieve messages |
-
----
-
 ## Typical Flow
 
 1. **`POST /runtime/run`** with agent data → get `agentId`
@@ -388,5 +299,3 @@ Returns the full conversation history for a specific sub-agent within an orchest
 4. **`POST /runtime/agents/:agentId/abort`** to cancel a running turn
 5. **`GET /runtime/agents/:agentId/stats`** to check context usage
 6. **`DELETE /runtime/agents/:agentId`** when done
-
-For orchestrators, replace step 1 with `POST /runtime/orchestrator/run`, then chat using the orchestrator ID.

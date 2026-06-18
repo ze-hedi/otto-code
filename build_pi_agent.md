@@ -25,10 +25,10 @@
 │  │ AuthStorage / ModelRegistry        │       │
 │  └─────────────────────────────────┘       │
 │                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  │
-│  │ mcp-     │  │ mem0.ts  │  │ raw-     │  │
-│  │ bridge.ts│  │          │  │ agent.ts │  │
-│  └──────────┘  └──────────┘  └──────────┘  │
+│  ┌──────────┐  ┌──────────┐               │
+│  │ mcp-     │  │ mem0.ts  │               │
+│  │ bridge.ts│  │          │               │
+│  └──────────┘  └──────────┘               │
 └─────────────────────────────────────────────┘
 ```
 
@@ -37,7 +37,6 @@
 - `pi-agent-utils.ts` — event helper functions (`handleEvent`, `handleEventWithClient`)
 - `mcp-bridge.ts` — MCP client wrapper (`createMcpBridge`)
 - `mem0.ts` — memory persistence wrapper (`Mem0` class)
-- `raw-agent.ts` — factory for no-tools PiAgent (`createRawAgent`)
 
 ---
 
@@ -79,7 +78,6 @@ Complete config shape (all fields are optional except `model`):
 | `playground` | `string` | `process.cwd()` | Directory the agent operates in (cwd for tools) |
 | `sessionDir` | `string` | _computed_ | Custom directory for session persistence |
 | `skills` | `SkillInput[]` | `[]` | Skills injected into the agent session |
-| `handlers` | `PiAgentEventHandlers` | `{}` | Structured event callbacks (auto-wired on every session) |
 | `tools` | `ToolInput[]` | `[]` | Custom tools registered at construction |
 | `mem0Config` | `Mem0Config` | undefined | Mem0 long-term memory config |
 | `compaction` | `object` | `{ enabled: true }` | Context compaction settings |
@@ -188,53 +186,6 @@ agent.execute("Query", (event) => {
   }
 });
 ```
-
-### Approach 2: Structured handlers (recommended)
-
-Pass `PiAgentEventHandlers` in the constructor. These fire automatically on **every** `execute()`, `chat()`, and `query()` call — no re-wiring needed.
-
-```typescript
-const agent = new PiAgent({
-  model: "...",
-  handlers: {
-    onTextDelta: (delta) => process.stdout.write(delta),
-    onToolStart: (_, name, args) => console.log(`\n⚙️ ${name}`),
-    onToolEnd: (_, name, result, isError) => console.log(isError ? "❌" : "✅"),
-    onAgentEnd: () => console.log("\nDone."),
-    onCompactionStart: () => console.log("\n⚠️ Compacting context..."),
-  },
-});
-```
-
-**Event hierarchy:**
-
-| Group | Event | Handler signature |
-|---|---|---|
-| **Agent** | `agent_start` | `onAgentStart()` |
-| | `agent_end` | `onAgentEnd(messages)` |
-| **Turn** | `turn_start` | `onTurnStart()` |
-| | `turn_end` | `onTurnEnd(message, toolResults)` |
-| **Message** | `message_start` | `onMessageStart(message)` |
-| | `message_end` | `onMessageEnd(message)` |
-| **Streaming** | text delta | `onTextDelta(delta, contentIndex, partial)` |
-| | text block complete | `onTextEnd(content, contentIndex, partial)` |
-| | thinking delta | `onThinkingDelta(delta, contentIndex, partial)` |
-| | thinking block complete | `onThinkingEnd(content, contentIndex, partial)` |
-| | tool call streamed | `onToolCallStreamed(toolCall, contentIndex, partial)` |
-| | stream done | `onStreamDone(reason, message)` |
-| | stream error | `onStreamError(reason, error)` |
-| **Tools** | execution start | `onToolStart(toolCallId, toolName, args)` |
-| | execution update | `onToolUpdate(toolCallId, toolName, args, partial)` |
-| | execution end | `onToolEnd(toolCallId, toolName, result, isError)` |
-| **Session** | queue update | `onQueueUpdate(steering, followUp)` |
-| | compaction start | `onCompactionStart(reason)` |
-| | compaction end | `onCompactionEnd(reason, result, aborted, willRetry, msg?)` |
-| | name changed | `onSessionNameChanged(name)` |
-| | retry start | `onRetryStart(attempt, max, delayMs, error)` |
-| | retry end | `onRetryEnd(success, attempt, finalError?)` |
-| **Catch-all** | all events | `onEvent(event)` (fires last) |
-
-Reference: `pi-agent.ts:30-143, 336-428`
 
 **Helper utilities** in `pi-agent-utils.ts`:
 - `handleEvent(event)` — logs every event to stdout in human-readable format
@@ -515,33 +466,7 @@ Reference: `pi-agent.ts:476-500, 595-601`
 
 ---
 
-## 14. Raw agents (no built-in tools)
-
-`createRawAgent()` from `raw-agent.ts` creates a PiAgent with:
-- All built-in tools stripped (`bash`, `read`, `edit`, `write`)
-- No skills, prompt templates, themes, or project context files
-- Only custom tools and the base system prompt
-
-```typescript
-import { createRawAgent } from "./raw-agent";
-
-const agent = createRawAgent({
-  model: "anthropic/claude-sonnet-4-5",
-  systemPromptSuffix: "You are a strategic planner. Delegate tasks.",
-});
-
-// Register custom tools, then execute
-agent.addTool({ name: "plan", /* ... */ });
-await agent.execute("Plan the architecture", handleEvent);
-```
-
-Used by `PiOrchestrator` (`pi-orchestrator.ts`) to create orchestrator agents that only have the `delegate` tool.
-
-Reference: `raw-agent.ts:1-97`, `pi-orchestrator.ts:1-20`
-
----
-
-## 15. Runtime integration (Express/SSE)
+## 14. Runtime integration (Express/SSE)
 
 The `runtime/` directory shows a production pattern for serving PiAgent over HTTP:
 
@@ -570,39 +495,7 @@ Reference: `runtime/server.ts`, `runtime/routes/agent.ts`, `runtime/state.ts`, `
 
 ---
 
-## 16. Orchestrator pattern
-
-`PiOrchestrator` (`pi-orchestrator.ts`) demonstrates multi-agent delegation:
-
-```typescript
-const orchestrator = new PiOrchestrator({ model: "...", sessionMode: "memory" });
-
-// Register sub-agents
-orchestrator.addSubAgent({
-  name: "code-reviewer",
-  description: "Reviews code for bugs and style issues",
-  agent: new PiAgent({ model: "...", sessionMode: "memory" }),
-});
-orchestrator.addSubAgent({
-  name: "test-writer",
-  description: "Writes unit tests",
-  agent: new PiAgent({ model: "...", sessionMode: "memory" }),
-});
-
-// Initialize creates the orchestrator agent with a "delegate" tool
-orchestrator.initialize();
-
-// Delegate tasks; orchestrator picks the right sub-agent
-await orchestrator.execute("Review the auth module and write tests");
-```
-
-The orchestrator itself is a raw agent (via `createRawAgent()`) with a single `delegate` tool that dispatches tasks to sub-agents in parallel.
-
-Reference: `pi-orchestrator.ts`
-
----
-
-## 17. Error handling patterns
+## 15. Error handling patterns
 
 ```typescript
 try {
@@ -620,7 +513,7 @@ Reference: `pi-agent.ts:287-305`
 
 ---
 
-## 18. Conventions to follow
+## 16. Conventions to follow
 
 | Convention | Example |
 |---|---|
@@ -634,7 +527,7 @@ Reference: `pi-agent.ts:287-305`
 
 ---
 
-## 19. Dependencies
+## 17. Dependencies
 
 | Package | Role |
 |---|---|
@@ -647,7 +540,7 @@ Reference: `pi-agent.ts:287-305`
 
 ---
 
-## 20. Testing
+## 18. Testing
 
 Test files in `tests/`:
 
@@ -656,8 +549,6 @@ Test files in `tests/`:
 | `test-pi-agent.ts` | Basic execute, skills, system prompt |
 | `test-pi-agent-2.ts` | Handlers, PR review, conversation, compaction, session modes |
 | `test-custom-tools.ts` | Tool registration, dynamic add/remove, execution |
-| `test-raw-agent.ts` | Raw agent (no built-in tools) |
-| `test-orchestrator.ts` | Multi-agent orchestration |
 | `test-tool-execution.ts` | Tool execution lifecycle |
 
 Run with:
@@ -668,6 +559,6 @@ npx tsx tests/test-pi-agent-2.ts pr
 
 ---
 
-## 21. Suggested entry point
+## 19. Suggested entry point
 
 **Start at `pi-agent.ts:218-260` (the constructor)** — it initializes every subsystem (auth, model, resource loader, Mem0, tool registration) and is the best single place to understand how all pieces connect.

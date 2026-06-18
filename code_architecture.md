@@ -84,46 +84,13 @@ The central abstraction of the entire platform. Wraps `@mariozechner/pi-coding-a
 | `getConfig()` | Current config |
 | `addTool(tool)` / `removeTool(name)` / `hasTool(name)` | Dynamic custom tool management |
 
-**Event system** — `PiAgentEventHandlers` with 20+ granular hooks:
-
-| Hook | When |
-|---|---|
-| `onAgentStart` / `onAgentEnd` | Session lifecycle |
-| `onTurnStart` / `onTurnEnd` | LLM turn boundaries |
-| `onMessageStart` / `onMessageEnd` | Message streaming |
-| `onTextDelta` | Each text token |
-| `onThinkingDelta` | Thinking tokens (Sonnet extended thinking) |
-| `onToolStart` / `onToolUpdate` / `onToolEnd` | Tool execution lifecycle |
-| `onStreamDone` / `onStreamError` | Stream completion/error |
-| `onCompaction` | Context window compaction |
+**Event system** — Per-call `EventCallback` receives raw `AgentSessionEvent` from the SDK. Utilities in `pi-agent-utils.ts` provide `handleEvent` (console logger) and `handleEventWithClient` (SSE forwarder).
 
 **Built-in tools:** `bash`, `read`, `write`, `edit` (provided by the SDK).
 
 **Dependencies:** `@mariozechner/pi-coding-agent`, `@mariozechner/pi-ai`, `typebox`, `mem0.js`, `mcp-bridge.js`.
 
-### 2.2 `pi-orchestrator.ts` — Multi-Agent Orchestrator (~220 lines)
-
-**Class `PiOrchestrator`**
-
-Implements the **delegate pattern**: the orchestrator LLM receives a single "delegate" tool whose schema is dynamically built from registered sub-agents. When the orchestrator decides which sub-agent(s) should handle which sub-tasks, it calls the delegate tool, which fans out execution to sub-agents in **parallel** via `Promise.all`.
-
-| Method | Purpose |
-|---|---|
-| `addSubAgent(def)` | Register sub-agent (name, description, PiAgent instance) |
-| `removeSubAgent(name)` | Remove sub-agent before initialization |
-| `initialize()` | Builds delegate tool from sub-agents; creates raw agent with only the delegate tool |
-| `chat(prompt, callback?)` / `execute(prompt, callback?)` | Run orchestrator |
-| `getConfig()` / `abort()` | Config access and cancellation |
-
-Sub-agent definitions specify `name`, `description` (for the LLM to choose), and a `PiAgent` instance. `stateful: true` uses `chat()` (persistent) instead of `execute()` (one-shot).
-
-### 2.3 `raw-agent.ts` — Bare Agent Factory (~104 lines)
-
-**Function `createRawAgent(config)`**
-
-Creates a PiAgent with **no built-in tools**, **no skills**, **no prompt templates**, **no themes**, **no project context files**. Used by the orchestrator to get a clean delegate-only agent. Achieved by monkey-patching `_createSession` after construction.
-
-### 2.4 `mem0.ts` — Vector Memory (~250 lines)
+### 2.2 `mem0.ts` — Vector Memory (~250 lines)
 
 **Class `Mem0`**
 
@@ -142,13 +109,13 @@ Wraps `mem0ai/oss` `Memory` for persistent semantic memory with:
 
 Scoped by `userId`, `agentId`, `runId`.
 
-### 2.5 `mcp-bridge.ts` — MCP Client (~52 lines)
+### 2.3 `mcp-bridge.ts` — MCP Client (~52 lines)
 
 **Function `createMcpBridge(endpoint, timeoutMs)`**
 
 Thin wrapper around `@modelcontextprotocol/sdk`. Creates a Streamable HTTP client, connects to an MCP gateway, and returns `{ tools, callTool, close }`. Used by PiAgent to integrate external tools.
 
-### 2.6 `workflow_interfaces_tools.ts` — Structured Output Tools (~126 lines)
+### 2.4 `workflow_interfaces_tools.ts` — Structured Output Tools (~126 lines)
 
 Defines 4 **forced-output tools** for inter-agent communication in workflows:
 
@@ -161,7 +128,7 @@ Defines 4 **forced-output tools** for inter-agent communication in workflows:
 
 Exports `INTERFACE_TOOL_NAMES` — Set of all interface tool names for workflow hook matching.
 
-### 2.7 `pi-agent-utils.ts` — Utility Helpers (~152 lines)
+### 2.5 `pi-agent-utils.ts` — Utility Helpers (~152 lines)
 
 Provides `handleEvent` and `handleEventWithClient` functions for SSE forwarding and console logging of agent events.
 
@@ -183,9 +150,8 @@ import './load-env.js'; // MUST be first: loads .env before SDK reads env vars
 app.listen(PORT);
 ```
 
-Mounts 6 route modules:
+Mounts route modules:
 - `/runtime/*` — Agent lifecycle (run, chat, abort, stats, delete)
-- `/runtime/orchestrator/*` — Orchestrator management
 - `/runtime/workflow/*` — Workflow DAG compilation and execution
 - `/runtime/context/*` — Project context file CRUD
 - `/runtime/files/*` — Agent workspace file browser
@@ -198,8 +164,6 @@ In-memory Maps and shared globals used across all route modules:
 | Map | Key | Value | Purpose |
 |---|---|---|---|
 | `activeAgents` | sessionId | `PiAgent` | All running agent instances |
-| `activeOrchestrators` | orchestratorId | `PiOrchestrator` | Running orchestrators |
-| `orchestratorSubAgents` | orchestratorId | `AgentData[]` | Sub-agent metadata for UI |
 | `sessionAgentMap` | sessionId | agentId | Which DB agent a session belongs to |
 | `agentToSessionMap` | agentId | compositeKey | Reverse lookup (MongoDB _id → session) |
 | `sessionFileMap` | filePath | sessionId | Deduplication of disk sessions |
@@ -213,7 +177,6 @@ In-memory Maps and shared globals used across all route modules:
 | Route File | Key Endpoints | Lines | Purpose |
 |---|---|---|---|
 | `routes/agent.ts` | `POST /runtime/run`, `POST /runtime/chat/:id`, `POST /runtime/abort/:id`, `GET /runtime/agent/:id/stats`, `GET /runtime/agent/:id/messages`, `DELETE /runtime/agent/:id` | ~400 | Agent lifecycle, streaming chat via SSE, abort, stats/transcript |
-| `routes/orchestrator.ts` | `POST /runtime/orchestrator/run`, `POST /runtime/orchestrator/chat`, `GET /runtime/orchestrator/stats` | ~290 | Orchestrator creation with sub-agents, chat via SSE |
 | `routes/workflow.ts` | `POST /runtime/workflow/compile`, `POST /runtime/workflow/run`, `POST /runtime/workflow/chat/:nodeId`, `POST /runtime/workflow/run-all`, `POST /runtime/workflow/abort`, `GET /runtime/workflow/events` (SSE) | ~840 | DAG compilation → scheduled execution, incremental recompilation |
 | `routes/context.ts` | `GET /runtime/context/list`, `GET /runtime/context/read`, `PUT /runtime/context/write` | ~130 | CRUD for project `context/*.md` files |
 | `routes/files.ts` | `GET /runtime/files/:id`, `GET /runtime/files/content/:id` | ~140 | Browse agent workspace, read file contents |
@@ -253,7 +216,7 @@ In-memory log storage: max 1000 entries per agent. Event types: `message_update`
 Shared type definitions:
 - `AgentData` — Agent configuration from DB (model, thinkingLevel, sessionMode, workingDir, apiKey, compaction, etc.)
 - `AgentFile` — External files (`soul` = system prompt, `skills` = tool definitions)
-- `RunRequest` / `OrchestratorRunRequest` — Request payloads
+- `RunRequest` — Request payload
 - `FileEntry` — File browser entry
 
 ### 3.8 Env Loader (`load-env.ts`)
@@ -490,27 +453,12 @@ Self-contained meta-system that uses PiAgent to orchestrate exploration and wiki
 
 3. Frontend POST /runtime/workflow/run → Runtime
    ├── Executes levels sequentially: each level's nodes run in parallel
-   ├── For each node: creates PiAgent/PiOrchestrator, feeds predecessor output
+   ├── For each node: creates PiAgent, feeds predecessor output
    ├── Wire session hooks: when predecessor calls submit_briefing/report/plan,
    │   trigger successor nodes
    └── Broadcasts events via SSE to frontend
 
 4. Results flow through the DAG following predecessor → successor edges
-```
-
-### Orchestrator Flow
-
-```
-1. User creates orchestrator with sub-agents in React UI
-2. Frontend POST /runtime/orchestrator/run → Runtime
-   ├── Creates PiOrchestrator
-   ├── For each sub-agent: instantiates PiAgent, registers via addSubAgent()
-   ├── Calls orchestrator.initialize() — builds delegate tool
-
-3. User sends task → orchestrator LLM decides which sub-agents to use
-   ├── Calls delegate tool with { agents: [{ name, task }] }
-   ├── Sub-agents execute in parallel (Promise.all)
-   └── Results aggregated and returned
 ```
 
 ---
@@ -589,8 +537,6 @@ Or use `otto` terminal multiplexer with the pre-configured `otto_settings.json`.
 |---|---|
 | `test-pi-agent.ts` | Basic PiAgent instantiation, query, execute |
 | `test-pi-agent-2.ts` | Advanced PiAgent scenarios |
-| `test-raw-agent.ts` | Raw agent factory (no built-in tools) |
-| `test-orchestrator.ts` | PiOrchestrator with sub-agent delegation |
 | `test-tool-execution.ts` | ToolExecutor parsing and execution |
 | `test-tool-execution.cjs` | CommonJS tool execution variant |
 | `test-custom-tools.ts` | Custom tool registration and invocation |
@@ -626,7 +572,6 @@ Or use `otto` terminal multiplexer with the pre-configured `otto_settings.json`.
 | **Event-driven architecture** | `pi-agent.ts` | 20+ granular event hooks for agent lifecycle |
 | **SSE for streaming** | Runtime chat endpoints | Server-Sent Events for real-time token/tool streaming |
 | **Global state Maps** | `runtime/state.ts` | In-memory session management across routes |
-| **Delegate pattern** | `pi-orchestrator.ts` | LLM delegates to sub-agents via dynamic tool |
 | **Kahn's algorithm** | `runtime/workflow-scheduler.ts` | Topological sort for DAG execution |
 | **Proxy + Mount** | MCP Gateway | FastMCP transparently proxies upstream servers |
 | **Dependency injection** | `PiAgent` constructor | Mem0, McpBridge, Skills injected as config |
@@ -634,7 +579,7 @@ Or use `otto` terminal multiplexer with the pre-configured `otto_settings.json`.
 
 ### Module Boundaries
 
-- The runtime server **imports from root-level TypeScript modules** (`../../pi-agent.js`, `../../raw-agent.js`). These are tightly coupled.
+- The runtime server **imports from root-level TypeScript modules** (e.g., `../../pi-agent.js`). These are tightly coupled.
 - The frontend and database server are **separate npm projects** with their own `package.json` and `node_modules`.
 - The MCP gateway and TUI are **independent processes** with their own dependency managers (Docker/pip).
 - The coding orchestrator is a **self-contained meta-system** that uses PiAgent internally.
@@ -714,8 +659,6 @@ Or use `otto` terminal multiplexer with the pre-configured `otto_settings.json`.
 | File | Lines | Role |
 |---|---|---|
 | `pi-agent.ts` | ~1074 | Core PiAgent class — main abstraction |
-| `pi-orchestrator.ts` | ~220 | Multi-agent delegate orchestrator |
-| `raw-agent.ts` | ~104 | Bare agent factory (no tools) |
 | `mem0.ts` | ~250 | Vector memory wrapper |
 | `mcp-bridge.ts` | ~52 | MCP client over Streamable HTTP |
 | `workflow_interfaces_tools.ts` | ~126 | Structured output tools (briefing, report, plan) |
@@ -723,7 +666,6 @@ Or use `otto` terminal multiplexer with the pre-configured `otto_settings.json`.
 | `runtime/server.ts` | ~90 | Runtime entry point |
 | `runtime/state.ts` | ~110 | Global state maps |
 | `runtime/routes/agent.ts` | ~400 | Agent lifecycle endpoints |
-| `runtime/routes/orchestrator.ts` | ~290 | Orchestrator endpoints |
 | `runtime/routes/workflow.ts` | ~840 | Workflow DAG execution |
 | `runtime/workflow-scheduler.ts` | ~180 | Kahn's algorithm DAG scheduler |
 | `runtime/tool-executor.ts` | ~120 | Safe JS function execution |
