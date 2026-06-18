@@ -1,8 +1,13 @@
+import time
+
 from textual.app import ComposeResult
 from textual.containers import Horizontal, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import Footer, Header, Input, Markdown, OptionList, Static
 from textual.widgets.option_list import Option
+
+# Minimum interval (seconds) between Markdown re-renders during streaming.
+_RENDER_INTERVAL = 0.05
 
 from components.api import observe_agent, stream_chat
 
@@ -21,6 +26,23 @@ class UserBubble(Static):
     def __init__(self, text: str) -> None:
         super().__init__(text)
         self.add_class("user")
+
+
+class ThinkingBubble(Static):
+    """Collapsible bubble that shows the model's thinking."""
+
+    def __init__(self) -> None:
+        super().__init__("")
+        self.add_class("thinking")
+        self._text = ""
+
+    def append(self, chunk: str) -> None:
+        self._text += chunk
+        # Show a truncated preview — full text is there if we ever expand it
+        preview = self._text[:200].replace("\n", " ")
+        if len(self._text) > 200:
+            preview += "…"
+        self.update(f"💭 {preview}")
 
 
 class AssistantBubble(Markdown):
@@ -75,6 +97,13 @@ class ChatScreen(Screen):
         min-height: 3;
     }
 
+    .thinking {
+        color: $text-muted;
+        margin: 0 10 0 0;
+        padding: 0 2;
+        text-style: italic;
+    }
+
     .tool-info {
         color: $text-muted;
         margin: 0 10 0 0;
@@ -110,10 +139,13 @@ class ChatScreen(Screen):
         self.agent_name = agent_name
         self._streaming = False
         self._current_bubble: AssistantBubble | None = None
+        self._current_thinking: ThinkingBubble | None = None
         self._current_text = ""
+        self._last_render_time: float = 0.0
         # Track per-panel state for explore_repos
         self._panel_bubbles: dict[str, AssistantBubble] = {}
         self._panel_texts: dict[str, str] = {}
+        self._panel_last_render: dict[str, float] = {}
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -196,21 +228,35 @@ class ChatScreen(Screen):
 
         self._current_text = ""
         self._current_bubble = None
+        self._current_thinking = None
         needs_new_bubble = True
 
         try:
             async for event in stream_chat(self.session_id, text):
                 event_type = event.get("type")
 
-                if event_type == "delta":
+                if event_type == "thinking":
+                    if self._current_thinking is None:
+                        self._current_thinking = ThinkingBubble()
+                        message_area.mount(self._current_thinking)
+                    self._current_thinking.append(event.get("text", ""))
+                    self.call_after_refresh(message_area.scroll_end, animate=False)
+
+                elif event_type == "delta":
+                    # Once real text arrives, thinking is done — reset for next turn
+                    self._current_thinking = None
                     if needs_new_bubble or self._current_bubble is None:
                         self._current_text = ""
                         self._current_bubble = AssistantBubble()
                         message_area.mount(self._current_bubble)
                         needs_new_bubble = False
+                        self._last_render_time = 0.0
                     self._current_text += event.get("text", "")
-                    self._current_bubble.update(self._current_text)
-                    self.call_after_refresh(message_area.scroll_end, animate=False)
+                    now = time.monotonic()
+                    if now - self._last_render_time >= _RENDER_INTERVAL:
+                        self._last_render_time = now
+                        self._current_bubble.update(self._current_text)
+                        self.call_after_refresh(message_area.scroll_end, animate=False)
 
                 elif event_type == "tool_start":
                     name = event.get("name", "unknown")
@@ -236,6 +282,10 @@ class ChatScreen(Screen):
                         self._collapse_panels()
 
                 elif event_type == "done":
+                    # Final render to flush any buffered text
+                    if self._current_bubble and self._current_text:
+                        self._current_bubble.update(self._current_text)
+                        self.call_after_refresh(message_area.scroll_end, animate=False)
                     break
 
                 elif event_type == "error":
@@ -283,6 +333,7 @@ class ChatScreen(Screen):
 
         # Launch a parallel worker per sub-agent
         for agent_id in sub_agent_ids:
+            self._panel_last_render[agent_id] = 0.0
             self.run_worker(
                 self._stream_sub_agent(agent_id),
                 group=f"observe-{agent_id}",
@@ -302,10 +353,13 @@ class ChatScreen(Screen):
 
                 if event_type == "delta":
                     self._panel_texts[agent_id] += event.get("text", "")
-                    bubble.update(self._panel_texts[agent_id])
-                    panel = bubble.parent
-                    if panel:
-                        self.call_after_refresh(panel.scroll_end, animate=False)
+                    now = time.monotonic()
+                    if now - self._panel_last_render.get(agent_id, 0.0) >= _RENDER_INTERVAL:
+                        self._panel_last_render[agent_id] = now
+                        bubble.update(self._panel_texts[agent_id])
+                        panel = bubble.parent
+                        if panel:
+                            self.call_after_refresh(panel.scroll_end, animate=False)
 
                 elif event_type == "tool_start":
                     name = event.get("name", "unknown")
@@ -326,6 +380,11 @@ class ChatScreen(Screen):
                         self.call_after_refresh(panel.scroll_end, animate=False)
 
                 elif event_type == "done":
+                    # Final render flush
+                    bubble.update(self._panel_texts[agent_id])
+                    panel = bubble.parent
+                    if panel:
+                        self.call_after_refresh(panel.scroll_end, animate=False)
                     break
 
         except Exception as e:
@@ -341,3 +400,4 @@ class ChatScreen(Screen):
             pass
         self._panel_bubbles.clear()
         self._panel_texts.clear()
+        self._panel_last_render.clear()

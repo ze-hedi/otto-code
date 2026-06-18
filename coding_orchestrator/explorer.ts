@@ -6,16 +6,16 @@ import { PiAgent, ToolInput } from "../pi-agent.js";
 import { activeAgents, sessionAgentMap, workflowEvents } from "../runtime/state.js";
 
 export const subAgentPrompt = fs.readFileSync(
-  path.join(import.meta.dirname, "explorer_system_prompt.md"),
+  path.join(import.meta.dirname, "./explorer_sys_prompts/explorer_system_prompt_v2.md"),
   "utf-8"
 );
 
 export const orchestratorPrompt = fs.readFileSync(
-  path.join(import.meta.dirname, "explorer_orchestrator_prompt.md"),
+  path.join(import.meta.dirname, "./explorer_sys_prompts/explorer_system_prompt_v2.md"),
   "utf-8"
 );
 
-export const PLAYGROUND = path.join(process.env.HOME!, "code/otto_code");
+export const PLAYGROUND = path.join(process.env.HOME!, "code/antares-xpansion");
 export const EXPLORER_MODEL = "deepseek/deepseek-v4-pro";
 export const EXPLORER_THINKING: "high" = "high";
 

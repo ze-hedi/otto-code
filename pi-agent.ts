@@ -680,7 +680,7 @@ export class PiAgent {
       modelRegistry: this.modelRegistry,
       thinkingLevel: this.config.thinkingLevel,
       resourceLoader,
-      tools: this._builtInTools,
+      tools: [...this._builtInTools,...this.customTools.map(t=>t.name)],
       ...(settingsManager ? { settingsManager } : {}),
       // Add custom tools if any are registered
       ...(this.toolDefinitions.size > 0 ? { customTools: Array.from(this.toolDefinitions.values()) } : {}),

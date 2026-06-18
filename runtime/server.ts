@@ -5,6 +5,16 @@
 // SDK modules initialize (pi-ai reads env vars at module-load time).
 import './load-env.js';
 
+// Patch Node.js fetch to route through http_proxy / https_proxy.
+// undici's ProxyAgent hooks into the global fetch dispatcher, unlike global-agent
+// which only patches http/https modules (not fetch).
+import { ProxyAgent, setGlobalDispatcher } from 'undici';
+const proxyUrl = process.env.https_proxy || process.env.http_proxy;
+if (proxyUrl) {
+  setGlobalDispatcher(new ProxyAgent(proxyUrl));
+  console.log(`[runtime] Proxy enabled: ${proxyUrl.replace(/\/\/.*@/, '//***@')}`);
+}
+
 import express from 'express';
 import cors from 'cors';
 import { activeAgents, sessionAgentMap, currentAgentId } from './state.js';
