@@ -70,7 +70,14 @@ export interface PiAgentConfig {
   name?: string;
   /** Model provider and name, e.g., "anthropic/claude-sonnet-4-5" */
   model: string;
-  /** Additional system prompt appended to Pi's default */
+  /**
+   * Fully replace Pi's default system prompt. When set, this text becomes the
+   * base system prompt instead of the SDK default. The SDK still appends project
+   * context, skills, date, cwd, and `systemPromptSuffix` after it.
+   * Use `systemPromptSuffix` instead if you only want to add to the default.
+   */
+  systemPrompt?: string;
+  /** Additional system prompt appended to Pi's default (or to `systemPrompt` if set) */
   systemPromptSuffix?: string;
   /** Thinking level: "off" | "low" | "medium" | "high" | "xhigh" */
   thinkingLevel?: "off" | "low" | "medium" | "high" | "xhigh";
@@ -128,7 +135,7 @@ export class PiAgent {
   private modelRegistry: ModelRegistry;
   private model: Model<Api>;
   private config: Required<
-    Omit<PiAgentConfig, "apiKey" | "workingDir" | "playground" | "model" | "skills" | "tools" | "mem0Config" | "compaction" | "sessionDir" | "name" | "toolCallGuardrails" | "mcpEndpoint" | "mcpConnectionTimeout">
+    Omit<PiAgentConfig, "apiKey" | "workingDir" | "playground" | "model" | "skills" | "tools" | "mem0Config" | "compaction" | "sessionDir" | "name" | "toolCallGuardrails" | "mcpEndpoint" | "mcpConnectionTimeout" | "systemPrompt" | "builtInTools">
   > & {
     workingDir: string;
     playground: string;
@@ -150,6 +157,8 @@ export class PiAgent {
   private _mcpConnectionTimeout: number;
   private _mcpToolNames: Set<string> = new Set();
   private _builtInTools: string[];
+  /** Full system prompt override (replaces the SDK default when set). */
+  private _systemPrompt: string | undefined;
 
   constructor(config: PiAgentConfig) {
     const [provider, modelName] = config.model.split("/");
@@ -192,6 +201,7 @@ export class PiAgent {
     this._mcpEndpoint = config.mcpEndpoint;
     this._mcpConnectionTimeout = config.mcpConnectionTimeout ?? 5000;
     this._builtInTools = config.builtInTools ?? ["read", "bash", "edit", "write"];
+    this._systemPrompt = config.systemPrompt;
 
     // Initialize mem0 if configured
     if (config.mem0Config) {
@@ -365,6 +375,10 @@ export class PiAgent {
       }),
     };
 
+    if (this._systemPrompt !== undefined) {
+      loaderOptions.systemPrompt = this._systemPrompt;
+    }
+
     if (this.config.systemPromptSuffix) {
       loaderOptions.appendSystemPrompt = [this.config.systemPromptSuffix];
     }
@@ -495,7 +509,41 @@ export class PiAgent {
 
   /** Returns the resolved config (including all defaults). */
   getConfig() {
-    return { model: this.model.id, hasApiKey: this._hasApiKey, ...this.config };
+    return {
+      model: this.model.id,
+      hasApiKey: this._hasApiKey,
+      systemPrompt: this._systemPrompt,
+      ...this.config,
+    };
+  }
+
+  /**
+   * Fully replace the agent's system prompt. Unlike `systemPromptSuffix`, which
+   * only appends to Pi's default prompt, this sets the base prompt outright. The
+   * SDK still appends project context, skills, date, cwd, and any configured
+   * `systemPromptSuffix` after this text.
+   *
+   * Pass `undefined` to revert to the SDK default prompt.
+   *
+   * The new prompt takes effect on the next session created by `execute()` or
+   * the first `chat()`/`getSession()`. If a session already exists, it is not
+   * mutated in place — recreate the session for the change to apply.
+   *
+   * @param prompt - The full system prompt text, or `undefined` to reset.
+   */
+  setSystemPrompt(prompt: string | undefined): void {
+    this._systemPrompt = prompt;
+    if (this.currentSession) {
+      console.warn(
+        "System prompt updated but will only apply to new sessions. " +
+        "The current session must be recreated to use the new prompt."
+      );
+    }
+  }
+
+  /** Returns the current full system prompt override, or `undefined` if using the SDK default. */
+  getSystemPrompt(): string | undefined {
+    return this._systemPrompt;
   }
 
   /**
