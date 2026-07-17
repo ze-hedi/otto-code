@@ -1,6 +1,6 @@
 import "dotenv/config";
 import path from "path";
-import { PiAgent } from "../pi-agent.js";
+import { PiAgent } from "../agents/pi-agent.js";
 
 export const PLAYGROUND = path.join(process.env.HOME!, "code/antares-xpansion");
 export const WORKER_MODEL = "deepseek/deepseek-v4-pro";

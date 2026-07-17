@@ -2,7 +2,7 @@ import "dotenv/config";
 import fs from "fs";
 import path from "path";
 import { Type } from "typebox";
-import { PiAgent, ToolInput } from "../pi-agent.js";
+import { PiAgent, ToolInput } from "../agents/pi-agent.js";
 import { activeAgents, sessionAgentMap, workflowEvents } from "../runtime/state.js";
 
 export const subAgentPrompt = fs.readFileSync(

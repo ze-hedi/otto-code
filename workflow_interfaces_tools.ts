@@ -2,7 +2,7 @@
 // Workflow interface tools — forced output format definitions for inter-agent communication.
 
 import { Type } from 'typebox';
-import type { ToolInput } from './pi-agent.js';
+import type { ToolInput } from './agents/pi-agent.js';
 
 /**
  * Briefing tool definition.

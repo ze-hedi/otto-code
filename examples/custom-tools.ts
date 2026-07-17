@@ -1,7 +1,7 @@
 // examples/custom-tools.ts
 // Example demonstrating custom tools with PiAgent
 
-import { PiAgent, type ToolInput } from "../pi-agent";
+import { PiAgent, type ToolInput } from "../agents/pi-agent";
 import { Type } from "typebox";
 
 // Example mock database

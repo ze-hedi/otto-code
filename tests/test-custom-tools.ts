@@ -1,7 +1,7 @@
 // tests/test-custom-tools.ts
 // Unit tests for custom tools functionality
 
-import { PiAgent } from "../pi-agent";
+import { PiAgent } from "../agents/pi-agent";
 import { Type } from "typebox";
 
 async function testToolRegistration() {

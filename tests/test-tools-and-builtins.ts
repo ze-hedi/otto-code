@@ -6,8 +6,8 @@
 // Requires ANTHROPIC_API_KEY in the environment (.env is loaded via dotenv).
 
 import "dotenv/config";
-import { PiAgent, type ToolInput } from "../pi-agent";
-import { handleEvent } from "../pi-agent-utils";
+import { PiAgent, type ToolInput } from "../agents/pi-agent";
+import { handleEvent } from "../agents/pi-agent-utils";
 import { Type } from "typebox";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

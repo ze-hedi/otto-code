@@ -1,7 +1,7 @@
 // runtime/state.ts
 // Global runtime state shared across all route modules.
 
-import { PiAgent } from '../pi-agent.js';
+import { PiAgent } from '../agents/pi-agent.js';
 import type { AgentData } from './types.js';
 
 // ─── Global state ─────────────────────────────────────────────────────────────

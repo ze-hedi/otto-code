@@ -5,9 +5,9 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { Type } from "typebox";
-import { Mem0 } from "./mem0.js";
-import type { Mem0Config } from "./mem0.js";
-import type { McpBridge, McpToolEntry } from "./mcp-bridge.js";
+import { Mem0 } from "../mem0.js";
+import type { Mem0Config } from "../mem0.js";
+import type { McpBridge, McpToolEntry } from "../mcp-bridge.js";
 import {
   AuthStorage,
   createAgentSession,
@@ -647,7 +647,7 @@ export class PiAgent {
     // Store/update the endpoint mapping
     this._mcpServers.set(serverName, url);
 
-    const { createMcpBridge } = await import("./mcp-bridge.js");
+    const { createMcpBridge } = await import("../mcp-bridge.js");
     const bridge = await createMcpBridge(url, this._mcpConnectionTimeout);
     this._mcpBridges.set(serverName, bridge);
 

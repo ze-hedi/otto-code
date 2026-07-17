@@ -1,7 +1,7 @@
 import "dotenv/config";
 import fs from "fs";
 import path from "path";
-import { PiAgent } from "../pi-agent.js";
+import { PiAgent } from "../agents/pi-agent.js";
 
 export const plannerPrompt = fs.readFileSync(
   path.join(import.meta.dirname, "planner.md"),

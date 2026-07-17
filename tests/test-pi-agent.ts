@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 import "dotenv/config";
-import { PiAgent } from "../pi-agent";
+import { PiAgent } from "../agents/pi-agent";
 
 const SYSTEM_PROMPT = `
 You are a helpful assistant. Keep answers short and direct.

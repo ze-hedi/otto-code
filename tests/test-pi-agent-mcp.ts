@@ -1,5 +1,5 @@
 import "dotenv/config"  ; 
-import {RawPiAgent, RawPiAgentConfig} from "../raw-pi-agent" ;
+import {RawPiAgent, RawPiAgentConfig} from "../agents/raw-pi-agent" ;
 
 
 const agent_config : RawPiAgentConfig = {

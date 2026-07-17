@@ -4,7 +4,7 @@
 import fs from 'fs';
 import path from 'path';
 import { Router } from 'express';
-import { PiAgent, PiAgentConfig } from '../../pi-agent.js';
+import { PiAgent, PiAgentConfig } from '../../agents/pi-agent.js';
 import {
   activeAgents,
   sessionAgentMap,

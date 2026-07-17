@@ -4,8 +4,8 @@
 import { Router } from 'express';
 import fs from 'fs';
 import path from 'path';
-import { PiAgent, PiAgentConfig } from '../../pi-agent.js';
-import { handleEvent, handleEventWithClient } from '../../pi-agent-utils.js';
+import { PiAgent, PiAgentConfig } from '../../agents/pi-agent.js';
+import { handleEvent, handleEventWithClient } from '../../agents/pi-agent-utils.js';
 import { agentLogger } from '../agent-logger.js';
 import {
   activeAgents,
