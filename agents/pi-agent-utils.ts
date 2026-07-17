@@ -8,7 +8,6 @@ import { AgentEvent } from './pi-agent';
  * Pass the request-scoped `send` function from the chat route.
  */
 export function handleEventWithClient(event: AgentEvent, send: (payload: object) => void) {
-  console.log("printing full event ") 
   console.log(event)
   switch (event.type) {
     case "message_update":
@@ -43,7 +42,6 @@ export function handleEventWithClient(event: AgentEvent, send: (payload: object)
  * Suitable for use as the event handler passed to agent.execute() / agent.chat().
  */
 export function handleEvent(event: AgentEvent) {
-  console.log("printing the whole event ") ; 
   // console.log(event) ; 
   switch (event.type) {
     case "agent_start":

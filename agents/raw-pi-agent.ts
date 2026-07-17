@@ -59,13 +59,14 @@ export class RawPiAgent extends PiAgent {
     }
 
     // MCP tools — connect to all configured servers and inject their tools
+    console.log("connecting to mcp")
     const mcpResults = await this.connectAllMcp();
+    console.log("connection established")
     for (const [serverName, toolNames] of mcpResults) {
-      lines.push(`## MCP Server: ${serverName}`, "");
       for (const toolName of toolNames) {
         const def = this.toolDefinitions.get(toolName);
         if (def) {
-          lines.push(`### ${def.name}`);
+          lines.push(def.name);
           lines.push(def.description);
           lines.push("");
         }
@@ -82,6 +83,12 @@ export class RawPiAgent extends PiAgent {
       this._systemPrompt = this._baseSystemPrompt + "\n\n" + await this._buildToolsSection();
     }
 
-    return super._createSessionWith(sessionManager);
+    const session = await super._createSessionWith(sessionManager);
+
+    // Strip the date/cwd lines that buildSystemPrompt() always appends
+    session.agent.state.systemPrompt = session.agent.state.systemPrompt
+      .replace(/\nCurrent working directory: .+/, "");
+
+    return session;
   }
 }
