@@ -159,6 +159,8 @@ export class PiAgent {
   protected _builtInTools: string[];
   /** Full system prompt override (replaces the SDK default when set). */
   protected _systemPrompt: string | undefined;
+  /** When true, skip loading AGENTS.md/CLAUDE.md project context files. */
+  protected _noContextFiles: boolean = false;
 
   constructor(config: PiAgentConfig) {
     const [provider, modelName] = config.model.split("/");
@@ -380,6 +382,7 @@ export class PiAgent {
     const loaderOptions: ConstructorParameters<typeof DefaultResourceLoader>[0] = {
       cwd: playground,
       agentDir,
+      noContextFiles: this._noContextFiles,
       agentsFilesOverride: (base) => ({
         agentsFiles: base.agentsFiles.filter((f) =>
           f.path.startsWith(playground + "/") ||

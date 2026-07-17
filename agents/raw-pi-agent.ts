@@ -28,29 +28,58 @@ const builtInToolFactories: Record<string, (cwd: string) => ToolDefinition> = {
 };
 
 export class RawPiAgent extends PiAgent {
+  private _baseSystemPrompt: string | undefined;
+
   constructor(config: RawPiAgentConfig) {
     const { systemPrompt, ...baseConfig } = config;
     super(baseConfig);
-    this._systemPrompt = systemPrompt;
+    this._baseSystemPrompt = systemPrompt;
+    this._noContextFiles = true;
+  }
+
+  private async _buildToolsSection(): Promise<string> {
+    const lines = ["# Available Tools", ""];
+
+    // Built-in tools
+    const cwd = this.config.playground;
+    const builtInDefs = this._builtInTools
+      .map((name) => builtInToolFactories[name]?.(cwd))
+      .filter((d): d is ToolDefinition => d !== undefined);
+
+    for (const def of builtInDefs) {
+      lines.push(`## ${def.name}`);
+      lines.push(def.description);
+      if (def.promptGuidelines?.length) {
+        lines.push("Guidelines:");
+        for (const g of def.promptGuidelines) {
+          lines.push(`- ${g}`);
+        }
+      }
+      lines.push("");
+    }
+
+    // MCP tools — connect to all configured servers and inject their tools
+    const mcpResults = await this.connectAllMcp();
+    for (const [serverName, toolNames] of mcpResults) {
+      lines.push(`## MCP Server: ${serverName}`, "");
+      for (const toolName of toolNames) {
+        const def = this.toolDefinitions.get(toolName);
+        if (def) {
+          lines.push(`### ${def.name}`);
+          lines.push(def.description);
+          lines.push("");
+        }
+      }
+    }
+
+    return lines.join("\n");
   }
 
   protected override async _createSessionWith(
     sessionManager: SessionManager,
   ): Promise<AgentSession> {
-    if (this._systemPrompt !== undefined) {
-      const cwd = this.config.playground;
-      const toolDefs = this._builtInTools
-        .map((name) => builtInToolFactories[name]?.(cwd))
-        .filter((d): d is ToolDefinition => d !== undefined);
-
-      console.log("built-in tool definitions:");
-      for (const def of toolDefs) {
-        console.log(`\n=== ${def.name} ===`);
-        console.log(`description: ${def.description}`);
-        console.log(`promptSnippet: ${def.promptSnippet}`);
-        console.log(`promptGuidelines: ${JSON.stringify(def.promptGuidelines)}`);
-        console.log(`parameters: ${JSON.stringify(def.parameters, null, 2)}`);
-      }
+    if (this._baseSystemPrompt !== undefined) {
+      this._systemPrompt = this._baseSystemPrompt + "\n\n" + await this._buildToolsSection();
     }
 
     return super._createSessionWith(sessionManager);
