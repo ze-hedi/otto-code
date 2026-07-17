@@ -70,14 +70,7 @@ export interface PiAgentConfig {
   name?: string;
   /** Model provider and name, e.g., "anthropic/claude-sonnet-4-5" */
   model: string;
-  /**
-   * Fully replace Pi's default system prompt. When set, this text becomes the
-   * base system prompt instead of the SDK default. The SDK still appends project
-   * context, skills, date, cwd, and `systemPromptSuffix` after it.
-   * Use `systemPromptSuffix` instead if you only want to add to the default.
-   */
-  systemPrompt?: string;
-  /** Additional system prompt appended to Pi's default (or to `systemPrompt` if set) */
+  /** Additional system prompt appended to Pi's default */
   systemPromptSuffix?: string;
   /** Thinking level: "off" | "low" | "medium" | "high" | "xhigh" */
   thinkingLevel?: "off" | "low" | "medium" | "high" | "xhigh";
@@ -139,7 +132,7 @@ export class PiAgent {
   protected modelRegistry: ModelRegistry;
   protected model: Model<Api>;
   protected config: Required<
-    Omit<PiAgentConfig, "apiKey" | "workingDir" | "playground" | "model" | "skills" | "tools" | "mem0Config" | "compaction" | "sessionDir" | "name" | "toolCallGuardrails" | "mcpServers" | "mcpConnectionTimeout" | "systemPrompt" | "builtInTools">
+    Omit<PiAgentConfig, "apiKey" | "workingDir" | "playground" | "model" | "skills" | "tools" | "mem0Config" | "compaction" | "sessionDir" | "name" | "toolCallGuardrails" | "mcpServers" | "mcpConnectionTimeout" | "builtInTools">
   > & {
     workingDir: string;
     playground: string;
@@ -212,7 +205,6 @@ export class PiAgent {
     }
     this._mcpConnectionTimeout = config.mcpConnectionTimeout ?? 5000;
     this._builtInTools = config.builtInTools ?? ["read", "bash", "edit", "write"];
-    this._systemPrompt = config.systemPrompt;
 
     // Initialize mem0 if configured
     if (config.mem0Config) {

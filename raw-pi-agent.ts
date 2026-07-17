@@ -12,7 +12,13 @@ import {
   createEditToolDefinition,
   createWriteToolDefinition,
 } from "@mariozechner/pi-coding-agent";
-import { PiAgent } from "./pi-agent.js";
+import { PiAgent, type PiAgentConfig } from "./pi-agent.js";
+
+export type RawPiAgentConfig = Omit<PiAgentConfig, "systemPromptSuffix"> & {
+  /** Fully replace Pi's default system prompt. The SDK still appends project
+   *  context, skills, date, and cwd after it. */
+  systemPrompt?: string;
+};
 
 const builtInToolFactories: Record<string, (cwd: string) => ToolDefinition> = {
   read: createReadToolDefinition,
@@ -22,6 +28,12 @@ const builtInToolFactories: Record<string, (cwd: string) => ToolDefinition> = {
 };
 
 export class RawPiAgent extends PiAgent {
+  constructor(config: RawPiAgentConfig) {
+    const { systemPrompt, ...baseConfig } = config;
+    super(baseConfig);
+    this._systemPrompt = systemPrompt;
+  }
+
   protected override async _createSessionWith(
     sessionManager: SessionManager,
   ): Promise<AgentSession> {

@@ -1,9 +1,8 @@
 import "dotenv/config"  ; 
-import {PiAgentConfig} from "../pi-agent" ;
-import {RawPiAgent} from "../raw-pi-agent" ;
+import {RawPiAgent, RawPiAgentConfig} from "../raw-pi-agent" ;
 
 
-const agent_config : PiAgentConfig= {
+const agent_config : RawPiAgentConfig = {
     model:"anthropic/claude-sonnet-4-5", 
     apiKey : process.env.ANTHROPIC_API_KEY, 
     thinkingLevel:"high" ,
@@ -12,7 +11,8 @@ const agent_config : PiAgentConfig= {
 You are a journalist agent. 
 your mission is to analyze the user input, Do the necessary web research to find informations to respond to user's query 
     `,
-    mcpServers:{tavily_mcp:"http://0.0.0.0:8000/mcp"}
+    mcpServers:{tavily_mcp:"http://0.0.0.0:8000/mcp"}, 
+    builtInTools:["read"]
 } ; 
 
 let pi_agent : RawPiAgent = new RawPiAgent(
