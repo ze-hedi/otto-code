@@ -1,5 +1,6 @@
 import "dotenv/config"  ; 
-import {PiAgent, PiAgentConfig} from "../pi-agent" ;
+import {PiAgentConfig} from "../pi-agent" ;
+import {RawPiAgent} from "../raw-pi-agent" ;
 
 
 const agent_config : PiAgentConfig= {
@@ -7,14 +8,14 @@ const agent_config : PiAgentConfig= {
     apiKey : process.env.ANTHROPIC_API_KEY, 
     thinkingLevel:"high" ,
     sessionMode : "memory", 
-    systemPromptSuffix : `
+    systemPrompt : `
 You are a journalist agent. 
 your mission is to analyze the user input, Do the necessary web research to find informations to respond to user's query 
     `,
     mcpServers:{tavily_mcp:"http://0.0.0.0:8000/mcp"}
 } ; 
 
-let pi_agent : PiAgent = new PiAgent(
+let pi_agent : RawPiAgent = new RawPiAgent(
     agent_config
 ) ; 
 

@@ -135,27 +135,27 @@ export type AgentEvent = AgentSessionEvent;
 // ── PiAgent class ──────────────────────────────────────────────────────────────
 
 export class PiAgent {
-  private authStorage: AuthStorage;
-  private modelRegistry: ModelRegistry;
-  private model: Model<Api>;
-  private config: Required<
+  protected authStorage: AuthStorage;
+  protected modelRegistry: ModelRegistry;
+  protected model: Model<Api>;
+  protected config: Required<
     Omit<PiAgentConfig, "apiKey" | "workingDir" | "playground" | "model" | "skills" | "tools" | "mem0Config" | "compaction" | "sessionDir" | "name" | "toolCallGuardrails" | "mcpServers" | "mcpConnectionTimeout" | "systemPrompt" | "builtInTools">
   > & {
     workingDir: string;
     playground: string;
     skills: SkillInput[];
   };
-  private currentSession: AgentSession | null = null;
-  private skillsTmpDir: string | null = null;
-  private toolDefinitions: Map<string, ToolDefinition> = new Map();
+  protected currentSession: AgentSession | null = null;
+  protected skillsTmpDir: string | null = null;
+  protected toolDefinitions: Map<string, ToolDefinition> = new Map();
   private _hasApiKey: boolean = false;
-  private _provider: string = "";
+  protected _provider: string = "";
   private _mem0: Mem0 | null = null;
-  private _compaction: PiAgentConfig["compaction"];
-  private _sessionDir: string | undefined;
-  private _name: string | undefined;
-  private _toolCallGuardrails: boolean = false;
-  private _pendingApprovals: Map<string, { resolve: (approved: boolean) => void; comment?: string }> = new Map();
+  protected _compaction: PiAgentConfig["compaction"];
+  protected _sessionDir: string | undefined;
+  protected _name: string | undefined;
+  protected _toolCallGuardrails: boolean = false;
+  protected _pendingApprovals: Map<string, { resolve: (approved: boolean) => void; comment?: string }> = new Map();
   /** Map of server_name → active McpBridge */
   private _mcpBridges: Map<string, McpBridge> = new Map();
   /** Configured server_name → endpoint URL */
@@ -163,9 +163,9 @@ export class PiAgent {
   private _mcpConnectionTimeout: number;
   /** Map of tool_name → server_name (for routing calls to the correct bridge) */
   private _mcpToolServerMap: Map<string, string> = new Map();
-  private _builtInTools: string[];
+  protected _builtInTools: string[];
   /** Full system prompt override (replaces the SDK default when set). */
-  private _systemPrompt: string | undefined;
+  protected _systemPrompt: string | undefined;
 
   constructor(config: PiAgentConfig) {
     const [provider, modelName] = config.model.split("/");
@@ -313,7 +313,7 @@ export class PiAgent {
 
   // ── Session management ─────────────────────────────────────────────────────
 
-  private _writeSkillsToTmp(): { tmpDir: string; skills: Skill[] } {
+  protected _writeSkillsToTmp(): { tmpDir: string; skills: Skill[] } {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-skills-"));
     const skills: Skill[] = [];
 
@@ -377,7 +377,7 @@ export class PiAgent {
    * Core session creation: builds resource loader, settings, and calls createAgentSession.
    * Shared by _createSession() and loadSession().
    */
-  private async _createSessionWith(sessionManager: SessionManager): Promise<AgentSession> {
+  protected async _createSessionWith(sessionManager: SessionManager): Promise<AgentSession> {
     // Always build a resource loader so we can:
     // 1. Scope cwd to the playground (bash tool starting dir, system prompt, settings)
     // 2. Filter out AGENTS.md files from parent directories — the SDK walks up the
@@ -471,7 +471,7 @@ export class PiAgent {
   // ── Tool call guardrails ───────────────────────────────────────────────────
 
   /** Callback fired when a tool call requires user approval (set by caller) */
-  private _onToolApprovalRequired?: (toolCallId: string, toolName: string, args: unknown) => void;
+  protected _onToolApprovalRequired?: (toolCallId: string, toolName: string, args: unknown) => void;
 
   /** Register a callback for when tool approval is needed */
   onToolApprovalRequired(cb: (toolCallId: string, toolName: string, args: unknown) => void): void {
@@ -536,30 +536,6 @@ export class PiAgent {
       systemPrompt: this._systemPrompt,
       ...this.config,
     };
-  }
-
-  /**
-   * Fully replace the agent's system prompt. Unlike `systemPromptSuffix`, which
-   * only appends to Pi's default prompt, this sets the base prompt outright. The
-   * SDK still appends project context, skills, date, cwd, and any configured
-   * `systemPromptSuffix` after this text.
-   *
-   * Pass `undefined` to revert to the SDK default prompt.
-   *
-   * The new prompt takes effect on the next session created by `execute()` or
-   * the first `chat()`/`getSession()`. If a session already exists, it is not
-   * mutated in place — recreate the session for the change to apply.
-   *
-   * @param prompt - The full system prompt text, or `undefined` to reset.
-   */
-  setSystemPrompt(prompt: string | undefined): void {
-    this._systemPrompt = prompt;
-    if (this.currentSession) {
-      console.warn(
-        "System prompt updated but will only apply to new sessions. " +
-        "The current session must be recreated to use the new prompt."
-      );
-    }
   }
 
   /** Returns the current full system prompt override, or `undefined` if using the SDK default. */
@@ -910,3 +886,4 @@ export class PiAgent {
     return session.messages;
   }
 }
+
