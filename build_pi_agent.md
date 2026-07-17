@@ -82,7 +82,7 @@ Complete config shape (all fields are optional except `model`):
 | `mem0Config` | `Mem0Config` | undefined | Mem0 long-term memory config |
 | `compaction` | `object` | `{ enabled: true }` | Context compaction settings |
 | `toolCallGuardrails` | `boolean` | `false` | Require user approval before tool execution |
-| `mcpEndpoint` | `string` | undefined | MCP gateway URL for tool discovery |
+| `mcpServers` | `Record<string, string>` | undefined | Map of server_name → MCP endpoint URL |
 | `mcpConnectionTimeout` | `number` | `5000` | MCP connection timeout in ms |
 
 Reference: `pi-agent.ts:155-217`

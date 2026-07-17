@@ -1,11 +1,12 @@
 import os
 from typing import Literal
-
+from dotenv import load_dotenv
 from fastmcp import FastMCP
 from tavily import TavilyClient
 
 mcp = FastMCP(name="tavily-mcp")
 
+load_dotenv()
 _api_key = os.environ.get("TAVILY_API_KEY")
 if not _api_key:
     raise RuntimeError("TAVILY_API_KEY environment variable is required")

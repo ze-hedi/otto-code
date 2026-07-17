@@ -99,8 +99,12 @@ export interface PiAgentConfig {
   mem0Config?: Mem0Config;
   /** When true, tool calls pause for user approval before executing (default: false) */
   toolCallGuardrails?: boolean;
-  /** MCP gateway endpoint URL. When set, call connectMcp() to discover and register tools. */
-  mcpEndpoint?: string;
+  /**
+   * MCP server endpoints. Map of server_name → endpoint URL.
+   * Call connectMcp(serverName) or connectAllMcp() to discover and register tools.
+   * @example { filesystem: "http://localhost:3001/mcp", database: "http://localhost:3002/mcp" }
+   */
+  mcpServers?: Record<string, string>;
   /** MCP connection timeout in ms (default: 5000). */
   mcpConnectionTimeout?: number;
   /**
@@ -135,7 +139,7 @@ export class PiAgent {
   private modelRegistry: ModelRegistry;
   private model: Model<Api>;
   private config: Required<
-    Omit<PiAgentConfig, "apiKey" | "workingDir" | "playground" | "model" | "skills" | "tools" | "mem0Config" | "compaction" | "sessionDir" | "name" | "toolCallGuardrails" | "mcpEndpoint" | "mcpConnectionTimeout" | "systemPrompt" | "builtInTools">
+    Omit<PiAgentConfig, "apiKey" | "workingDir" | "playground" | "model" | "skills" | "tools" | "mem0Config" | "compaction" | "sessionDir" | "name" | "toolCallGuardrails" | "mcpServers" | "mcpConnectionTimeout" | "systemPrompt" | "builtInTools">
   > & {
     workingDir: string;
     playground: string;
@@ -152,10 +156,13 @@ export class PiAgent {
   private _name: string | undefined;
   private _toolCallGuardrails: boolean = false;
   private _pendingApprovals: Map<string, { resolve: (approved: boolean) => void; comment?: string }> = new Map();
-  private _mcpBridge: McpBridge | null = null;
-  private _mcpEndpoint: string | undefined;
+  /** Map of server_name → active McpBridge */
+  private _mcpBridges: Map<string, McpBridge> = new Map();
+  /** Configured server_name → endpoint URL */
+  private _mcpServers: Map<string, string> = new Map();
   private _mcpConnectionTimeout: number;
-  private _mcpToolNames: Set<string> = new Set();
+  /** Map of tool_name → server_name (for routing calls to the correct bridge) */
+  private _mcpToolServerMap: Map<string, string> = new Map();
   private _builtInTools: string[];
   /** Full system prompt override (replaces the SDK default when set). */
   private _systemPrompt: string | undefined;
@@ -198,7 +205,11 @@ export class PiAgent {
     this._sessionDir = config.sessionDir;
     this._compaction = config.compaction;
     this._toolCallGuardrails = config.toolCallGuardrails ?? false;
-    this._mcpEndpoint = config.mcpEndpoint;
+    if (config.mcpServers) {
+      for (const [name, url] of Object.entries(config.mcpServers)) {
+        this._mcpServers.set(name, url);
+      }
+    }
     this._mcpConnectionTimeout = config.mcpConnectionTimeout ?? 5000;
     this._builtInTools = config.builtInTools ?? ["read", "bash", "edit", "write"];
     this._systemPrompt = config.systemPrompt;
@@ -266,7 +277,9 @@ export class PiAgent {
 
   // ── MCP Tool Definition ────────────────────────────────────────────────────
 
-  private _createMcpToolDefinition(mcpTool: McpToolEntry, bridge: McpBridge): ToolDefinition {
+  private _createMcpToolDefinition(mcpTool: McpToolEntry, serverName: string): ToolDefinition {
+    // Capture `this` so the execute closure can look up the bridge at call time
+    const agent = this;
     return {
       name: mcpTool.name,
       label: mcpTool.name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
@@ -276,12 +289,20 @@ export class PiAgent {
       executionMode: "sequential",
 
       async execute(toolCallId, params, signal) {
+        const bridge = agent._mcpBridges.get(serverName);
+        if (!bridge) {
+          return {
+            content: [{ type: "text", text: `MCP server "${serverName}" is not connected` }],
+            details: { error: true },
+            isError: true,
+          };
+        }
         try {
           const result = await bridge.callTool(mcpTool.name, params as Record<string, unknown>);
           return { content: result.content, details: {} };
         } catch (error) {
           return {
-            content: [{ type: "text", text: `MCP tool error: ${error instanceof Error ? error.message : String(error)}` }],
+            content: [{ type: "text", text: `MCP tool error (${serverName}): ${error instanceof Error ? error.message : String(error)}` }],
             details: { error: true },
             isError: true,
           };
@@ -542,8 +563,9 @@ export class PiAgent {
   }
 
   /** Returns the current full system prompt override, or `undefined` if using the SDK default. */
-  getSystemPrompt(): string | undefined {
-    return this._systemPrompt;
+  async getSystemPrompt(): Promise<string>  {
+    const session = await this.getSession() ; 
+    return session.systemPrompt;
   }
 
   /**
@@ -640,62 +662,115 @@ export class PiAgent {
   // ── MCP Integration ─────────────────────────────────────────────────────────
 
   /**
-   * Connect to an MCP gateway, discover tools, and register them.
+   * Connect to a single MCP server by name, discover tools, and register them.
    * Call this before the first chat()/execute() so tools are available in the session.
-   * Can be called again to reconnect (old MCP tools are replaced).
-   * @param endpoint - Override the configured mcpEndpoint
-   * @returns Array of discovered MCP tool names
+   * Can be called again to reconnect (old tools from that server are replaced).
+   * @param serverName - Name identifying the MCP server
+   * @param endpoint - Endpoint URL (falls back to the configured URL for this serverName)
+   * @returns Array of discovered tool names from this server
    */
-  async connectMcp(endpoint?: string): Promise<string[]> {
-    const url = endpoint ?? this._mcpEndpoint;
-    if (!url) throw new Error("No MCP endpoint configured. Set mcpEndpoint in config or pass it to connectMcp().");
+  async connectMcp(serverName: string, endpoint?: string): Promise<string[]> {
+    const url = endpoint ?? this._mcpServers.get(serverName);
+    if (!url) throw new Error(`No endpoint configured for MCP server "${serverName}". Set it in mcpServers config or pass it to connectMcp().`);
 
-    // Tear down previous MCP connection if reconnecting
-    if (this._mcpBridge) {
-      Array.from(this._mcpToolNames).forEach((name) => this.toolDefinitions.delete(name));
-      this._mcpToolNames.clear();
-      await this._mcpBridge.close().catch(() => {});
-      this._mcpBridge = null;
-    }
+    // Tear down previous connection for this server if reconnecting
+    await this._disconnectServer(serverName);
+
+    // Store/update the endpoint mapping
+    this._mcpServers.set(serverName, url);
 
     const { createMcpBridge } = await import("./mcp-bridge.js");
     const bridge = await createMcpBridge(url, this._mcpConnectionTimeout);
-    this._mcpBridge = bridge;
+    this._mcpBridges.set(serverName, bridge);
 
+    const registered: string[] = [];
     for (const mcpTool of bridge.tools) {
       if (this.toolDefinitions.has(mcpTool.name)) {
         console.warn(`[pi-agent] MCP tool "${mcpTool.name}" conflicts with existing tool, skipping`);
         continue;
       }
-      const toolDef = this._createMcpToolDefinition(mcpTool, bridge);
+      const toolDef = this._createMcpToolDefinition(mcpTool, serverName);
       this.toolDefinitions.set(mcpTool.name, toolDef);
-      this._mcpToolNames.add(mcpTool.name);
+      this._mcpToolServerMap.set(mcpTool.name, serverName);
+      registered.push(mcpTool.name);
     }
 
     if (this.currentSession) {
       console.warn("[pi-agent] MCP tools registered but require a new session to take effect.");
     }
 
-    return Array.from(this._mcpToolNames);
+    return registered;
   }
 
-  /** Disconnect from MCP gateway and unregister all MCP tools. */
-  async disconnectMcp(): Promise<void> {
-    if (!this._mcpBridge) return;
-    Array.from(this._mcpToolNames).forEach((name) => this.toolDefinitions.delete(name));
-    this._mcpToolNames.clear();
-    await this._mcpBridge.close().catch(() => {});
-    this._mcpBridge = null;
+  /**
+   * Connect to all configured MCP servers (from mcpServers config).
+   * @returns Map of server_name → array of discovered tool names
+   */
+  async connectAllMcp(): Promise<Map<string, string[]>> {
+    const results = new Map<string, string[]>();
+    for (const [name, url] of this._mcpServers) {
+      const tools = await this.connectMcp(name, url);
+      results.set(name, tools);
+    }
+    return results;
   }
 
-  /** Returns true if an MCP bridge is currently connected. */
-  isMcpConnected(): boolean {
-    return this._mcpBridge !== null;
+  /** Internal helper: tear down one server's bridge and unregister its tools. */
+  private async _disconnectServer(serverName: string): Promise<void> {
+    const bridge = this._mcpBridges.get(serverName);
+    if (!bridge) return;
+
+    // Remove tools belonging to this server
+    for (const [toolName, sName] of this._mcpToolServerMap) {
+      if (sName === serverName) {
+        this.toolDefinitions.delete(toolName);
+        this._mcpToolServerMap.delete(toolName);
+      }
+    }
+
+    await bridge.close().catch(() => {});
+    this._mcpBridges.delete(serverName);
   }
 
-  /** Returns the list of tool names registered from MCP. */
-  getMcpTools(): string[] {
-    return Array.from(this._mcpToolNames);
+  /**
+   * Disconnect from one or all MCP servers and unregister their tools.
+   * @param serverName - If provided, disconnect only that server. Otherwise disconnect all.
+   */
+  async disconnectMcp(serverName?: string): Promise<void> {
+    if (serverName) {
+      await this._disconnectServer(serverName);
+    } else {
+      const names = Array.from(this._mcpBridges.keys());
+      for (const name of names) {
+        await this._disconnectServer(name);
+      }
+    }
+  }
+
+  /**
+   * Returns true if the specified server (or any server, if no name given) is connected.
+   */
+  isMcpConnected(serverName?: string): boolean {
+    if (serverName) return this._mcpBridges.has(serverName);
+    return this._mcpBridges.size > 0;
+  }
+
+  /**
+   * Returns MCP tool names, optionally filtered by server.
+   * @param serverName - If provided, return only tools from that server.
+   */
+  getMcpTools(serverName?: string): string[] {
+    if (serverName) {
+      return Array.from(this._mcpToolServerMap.entries())
+        .filter(([, sName]) => sName === serverName)
+        .map(([toolName]) => toolName);
+    }
+    return Array.from(this._mcpToolServerMap.keys());
+  }
+
+  /** Returns the names of all connected MCP servers. */
+  getMcpServerNames(): string[] {
+    return Array.from(this._mcpBridges.keys());
   }
 
   /**
