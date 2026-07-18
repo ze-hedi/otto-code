@@ -24,7 +24,11 @@ export function createSubAgentTool(config: SubAgentToolConfig): ToolInput {
     promptGuidelines: config.promptGuidelines,
     executionMode: "parallel",
     execute: async (_toolCallId, params) => {
-      const task = (params as { task: string }).task;
+      const entries = Object.entries(params as Record<string, unknown>);
+      const task = entries.map(([k, v]) => {
+        const val = Array.isArray(v) ? v.join(", ") : String(v);
+        return `${k}: ${val}`;
+      }).join("\n\n");
 
       try {
         await config.agent.execute(task);

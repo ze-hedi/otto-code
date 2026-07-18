@@ -58,15 +58,31 @@ export class RawPiAgent extends PiAgent {
       lines.push("");
     }
 
+    // Custom tools (registered via config.tools, e.g. sub-agent tools)
+    const builtInNames = new Set(this._builtInTools);
+    for (const [name, def] of this.toolDefinitions) {
+      if (builtInNames.has(name)) continue; // already rendered above
+      lines.push(name);
+      lines.push(def.description);
+      if (def.promptSnippet) {
+        lines.push(def.promptSnippet);
+      }
+      if (def.promptGuidelines?.length) {
+        lines.push("Guidelines:");
+        for (const g of def.promptGuidelines) {
+          lines.push(`- ${g}`);
+        }
+      }
+      lines.push("");
+    }
+
     // MCP tools — connect to all configured servers and inject their tools
-    console.log("connecting to mcp")
     const mcpResults = await this.connectAllMcp();
-    console.log("connection established")
     for (const [serverName, toolNames] of mcpResults) {
       for (const toolName of toolNames) {
         const def = this.toolDefinitions.get(toolName);
         if (def) {
-          lines.push(def.name);
+          lines.push(`## ${def.name}`);
           lines.push(def.description);
           lines.push("");
         }
