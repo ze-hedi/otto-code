@@ -1,12 +1,14 @@
 import "dotenv/config";
 import fs from "fs";
 import path from "path";
+import { createInterface } from "readline";
 import { RawPiAgent } from "../agents/raw-pi-agent.js";
 import type { ImageContent } from "@mariozechner/pi-ai";
+import { handleEvent } from "../agents/pi-agent-utils";
 
 const systemPrompt = `You are a CV/resume analysis agent. Your job is to analyze a candidate's CV provided as an image and produce a structured summary.
 
-## Your output format
+## if the user request is about doing a full analysis of cv then your output format should be as follows : 
 
 Produce the following sections:
 
@@ -32,6 +34,8 @@ For each position (most recent first):
 
 ### Assessment
 A brief (3-5 sentence) assessment of the candidate's profile: strengths, gaps, seniority level, and what roles they'd be a good fit for.
+
+If the user is asking for a specific details about the candidate experience or any other info in the cv you need to act like an assistant and give a well scoped reponse
 
 ## Rules
 - Extract only what is explicitly visible in the CV. Never invent or assume information.
@@ -62,19 +66,38 @@ if (!fs.existsSync(resolved)) {
   process.exit(1);
 }
 
+const ext = path.extname(resolved).toLowerCase();
+const mimeTypes: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+};
+const mimeType = mimeTypes[ext];
+if (!mimeType) {
+  console.error(`Unsupported image format: ${ext}. Use png, jpg, gif, or webp.`);
+  process.exit(1);
+}
+
 const data = fs.readFileSync(resolved).toString("base64");
-const image: ImageContent = { type: "image", data, mimeType: "image/png" };
+const image: ImageContent = { type: "image", data, mimeType };
 
-await agent.execute("Analyze this CV and produce a structured summary.", {
-  images: [image],
-  onEvent: (event) => {
-    if (
-      event.type === "message_update" &&
-      event.assistantMessageEvent.type === "text_delta"
-    ) {
-      process.stdout.write(event.assistantMessageEvent.delta);
-    }
-  },
-});
+await agent.execute("Analyze this CV and produce a structured summary.",
+  [image],
+  handleEvent,
+  );
 
-console.log();
+console.log("\n");
+
+const rl = createInterface({ input: process.stdin, output: process.stdout });
+const ask = (prompt: string) => new Promise<string>((resolve) => rl.question(prompt, resolve));
+
+while (true) {
+  const input = await ask("\nYou: ");
+  if (!input || input.toLowerCase() === "exit") break;
+  await agent.chat(input, handleEvent);
+}
+
+rl.close();
+process.exit(0);

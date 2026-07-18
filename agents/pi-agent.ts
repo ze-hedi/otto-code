@@ -776,11 +776,9 @@ export class PiAgent {
    */
   async execute(
     query: string,
-    onEventOrOptions?: EventCallback | { images?: ImageContent[]; onEvent?: EventCallback },
+    images?: ImageContent[],
+    onEvent?: EventCallback,
   ): Promise<void> {
-    const opts = typeof onEventOrOptions === "function"
-      ? { onEvent: onEventOrOptions }
-      : onEventOrOptions ?? {};
     const session = await this._createSession();
     let streamError: Error | undefined;
     const unsubError = session.subscribe((event) => {
@@ -792,9 +790,9 @@ export class PiAgent {
         streamError = new Error(msg ?? "Stream error");
       }
     });
-    const unsubscribe = this._subscribe(session, opts.onEvent);
+    const unsubscribe = this._subscribe(session, onEvent);
     try {
-      await session.prompt(query, { images: opts.images });
+      await session.prompt(query, { images });
       if (streamError) throw streamError;
     } finally {
       unsubscribe();
