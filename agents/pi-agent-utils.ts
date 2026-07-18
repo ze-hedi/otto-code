@@ -37,69 +37,90 @@ export function handleEventWithClient(event: AgentEvent, send: (payload: object)
   }
 }
 
-/**
- * Logs every AgentEvent to stdout in a human-readable format.
- * Suitable for use as the event handler passed to agent.execute() / agent.chat().
- */
+// ANSI escape codes
+const DIM = "\x1b[2m";
+const CYAN = "\x1b[36m";
+const RED = "\x1b[31m";
+const RESET = "\x1b[0m";
+
+const MAX_RESULT_LENGTH = 500;
+
+function extractResultText(result: unknown): string {
+  if (typeof result === "string") return result;
+  if (result && typeof result === "object") {
+    const r = result as any;
+    if (Array.isArray(r.content)) {
+      const text = r.content
+        .filter((b: any) => b.type === "text")
+        .map((b: any) => b.text)
+        .join("\n");
+      if (text) return text;
+    }
+    if (Array.isArray(r)) {
+      const text = r
+        .filter((b: any) => b.type === "text")
+        .map((b: any) => b.text)
+        .join("\n");
+      if (text) return text;
+    }
+  }
+  return JSON.stringify(result, null, 2);
+}
+
+let _inThinking = false;
+
 export function handleEvent(event: AgentEvent) {
-  // console.log(event) ; 
+  // Catch errors on any event type — some events (e.g. message_end) carry
+  // errorMessage without a dedicated "error" event type.
+  const msg = (event as any).message ?? event;
+  if (msg.errorMessage) {
+    console.log(`\n${RED}[error on ${event.type}]${RESET} ${msg.errorMessage}`);
+  }
+
   switch (event.type) {
     case "agent_start":
-      console.log("--- agent start ---");
+      console.log(`${DIM}[agent start]${RESET}`);
       break;
 
     case "agent_end":
-      console.log("--- agent end ---");
-      break;
-
-    case "turn_start":
-      console.log("\n--- turn start ---");
-      break;
-
-    case "turn_end":
-      console.log("\n--- turn end ---");
-      if (event.toolResults.length > 0) {
-        console.log(`tool results:\n${JSON.stringify(event.toolResults, null, 2)}`);
-      }
-      break;
-
-    case "message_start":
-      console.log(`\n--- message start (role: ${event.message.role}) ---`);
-      
-      break;
-
-    case "message_end":
-      console.log(`\n--- message end (role: ${event.message.role}) ---`);
+      console.log(`\n${DIM}[agent end]${RESET}`);
       break;
 
     case "message_update":
       switch (event.assistantMessageEvent.type) {
         case "thinking_delta":
-          process.stdout.write(event.assistantMessageEvent.delta);
+          if (!_inThinking) {
+            _inThinking = true;
+            console.log(`\n${DIM}[thinking]${RESET}`);
+          }
+          process.stdout.write(`${DIM}${event.assistantMessageEvent.delta}${RESET}`);
           break;
         case "thinking_end":
-          console.log(`\n--- end of thinking ---\n${event.assistantMessageEvent.content}\n`);
+          _inThinking = false;
+          process.stdout.write(`\n${RESET}`);
           break;
         case "text_delta":
           process.stdout.write(event.assistantMessageEvent.delta);
           break;
         case "text_end":
-          console.log(`\n--- text block end ---`);
+          process.stdout.write("\n");
           break;
-        case "toolcall_end":
-          console.log(`\n🔧 [tool call]\n${JSON.stringify(event.assistantMessageEvent.toolCall, null, 2)}`);
+        case "toolcall_end": {
+          const tc = event.assistantMessageEvent.toolCall;
+          console.log(`\n${CYAN}[tool] ${tc.name}${RESET}`);
+          console.log(`${CYAN}input:${RESET} ${JSON.stringify(tc.arguments, null, 2)}`);
           break;
+        }
         case "done":
-          console.log(`\n--- stream done (${event.assistantMessageEvent.reason}) ---`);
+          console.log(`\n${DIM}[done: ${event.assistantMessageEvent.reason}]${RESET}`);
           break;
-        case "error":
-          console.log(`\n--- stream error (${event.assistantMessageEvent.reason}) ---`);
+        case "error": {
+          const errMsg = (event.assistantMessageEvent.error as any)?.errorMessage;
+          console.log(`\n${RED}[stream error: ${event.assistantMessageEvent.reason}]${RESET}`);
+          if (errMsg) console.log(`${RED}${errMsg}${RESET}`);
           break;
+        }
       }
-      break;
-
-    case "tool_execution_start":
-      console.log(`\n⚙️  [${event.toolName}]\n${JSON.stringify(event.args, null, 2)}`);
       break;
 
     case "tool_execution_update": {
@@ -112,39 +133,34 @@ export function handleEvent(event: AgentEvent) {
     }
 
     case "tool_execution_end": {
-      const result = typeof event.result === "string"
-        ? event.result
-        : JSON.stringify(event.result, null, 2);
+      const text = extractResultText(event.result);
       if (event.isError) {
-        console.log(`\n❌ [${event.toolName}] error:\n${result}`);
+        console.log(`${RED}[${event.toolName} error]${RESET}\n${text}`);
       } else {
-        console.log(`\n✅ [${event.toolName}]:\n${result}`);
+        const display = text.length > MAX_RESULT_LENGTH
+          ? text.slice(0, MAX_RESULT_LENGTH) + `\n${DIM}... (truncated)${RESET}`
+          : text;
+        console.log(`${CYAN}[${event.toolName} result]${RESET}\n${display}`);
       }
       break;
     }
 
-    case "queue_update":
-      console.log(`\n--- queue update (steering: ${event.steering.length}, followUp: ${event.followUp.length}) ---`);
-      break;
-
-    case "compaction_start":
-      console.log(`\n--- compaction start (${event.reason}) ---`);
-      break;
-
-    case "compaction_end":
-      console.log(`\n--- compaction end (${event.reason}, aborted: ${event.aborted}) ---`);
-      break;
-
-    case "session_info_changed":
-      console.log(`\n--- session name: ${event.name} ---`);
-      break;
-
     case "auto_retry_start":
-      console.log(`\n--- retry ${event.attempt}/${event.maxAttempts} in ${event.delayMs}ms: ${event.errorMessage} ---`);
+      console.log(`\n${RED}[retry ${event.attempt}/${event.maxAttempts} in ${event.delayMs}ms]${RESET} ${event.errorMessage}`);
       break;
 
     case "auto_retry_end":
-      console.log(`\n--- retry end (success: ${event.success}, attempt: ${event.attempt}${event.finalError ? `, error: ${event.finalError}` : ""}) ---`);
+      if (event.success) {
+        console.log(`${DIM}[retry succeeded on attempt ${event.attempt}]${RESET}`);
+      } else {
+        console.log(`${RED}[retry failed on attempt ${event.attempt}]${RESET}${event.finalError ? ` ${event.finalError}` : ""}`);
+      }
+      break;
+
+    case "compaction_end":
+      if (event.errorMessage) {
+        console.log(`${RED}[compaction error: ${event.errorMessage}]${RESET}`);
+      }
       break;
   }
 }
