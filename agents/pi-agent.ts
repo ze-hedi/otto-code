@@ -20,7 +20,7 @@ import {
   type ToolDefinition,
 } from "@mariozechner/pi-coding-agent";
 import { SettingsManager } from "@mariozechner/pi-coding-agent";
-import { getModel, Model, type Api, type KnownProvider } from "@mariozechner/pi-ai";
+import { getModel, Model, type Api, type KnownProvider, type ImageContent } from "@mariozechner/pi-ai";
 import type { Skill } from "@mariozechner/pi-coding-agent";
 import type { TSchema } from "typebox";
 
@@ -774,7 +774,13 @@ export class PiAgent {
    * Execute a query on a fresh session and wait for completion.
    * Throws if the stream ends with an error (e.g. API quota exceeded).
    */
-  async execute(query: string, onEvent?: EventCallback): Promise<void> {
+  async execute(
+    query: string,
+    onEventOrOptions?: EventCallback | { images?: ImageContent[]; onEvent?: EventCallback },
+  ): Promise<void> {
+    const opts = typeof onEventOrOptions === "function"
+      ? { onEvent: onEventOrOptions }
+      : onEventOrOptions ?? {};
     const session = await this._createSession();
     let streamError: Error | undefined;
     const unsubError = session.subscribe((event) => {
@@ -786,9 +792,9 @@ export class PiAgent {
         streamError = new Error(msg ?? "Stream error");
       }
     });
-    const unsubscribe = this._subscribe(session, onEvent);
+    const unsubscribe = this._subscribe(session, opts.onEvent);
     try {
-      await session.prompt(query);
+      await session.prompt(query, { images: opts.images });
       if (streamError) throw streamError;
     } finally {
       unsubscribe();

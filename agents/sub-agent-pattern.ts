@@ -22,6 +22,7 @@ export function createSubAgentTool(config: SubAgentToolConfig): ToolInput {
     parameters,
     promptSnippet: config.promptSnippet,
     promptGuidelines: config.promptGuidelines,
+    executionMode: "parallel",
     execute: async (_toolCallId, params) => {
       const task = (params as { task: string }).task;
 
