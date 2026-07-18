@@ -68,19 +68,13 @@ const sub_agent_systemPrompt = `
     This section can be divided into multiple subsections
 `;
 
-const interviwer_pi_agent = new RawPiAgent({
-  name: "interview_questions_preparation",
+const interviewTool = createSubAgentTool({
+  name: "interview_preparator",
+  description: "a sub agent dedicated to prepare a report that will help tech recruiter conduct an interview",
   model: "deepseek/deepseek-v4-pro",
   systemPrompt: sub_agent_systemPrompt,
   builtInTools: ["read", "write", "edit"],
   playground: process.cwd(),
-  sessionMode: "memory",
-});
-
-const interviewTool = createSubAgentTool({
-  agent: interviwer_pi_agent,
-  name: "interview_preparator",
-  description: "a sub agent dedicated to prepare a report that will help tech recruiter conduct an interview",
   parameters: Type.Object({
     context: Type.String({ description: "A detailed description of the candidate profile including experience, degrees, and skills" }),
     keypoints: Type.Optional(Type.Array(Type.String(), { description: "Specific key points to focus on during the interview" })),
@@ -99,7 +93,7 @@ const interviewTool = createSubAgentTool({
 
 const agent = new RawPiAgent({
   name: "cv-analyser",
-  model: "anthropic/claude-sonnet-4-5",
+  model: "deepseek/deepseek-v4-pro",
   systemPrompt,
   builtInTools: ["read", "write", "edit"],
   playground: process.cwd(),
@@ -120,39 +114,89 @@ for (const tool of session.getAllTools()) {
 
 // ── CLI entry point ──────────────────────────────────────────────────────────
 
-const pngPath = process.argv[2];
-if (!pngPath) {
-  console.error("Usage: npx tsx examples/cv-analyser.ts <path-to-cv.png>");
-  process.exit(1);
-}
+let initial_user_prompt : string = `Analyze this CV and produce a structured summary : / 
+  Sarah Lindqvist
 
-const resolved = path.resolve(pngPath);
-if (!fs.existsSync(resolved)) {
-  console.error(`File not found: ${resolved}`);
-  process.exit(1);
-}
+Senior Machine Learning Engineer
+Amsterdam, Netherlands | sarah.lindqvist.ml@gmail.com | +31 6 12 34 56 78
+linkedin.com/in/sarahlindqvist-ml | github.com/slindqvist
 
-const ext = path.extname(resolved).toLowerCase();
-const mimeTypes: Record<string, string> = {
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
-};
-const mimeType = mimeTypes[ext];
-if (!mimeType) {
-  console.error(`Unsupported image format: ${ext}. Use png, jpg, gif, or webp.`);
-  process.exit(1);
-}
 
- 
-const data = fs.readFileSync(resolved).toString("base64");
-const image: ImageContent = { type: "image", data, mimeType };
+Summary
 
-await agent.execute("Analyze this CV and produce a structured summary.",
-  [image],
-  handleEvent,
+Machine Learning Engineer with 8 years of experience building and deploying production ML systems at scale. Specialized in NLP, recommendation systems, and ML infrastructure. Track record of taking models from research prototype to serving 40M+ daily requests. Comfortable across the full stack: data pipelines, training infrastructure, model optimization, and low-latency inference.
+
+
+Experience
+
+Senior ML Engineer — Adyen, Amsterdam
+
+March 2022 – Present
+
+
+Lead engineer on the real-time fraud detection platform processing 30k transactions/sec with p99 latency under 40ms
+Migrated model serving from TensorFlow Serving to Triton Inference Server, reducing GPU costs by 35% through dynamic batching and FP16 quantization
+Designed and shipped a feature store (Feast + Redis) unifying online/offline features across 6 model families, eliminating training-serving skew incidents
+Built drift-detection and automated retraining pipeline (Airflow, MLflow); reduced model staleness incidents from monthly to near zero
+Mentored 3 junior engineers; ran the team's ML system design interview loop
+
+
+ML Engineer — Booking.com, Amsterdam
+
+June 2019 – February 2022
+
+
+Developed ranking models for accommodation search (LambdaMART → two-tower neural retrieval), lifting NDCG@10 by 4.2% and conversion by 1.1% in A/B tests
+Built a multilingual review summarization service (fine-tuned mBART) serving 25 languages
+Owned the migration of the ranking training pipeline from Hadoop/Spark to Kubernetes + PyTorch DDP, cutting training time from 14h to 3h
+On-call rotation for ML serving infrastructure (Kubernetes, Istio, Prometheus)
+
+
+Data Scientist — Zalando, Berlin
+
+September 2016 – May 2019
+
+
+Built size-recommendation models reducing size-related returns by 8% across 3 markets
+Productionized demand forecasting models (gradient boosting, later DeepAR) used by supply chain planning
+Introduced experiment tracking and reproducible training practices to the team
+
+
+
+Skills
+
+Languages: Python, SQL, Go (basic), C++ (basic)
+ML/DL: PyTorch, TensorFlow, scikit-learn, XGBoost, Hugging Face Transformers
+Serving & Infra: Triton, TorchServe, ONNX Runtime, Docker, Kubernetes, Terraform
+Data: Spark, Kafka, Airflow, Feast, BigQuery, Redis
+MLOps: MLflow, Weights & Biases, DVC, Great Expectations
+Cloud: GCP (Professional ML Engineer certified), AWS
+
+
+Education
+
+MSc, Artificial Intelligence — University of Amsterdam, 2016
+Thesis: "Attention Mechanisms for Neural Machine Translation of Low-Resource Language Pairs"
+
+BSc, Computer Science — KTH Royal Institute of Technology, Stockholm, 2014
+
+
+Publications & Talks
+
+
+"Feature Stores in Practice: Lessons from Payments ML" — PyData Amsterdam 2024 (speaker)
+Lindqvist, S. et al. "Two-Tower Retrieval at Scale for Travel Search." RecSys Industry Track, 2021
+
+
+Languages
+
+Swedish (native), English (fluent), Dutch (B2), German (B1)` 
+
+
+
+await agent.execute(
+  initial_user_prompt,
+  undefined,
   );
 
 console.log("\n");

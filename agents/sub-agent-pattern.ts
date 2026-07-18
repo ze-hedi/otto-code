@@ -1,10 +1,14 @@
 import { Type, TSchema } from "typebox";
-import { PiAgent, ToolInput } from "./pi-agent.js";
+import { ToolInput } from "./pi-agent.js";
+import { RawPiAgent } from "./raw-pi-agent.js";
 
 export interface SubAgentToolConfig {
-  agent: PiAgent;
   name: string;
   description: string;
+  model: string;
+  systemPrompt: string;
+  builtInTools?: string[];
+  playground?: string;
   parameters?: TSchema;
   promptSnippet?: string;
   promptGuidelines?: string[];
@@ -30,10 +34,18 @@ export function createSubAgentTool(config: SubAgentToolConfig): ToolInput {
         return `${k}: ${val}`;
       }).join("\n\n");
 
-      try {
-        await config.agent.execute(task);
+      const agent = new RawPiAgent({
+        model: config.model,
+        systemPrompt: config.systemPrompt,
+        sessionMode: "memory",
+        builtInTools: config.builtInTools,
+        playground: config.playground,
+      });
 
-        const messages = await config.agent.getMessages();
+      try {
+        await agent.execute(task);
+
+        const messages = await agent.getMessages();
         const last = messages.filter((m) => m.role === "assistant").at(-1);
 
         let output = "";
