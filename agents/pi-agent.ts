@@ -5,8 +5,8 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { Type } from "typebox";
-import { Mem0 } from "../mem0.js";
-import type { Mem0Config } from "../mem0.js";
+import { Worker } from "worker_threads";
+import type { Mem0Config } from "../memory_layer/mem0.js";
 import type { McpBridge, McpToolEntry } from "../mcp-bridge.js";
 import {
   AuthStorage,
@@ -143,7 +143,7 @@ export class PiAgent {
   protected toolDefinitions: Map<string, ToolDefinition> = new Map();
   private _hasApiKey: boolean = false;
   protected _provider: string = "";
-  private _mem0: Mem0 | null = null;
+  private _mem0Worker: Worker | null = null;
   private _mem0Config: Mem0Config | null = null;
   protected _compaction: PiAgentConfig["compaction"];
   protected _sessionDir: string | undefined;
@@ -731,7 +731,7 @@ export class PiAgent {
     }
 
     // Fire-and-forget: feed conversation to mem0 if configured
-    if (this._mem0 || this._mem0Config) {
+    if (this._mem0Worker || this._mem0Config) {
       this._extractMemories(session.messages).catch(err =>
         console.error(`[pi-agent] mem0 extraction failed: ${err.message}`)
       );
@@ -739,18 +739,42 @@ export class PiAgent {
   }
 
   /**
-   * Convert session messages to mem0 format and call add().
+   * Spawn the mem0 worker thread lazily on first call.
+   * The worker owns the Mem0 instance in a separate V8 isolate.
+   */
+  private _getOrCreateMem0Worker(): Worker {
+    if (this._mem0Worker) return this._mem0Worker;
+    if (!this._mem0Config) throw new Error("No mem0 config");
+
+    const defaultDbPath = path.join(this.config.workingDir, `mem0_${Date.now()}.db`);
+    const config = {
+      ...this._mem0Config,
+      historyDbPath: this._mem0Config.historyDbPath ?? defaultDbPath,
+    };
+
+    const workerPath = new URL("../memory_layer/mem0-worker.ts", import.meta.url).pathname;
+    this._mem0Worker = new Worker(workerPath, {
+      workerData: { config },
+      execArgv: ["--import", "tsx/esm"],
+    });
+
+    this._mem0Worker.on("error", (err) => {
+      console.error(`[pi-agent] mem0 worker error: ${err.message}`);
+    });
+
+    this._mem0Worker.on("exit", (code) => {
+      if (code !== 0) console.error(`[pi-agent] mem0 worker exited with code ${code}`);
+      this._mem0Worker = null;
+    });
+
+    return this._mem0Worker;
+  }
+
+  /**
+   * Convert session messages to serializable format and send to the mem0 worker thread.
    * Only text content is kept (tool_use blocks are skipped).
    */
   private async _extractMemories(messages: AgentMessage[]): Promise<void> {
-    // Lazy init: create Mem0 on first extraction call
-    if (!this._mem0 && this._mem0Config) {
-      const defaultDbPath = path.join(this.config.workingDir, `mem0_${Date.now()}.db`);
-      this._mem0 = new Mem0({
-        ...this._mem0Config,
-        historyDbPath: this._mem0Config.historyDbPath ?? defaultDbPath,
-      });
-    }
     const mem0Messages: { role: string; content: string }[] = [];
     for (const msg of messages) {
       if (msg.role !== "user" && msg.role !== "assistant") continue;
@@ -768,7 +792,9 @@ export class PiAgent {
       }
     }
     if (mem0Messages.length === 0) return;
-    await this._mem0!.add(mem0Messages);
+
+    const worker = this._getOrCreateMem0Worker();
+    worker.postMessage({ type: "extract", messages: mem0Messages });
   }
 
   /** Get the currently active session (if any) */
@@ -776,14 +802,27 @@ export class PiAgent {
     return this.currentSession;
   }
 
-  /** Set the Mem0 instance for this agent. */
-  setMem0(mem0: Mem0): void {
-    this._mem0 = mem0;
+  /** Set mem0 config and restart the worker on next extraction. */
+  setMem0Config(config: Mem0Config): void {
+    this._mem0Config = config;
+    // Terminate existing worker so it restarts with new config
+    if (this._mem0Worker) {
+      this._mem0Worker.terminate();
+      this._mem0Worker = null;
+    }
   }
 
-  /** Get the Mem0 instance (null if not configured). */
-  getMem0(): Mem0 | null {
-    return this._mem0;
+  /** Returns true if mem0 is configured. */
+  hasMem0(): boolean {
+    return this._mem0Config !== null || this._mem0Worker !== null;
+  }
+
+  /** Terminate the mem0 worker thread. */
+  async terminateMem0(): Promise<void> {
+    if (this._mem0Worker) {
+      await this._mem0Worker.terminate();
+      this._mem0Worker = null;
+    }
   }
 
   /** Get the compaction settings (from config or null if using defaults). */
