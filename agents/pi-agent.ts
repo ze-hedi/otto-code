@@ -144,6 +144,7 @@ export class PiAgent {
   private _hasApiKey: boolean = false;
   protected _provider: string = "";
   private _mem0: Mem0 | null = null;
+  private _mem0Config: Mem0Config | null = null;
   protected _compaction: PiAgentConfig["compaction"];
   protected _sessionDir: string | undefined;
   protected _name: string | undefined;
@@ -208,15 +209,8 @@ export class PiAgent {
     this._mcpConnectionTimeout = config.mcpConnectionTimeout ?? 5000;
     this._builtInTools = config.builtInTools ?? ["read", "bash", "edit", "write"];
 
-    // Initialize mem0 if configured
-    if (config.mem0Config) {
-      const agentDir = this.config.workingDir;
-      const defaultDbPath = path.join(agentDir, `mem0_${Date.now()}.db`);
-      this._mem0 = new Mem0({
-        ...config.mem0Config,
-        historyDbPath: config.mem0Config.historyDbPath ?? defaultDbPath,
-      });
-    }
+    // Store mem0 config for lazy initialization (deferred to first _extractMemories call)
+    this._mem0Config = config.mem0Config ?? null;
 
     // Initialize custom tools from config
     this._registerToolsFromConfig(config.tools ?? []);
@@ -737,7 +731,7 @@ export class PiAgent {
     }
 
     // Fire-and-forget: feed conversation to mem0 if configured
-    if (this._mem0) {
+    if (this._mem0 || this._mem0Config) {
       this._extractMemories(session.messages).catch(err =>
         console.error(`[pi-agent] mem0 extraction failed: ${err.message}`)
       );
@@ -749,6 +743,14 @@ export class PiAgent {
    * Only text content is kept (tool_use blocks are skipped).
    */
   private async _extractMemories(messages: AgentMessage[]): Promise<void> {
+    // Lazy init: create Mem0 on first extraction call
+    if (!this._mem0 && this._mem0Config) {
+      const defaultDbPath = path.join(this.config.workingDir, `mem0_${Date.now()}.db`);
+      this._mem0 = new Mem0({
+        ...this._mem0Config,
+        historyDbPath: this._mem0Config.historyDbPath ?? defaultDbPath,
+      });
+    }
     const mem0Messages: { role: string; content: string }[] = [];
     for (const msg of messages) {
       if (msg.role !== "user" && msg.role !== "assistant") continue;

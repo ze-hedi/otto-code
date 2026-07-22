@@ -2,8 +2,8 @@
 // Self-contained wrapper for mem0ai OSS in-process memory
 // LLM: Anthropic claude-sonnet-4-6 | Embedder: Ollama all-minilm (local, 384 dims)
 
-import { Memory } from "mem0ai/oss";
 import type {
+  Memory,
   Message,
   MemoryItem,
   SearchResult,
@@ -80,9 +80,20 @@ export interface GetAllOptions {
 }
 
 export class Mem0 {
-  private memory: Memory;
+  private memory: Memory | null = null;
+  private _config: Mem0Config;
 
   constructor(config: Mem0Config = {}) {
+    this._config = config;
+  }
+
+  // Lazy init: dynamic import of mem0ai/oss + Memory construction on first use
+  private async _getMemory(): Promise<Memory> {
+    if (this.memory) return this.memory;
+
+    const { Memory } = await import("mem0ai/oss");
+
+    const config = this._config;
     const anthropicApiKey = config.anthropicApiKey ?? process.env.ANTHROPIC_API_KEY;
     if (!anthropicApiKey) {
       throw new Error(
@@ -139,6 +150,8 @@ export class Mem0 {
         ? { customInstructions: config.customInstructions }
         : {}),
     });
+
+    return this.memory;
   }
 
   /**
@@ -151,8 +164,9 @@ export class Mem0 {
     messages: Message[] | string,
     options: AddOptions = {}
   ): Promise<SearchResult> {
+    const memory = await this._getMemory();
     const { userId, agentId, runId, metadata, infer } = options;
-    return this.memory.add(messages, {
+    return memory.add(messages, {
       ...(userId !== undefined && { userId }),
       ...(agentId !== undefined && { agentId }),
       ...(runId !== undefined && { runId }),
@@ -168,8 +182,9 @@ export class Mem0 {
    * @param options - Scoping and result controls
    */
   async search(query: string, options: SearchOptions = {}): Promise<MemoryItem[]> {
+    const memory = await this._getMemory();
     const { userId, agentId, runId, topK, threshold } = options;
-    const result = await this.memory.search(query, {
+    const result = await memory.search(query, {
       filters: {
         ...(userId !== undefined && { user_id: userId }),
         ...(agentId !== undefined && { agent_id: agentId }),
@@ -185,8 +200,9 @@ export class Mem0 {
    * Retrieve all stored memories, optionally scoped.
    */
   async getAll(options: GetAllOptions = {}): Promise<MemoryItem[]> {
+    const memory = await this._getMemory();
     const { userId, agentId, runId, topK } = options;
-    const result = await this.memory.getAll({
+    const result = await memory.getAll({
       filters: {
         ...(userId !== undefined && { user_id: userId }),
         ...(agentId !== undefined && { agent_id: agentId }),
@@ -201,21 +217,24 @@ export class Mem0 {
    * Fetch a single memory by its ID.
    */
   async get(memoryId: string): Promise<MemoryItem | null> {
-    return this.memory.get(memoryId);
+    const memory = await this._getMemory();
+    return memory.get(memoryId);
   }
 
   /**
    * Update the text of an existing memory.
    */
   async update(memoryId: string, data: string): Promise<{ message: string }> {
-    return this.memory.update(memoryId, data);
+    const memory = await this._getMemory();
+    return memory.update(memoryId, data);
   }
 
   /**
    * Delete a single memory by ID.
    */
   async delete(memoryId: string): Promise<{ message: string }> {
-    return this.memory.delete(memoryId);
+    const memory = await this._getMemory();
+    return memory.delete(memoryId);
   }
 
   /**
@@ -226,8 +245,9 @@ export class Mem0 {
     options: Required<Pick<GetAllOptions, "userId" | "agentId" | "runId">> &
       Partial<GetAllOptions>
   ): Promise<{ message: string }> {
+    const memory = await this._getMemory();
     const { userId, agentId, runId } = options;
-    return this.memory.deleteAll({
+    return memory.deleteAll({
       ...(userId !== undefined && { userId }),
       ...(agentId !== undefined && { agentId }),
       ...(runId !== undefined && { runId }),
@@ -238,13 +258,14 @@ export class Mem0 {
    * Get the edit history of a specific memory.
    */
   async history(memoryId: string): Promise<any[]> {
-    return this.memory.history(memoryId);
+    const memory = await this._getMemory();
+    return memory.history(memoryId);
   }
 
   /**
    * Expose the raw Memory instance for advanced use-cases.
    */
-  getRaw(): Memory {
-    return this.memory;
+  async getRaw(): Promise<Memory> {
+    return this._getMemory();
   }
 }
