@@ -1,5 +1,5 @@
 import { Type, TSchema } from "typebox";
-import { ToolInput } from "./pi-agent.js";
+import { ToolInput, PiAgent } from "./pi-agent.js";
 import { RawPiAgent } from "./raw-pi-agent.js";
 
 export interface SubAgentToolConfig {
@@ -14,6 +14,64 @@ export interface SubAgentToolConfig {
   promptGuidelines?: string[];
 }
 
+export interface PersistantSubAgentToolConfig {
+  agent: PiAgent;
+  name: string;
+  description: string;
+  parameters?: TSchema;
+  promptSnippet?: string;
+  promptGuidelines?: string[];
+}
+
+// Creates a tool backed by a pre-built PiAgent that persists conversation history across calls (uses chat()).
+export function createPersistentSubAgentTool(config: PersistantSubAgentToolConfig): ToolInput {
+  const parameters = config.parameters ?? Type.Object({
+    task: Type.String({ description: "The task and all context the sub-agent needs" }),
+  });
+
+  return {
+    name: config.name,
+    label: config.name.replace(/_/g, " "),
+    description: config.description,
+    parameters,
+    promptSnippet: config.promptSnippet,
+    promptGuidelines: config.promptGuidelines,
+    executionMode: "sequential",
+    execute: async (_toolCallId, params) => {
+      const entries = Object.entries(params as Record<string, unknown>);
+      const task = entries.map(([k, v]) => {
+        const val = Array.isArray(v) ? v.join(", ") : String(v);
+        return `${k}: ${val}`;
+      }).join("\n\n");
+
+      try {
+        await config.agent.chat(task);
+
+        const messages = await config.agent.getMessages();
+        const last = messages.filter((m) => m.role === "assistant").at(-1);
+
+        let output = "";
+        if (last) {
+          if (typeof last.content === "string") {
+            output = last.content;
+          } else if (Array.isArray(last.content)) {
+            output = last.content
+              .filter((b: any) => b.type === "text")
+              .map((b: any) => b.text)
+              .join("\n");
+          }
+        }
+
+        return { content: [{ type: "text", text: output || "(no output)" }] };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { content: [{ type: "text", text: `Error: ${msg}` }], isError: true };
+      }
+    },
+  };
+}
+
+// Creates a tool that spins up a fresh RawPiAgent per call — stateless, no memory between invocations.
 export function createSubAgentTool(config: SubAgentToolConfig): ToolInput {
   const parameters = config.parameters ?? Type.Object({
     task: Type.String({ description: "The task and all context the sub-agent needs" }),
