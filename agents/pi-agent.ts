@@ -90,8 +90,8 @@ export interface PiAgentConfig {
   sessionDir?: string;
   /** Mem0 configuration. When provided, a Mem0 instance is created with a per-agent history DB. */
   mem0Config?: Mem0Config;
-  /** When true, tool calls pause for user approval before executing (default: false) */
-  toolCallGuardrails?: boolean;
+  /** Tool names that require user approval before executing (default: [] = no guardrails) */
+  toolCallGuardrails?: string[];
   /**
    * MCP server endpoints. Map of server_name → endpoint URL.
    * Call connectMcp(serverName) or connectAllMcp() to discover and register tools.
@@ -148,7 +148,7 @@ export class PiAgent {
   protected _compaction: PiAgentConfig["compaction"];
   protected _sessionDir: string | undefined;
   protected _name: string | undefined;
-  protected _toolCallGuardrails: boolean = false;
+  protected _toolCallGuardrails: Set<string> = new Set();
   protected _pendingApprovals: Map<string, { resolve: (approved: boolean) => void; comment?: string }> = new Map();
   /** Map of server_name → active McpBridge */
   private _mcpBridges: Map<string, McpBridge> = new Map();
@@ -200,7 +200,7 @@ export class PiAgent {
     this._name = config.name;
     this._sessionDir = config.sessionDir;
     this._compaction = config.compaction;
-    this._toolCallGuardrails = config.toolCallGuardrails ?? false;
+    this._toolCallGuardrails = new Set(config.toolCallGuardrails ?? []);
     if (config.mcpServers) {
       for (const [name, url] of Object.entries(config.mcpServers)) {
         this._mcpServers.set(name, url);
@@ -430,10 +430,12 @@ export class PiAgent {
     });
 
     // Install tool call guardrails hook if enabled
-    console.log(`[pi-agent] toolCallGuardrails = ${this._toolCallGuardrails}`);
-    if (this._toolCallGuardrails) {
+    console.log(`[pi-agent] toolCallGuardrails = [${[...this._toolCallGuardrails].join(', ')}]`);
+    if (this._toolCallGuardrails.size > 0) {
       console.log('[pi-agent] Installing beforeToolCall guardrails hook');
       session.agent.beforeToolCall = async ({ toolCall, args }) => {
+        // Skip approval for tools not in the guardrails set
+        if (!this._toolCallGuardrails.has(toolCall.name)) return undefined;
         const toolCallId = toolCall.id;
         console.log(`[pi-agent] beforeToolCall fired for ${toolCall.name} (${toolCallId})`);
         // Notify listeners that approval is required
