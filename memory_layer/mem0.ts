@@ -7,7 +7,7 @@ import type {
   Message,
   MemoryItem,
   SearchResult,
-} from "./mem0ai-oss.js";
+} from "./mem0/index.js";
 
 export type { Message, MemoryItem, SearchResult };
 
@@ -91,7 +91,7 @@ export class Mem0 {
   private async _getMemory(): Promise<Memory> {
     if (this.memory) return this.memory;
 
-    const { Memory } = await import("./mem0ai-oss.js");
+    const { Memory } = await import("./mem0/index.js");
 
     const config = this._config;
     const anthropicApiKey = config.anthropicApiKey ?? process.env.ANTHROPIC_API_KEY;
