@@ -2,7 +2,7 @@
 import { config } from "dotenv";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import { Mem0 } from "../mem0";
+import { Mem0 } from "../memory_layer/mem0";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, "../.env") });
