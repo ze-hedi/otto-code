@@ -34,15 +34,15 @@ async function main() {
   
   console.log("Added 2 ", JSON.stringify(addResult,null,2)) ; 
 
-  console.log("\n=== Test 2: search memories ===");
-  const results = await mem.search("is user has any intrest that can be related to cars ??", { userId: "hedi" });
-  console.log("Results:", JSON.stringify(results, null, 2));
+  // console.log("\n=== Test 2: search memories ===");
+  // const results = await mem.search("is user has any intrest that can be related to cars ??", { userId: "hedi" });
+  // console.log("Results:", JSON.stringify(results, null, 2));
 
-  console.log("\n=== Test 3: getAll ===");
-  const all = await mem.getAll({ userId: "hedi" });
-  console.log("All memories:", JSON.stringify(all, null, 2));
+  // console.log("\n=== Test 3: getAll ===");
+  // const all = await mem.getAll({ userId: "hedi" });
+  // console.log("All memories:", JSON.stringify(all, null, 2));
 
-  console.log("\n=== Done ===");
+  // console.log("\n=== Done ===");
 }
 
 main().catch((err) => {

@@ -68,6 +68,7 @@ var Memory = class _Memory {
   constructor(config = {}) {
     this.config = ConfigManager.mergeConfig(config);
     this.customInstructions = this.config.customInstructions;
+    this.retrievalTopK = this.config.retrievalTopK || 10;
     this.embedder = EmbedderFactory.create(
       this.config.embedder.provider,
       this.config.embedder.config
@@ -359,10 +360,9 @@ var Memory = class _Memory {
     await this._captureEvent("add", {
       message_count: Array.isArray(messages) ? messages.length : 1,
       has_metadata: !!config.metadata,
-      has_filters: !!config.filters,
-      infer: config.infer
+      has_filters: !!config.filters
     });
-    const { metadata = {}, filters = {}, infer = true } = config;
+    const { metadata = {}, filters = {}, conversationHistory = [] } = config;
     const userId = validateAndTrimEntityId(config.userId, "userId");
     const agentId = validateAndTrimEntityId(config.agentId, "agentId");
     const runId = validateAndTrimEntityId(config.runId, "runId");
@@ -380,46 +380,20 @@ var Memory = class _Memory {
       final_parsedMessages,
       metadata,
       filters,
-      infer
+      conversationHistory
     );
     return {
       results: vectorStoreResult
     };
   }
-  async addToVectorStore(messages, metadata, filters, infer) {
+  async addToVectorStore(messages, metadata, filters, conversationHistory = []) {
     var _a2, _b, _c, _d, _e, _f, _g;
-    if (!infer) {
-      const returnedMemories = [];
-      for (const message of messages) {
-        if (message.content === "system") {
-          continue;
-        }
-        const memoryId = await this.createMemory(
-          message.content,
-          {},
-          metadata
-        );
-        returnedMemories.push({
-          id: memoryId,
-          memory: message.content,
-          metadata: { event: "ADD" }
-        });
-      }
-      return returnedMemories;
-    }
-    const sessionScope = this.buildSessionScope(filters);
-    let lastMessages = [];
-    if (typeof this.db.getLastMessages === "function") {
-      try {
-        lastMessages = await this.db.getLastMessages(sessionScope, 10);
-      } catch (e) {
-      }
-    }
+    const lastMessages = conversationHistory;
     const parsedMessages = messages.map((m) => m.content).join("\n");
     const queryEmbedding = await this.embedder.embed(parsedMessages);
     const existingResults = await this.vectorStore.search(
       queryEmbedding,
-      10,
+      this.retrievalTopK,
       filters
     );
     const existingMemories = [];

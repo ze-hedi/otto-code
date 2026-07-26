@@ -36,23 +36,24 @@ export interface Mem0Config {
   qdrantApiKey?: string;
   /** Custom instructions injected into the memory extraction prompt */
   customInstructions?: string;
+  /** Number of existing memories to retrieve for dedup/context during add (default: 10) */
+  retrievalTopK?: number;
 }
 
 export interface AddOptions {
   /** Scope memories to a specific user */
-  userId?: string;
+  userId: string;
   /** Scope memories to a specific agent */
-  agentId?: string;
+  agentId: string;
   /** Scope memories to a specific run/session */
-  runId?: string;
+  runId: string;
   /** Additional metadata stored alongside the memory */
   metadata?: Record<string, any>;
   /**
-   * When false, stores the raw content without LLM extraction.
-   * Useful for explicit memory facts you want to inject directly.
-   * Default: true
+   * Preceding conversation messages for context (resolving pronouns, references).
+   * Replaces the SQLite getLastMessages call — pass the last N turns from your agent.
    */
-  infer?: boolean;
+  conversationHistory?: { role: string; content: string }[];
 }
 
 export interface SearchOptions {
@@ -149,6 +150,9 @@ export class Mem0 {
       ...(config.customInstructions
         ? { customInstructions: config.customInstructions }
         : {}),
+      ...(config.retrievalTopK !== undefined
+        ? { retrievalTopK: config.retrievalTopK }
+        : {}),
     });
 
     return this.memory;
@@ -162,16 +166,16 @@ export class Mem0 {
    */
   async add(
     messages: Message[] | string,
-    options: AddOptions = {}
+    options: AddOptions
   ): Promise<SearchResult> {
     const memory = await this._getMemory();
-    const { userId, agentId, runId, metadata, infer } = options;
+    const { userId, agentId, runId, metadata, conversationHistory } = options;
     return memory.add(messages, {
       ...(userId !== undefined && { userId }),
       ...(agentId !== undefined && { agentId }),
       ...(runId !== undefined && { runId }),
       ...(metadata !== undefined && { metadata }),
-      ...(infer !== undefined && { infer }),
+      ...(conversationHistory !== undefined && { conversationHistory }),
     });
   }
 
