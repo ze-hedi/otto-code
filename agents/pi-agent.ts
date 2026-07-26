@@ -5,8 +5,6 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { Type } from "typebox";
-import { Worker } from "worker_threads";
-import type { Mem0Config } from "../memory_layer/mem0.js";
 import type { McpBridge, McpToolEntry } from "../mcp-bridge.js";
 import {
   AuthStorage,
@@ -88,8 +86,6 @@ export interface PiAgentConfig {
   tools?: ToolInput[];
   /** Override directory for session persistence (used by SessionManager.create). */
   sessionDir?: string;
-  /** Mem0 configuration. When provided, a Mem0 instance is created with a per-agent history DB. */
-  mem0Config?: Mem0Config;
   /** Tool names that require user approval before executing (default: [] = no guardrails) */
   toolCallGuardrails?: string[];
   /**
@@ -132,7 +128,7 @@ export class PiAgent {
   protected modelRegistry: ModelRegistry;
   protected model: Model<Api>;
   protected config: Required<
-    Omit<PiAgentConfig, "apiKey" | "workingDir" | "playground" | "model" | "skills" | "tools" | "mem0Config" | "compaction" | "sessionDir" | "name" | "toolCallGuardrails" | "mcpServers" | "mcpConnectionTimeout" | "builtInTools">
+    Omit<PiAgentConfig, "apiKey" | "workingDir" | "playground" | "model" | "skills" | "tools" | "compaction" | "sessionDir" | "name" | "toolCallGuardrails" | "mcpServers" | "mcpConnectionTimeout" | "builtInTools">
   > & {
     workingDir: string;
     playground: string;
@@ -143,8 +139,6 @@ export class PiAgent {
   protected toolDefinitions: Map<string, ToolDefinition> = new Map();
   private _hasApiKey: boolean = false;
   protected _provider: string = "";
-  private _mem0Worker: Worker | null = null;
-  private _mem0Config: Mem0Config | null = null;
   protected _compaction: PiAgentConfig["compaction"];
   protected _sessionDir: string | undefined;
   protected _name: string | undefined;
@@ -208,9 +202,6 @@ export class PiAgent {
     }
     this._mcpConnectionTimeout = config.mcpConnectionTimeout ?? 5000;
     this._builtInTools = config.builtInTools ?? ["read", "bash", "edit", "write"];
-
-    // Store mem0 config for lazy initialization (deferred to first _extractMemories call)
-    this._mem0Config = config.mem0Config ?? null;
 
     // Initialize custom tools from config
     this._registerToolsFromConfig(config.tools ?? []);
@@ -731,100 +722,11 @@ export class PiAgent {
       unsubscribe();
       unsubError();
     }
-
-    // Fire-and-forget: feed conversation to mem0 if configured
-    if (this._mem0Worker || this._mem0Config) {
-      this._extractMemories(session.messages).catch(err =>
-        console.error(`[pi-agent] mem0 extraction failed: ${err.message}`)
-      );
-    }
-  }
-
-  /**
-   * Spawn the mem0 worker thread lazily on first call.
-   * The worker owns the Mem0 instance in a separate V8 isolate.
-   */
-  private _getOrCreateMem0Worker(): Worker {
-    if (this._mem0Worker) return this._mem0Worker;
-    if (!this._mem0Config) throw new Error("No mem0 config");
-
-    const defaultDbPath = path.join(this.config.workingDir, `mem0_${Date.now()}.db`);
-    const config = {
-      ...this._mem0Config,
-      historyDbPath: this._mem0Config.historyDbPath ?? defaultDbPath,
-    };
-
-    const workerPath = new URL("../memory_layer/mem0-worker.ts", import.meta.url).pathname;
-    this._mem0Worker = new Worker(workerPath, {
-      workerData: { config },
-      execArgv: ["--import", "tsx/esm"],
-    });
-
-    this._mem0Worker.on("error", (err) => {
-      console.error(`[pi-agent] mem0 worker error: ${err.message}`);
-    });
-
-    this._mem0Worker.on("exit", (code) => {
-      if (code !== 0) console.error(`[pi-agent] mem0 worker exited with code ${code}`);
-      this._mem0Worker = null;
-    });
-
-    return this._mem0Worker;
-  }
-
-  /**
-   * Convert session messages to serializable format and send to the mem0 worker thread.
-   * Only text content is kept (tool_use blocks are skipped).
-   */
-  private async _extractMemories(messages: AgentMessage[]): Promise<void> {
-    const mem0Messages: { role: string; content: string }[] = [];
-    for (const msg of messages) {
-      if (msg.role !== "user" && msg.role !== "assistant") continue;
-      let text = "";
-      if (typeof msg.content === "string") {
-        text = msg.content;
-      } else if (Array.isArray(msg.content)) {
-        text = msg.content
-          .filter((b: any) => b.type === "text")
-          .map((b: any) => b.text)
-          .join("\n");
-      }
-      if (text.trim()) {
-        mem0Messages.push({ role: msg.role, content: text.trim() });
-      }
-    }
-    if (mem0Messages.length === 0) return;
-
-    const worker = this._getOrCreateMem0Worker();
-    worker.postMessage({ type: "extract", messages: mem0Messages });
   }
 
   /** Get the currently active session (if any) */
   getCurrentSession(): AgentSession | null {
     return this.currentSession;
-  }
-
-  /** Set mem0 config and restart the worker on next extraction. */
-  setMem0Config(config: Mem0Config): void {
-    this._mem0Config = config;
-    // Terminate existing worker so it restarts with new config
-    if (this._mem0Worker) {
-      this._mem0Worker.terminate();
-      this._mem0Worker = null;
-    }
-  }
-
-  /** Returns true if mem0 is configured. */
-  hasMem0(): boolean {
-    return this._mem0Config !== null || this._mem0Worker !== null;
-  }
-
-  /** Terminate the mem0 worker thread. */
-  async terminateMem0(): Promise<void> {
-    if (this._mem0Worker) {
-      await this._mem0Worker.terminate();
-      this._mem0Worker = null;
-    }
   }
 
   /** Get the compaction settings (from config or null if using defaults). */
