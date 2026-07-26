@@ -12,7 +12,10 @@ async function main() {
   try {
     const r = await mem.add(
       [{ role: "user", content: "I love pizza" }],
-      { userId: "test123" }
+      { userId: "test123", 
+        agentId : "agent123" , 
+        runId : "run123"
+       }
     );
     console.log("OK", JSON.stringify(r, null, 2));
   } catch (e: any) {

@@ -35,23 +35,6 @@ var OpenAILLM = class {
     }
     return response.content || "";
   }
-  async generateChat(messages) {
-    const completion = await this.openai.chat.completions.create({
-      messages: messages.map((msg) => {
-        const role = msg.role;
-        return {
-          role,
-          content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content)
-        };
-      }),
-      model: this.model
-    });
-    const response = completion.choices[0].message;
-    return {
-      content: response.content || "",
-      role: response.role
-    };
-  }
 };
 
 // src/oss/src/llms/openai_structured.ts
@@ -101,20 +84,6 @@ var OpenAIStructuredLLM = class {
     }
     return response.content || "";
   }
-  async generateChat(messages) {
-    const completion = await this.openai.chat.completions.create({
-      messages: messages.map((msg) => ({
-        role: msg.role,
-        content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content)
-      })),
-      model: this.model
-    });
-    const response = completion.choices[0].message;
-    return {
-      content: response.content || "",
-      role: response.role
-    };
-  }
 };
 
 // src/oss/src/llms/anthropic.ts
@@ -147,13 +116,6 @@ var AnthropicLLM = class {
       throw new Error("Unexpected response type from Anthropic API");
     }
   }
-  async generateChat(messages) {
-    const response = await this.generateResponse(messages);
-    return {
-      content: response,
-      role: "assistant"
-    };
-  }
 };
 
 // src/oss/src/llms/groq.ts
@@ -177,20 +139,6 @@ var GroqLLM = class {
       response_format: responseFormat
     });
     return response.choices[0].message.content || "";
-  }
-  async generateChat(messages) {
-    const response = await this.client.chat.completions.create({
-      model: this.model,
-      messages: messages.map((msg) => ({
-        role: msg.role,
-        content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content)
-      }))
-    });
-    const message = response.choices[0].message;
-    return {
-      content: message.content || "",
-      role: message.role
-    };
   }
 };
 
@@ -251,27 +199,6 @@ var MistralLLM = class {
     }
     return this.contentToString(message.content);
   }
-  async generateChat(messages) {
-    const formattedMessages = messages.map((msg) => ({
-      role: msg.role,
-      content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content)
-    }));
-    const response = await this.client.chat.complete({
-      model: this.model,
-      messages: formattedMessages
-    });
-    if (!response || !response.choices || response.choices.length === 0) {
-      return {
-        content: "",
-        role: "assistant"
-      };
-    }
-    const message = response.choices[0].message;
-    return {
-      content: this.contentToString(message.content),
-      role: message.role || "assistant"
-    };
-  }
 };
 
 // src/oss/src/llms/ollama.ts
@@ -325,28 +252,6 @@ var OllamaLLM = class {
     }
     return response.content || "";
   }
-  async generateChat(messages) {
-    try {
-      await this.ensureModelExists();
-    } catch (err) {
-      logger.error(`Error ensuring model exists: ${err}`);
-    }
-    const completion = await this.ollama.chat({
-      messages: messages.map((msg) => {
-        const role = msg.role;
-        return {
-          role,
-          content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content)
-        };
-      }),
-      model: this.model
-    });
-    const response = completion.message;
-    return {
-      content: response.content || "",
-      role: response.role
-    };
-  }
   async ensureModelExists() {
     if (this.initialized) {
       return true;
@@ -383,14 +288,6 @@ var LMStudioLLM = class extends OpenAILLM {
       throw new Error(`LM Studio LLM failed: ${message}`);
     }
   }
-  async generateChat(messages) {
-    try {
-      return await super.generateChat(messages);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      throw new Error(`LM Studio LLM failed: ${message}`);
-    }
-  }
 };
 
 // src/oss/src/llms/deepseek.ts
@@ -410,14 +307,6 @@ var DeepSeekLLM = class extends OpenAILLM {
   async generateResponse(messages, responseFormat, tools) {
     try {
       return await super.generateResponse(messages, responseFormat, tools);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      throw new Error(`DeepSeek LLM failed: ${message}`);
-    }
-  }
-  async generateChat(messages) {
-    try {
-      return await super.generateChat(messages);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       throw new Error(`DeepSeek LLM failed: ${message}`);
@@ -472,17 +361,6 @@ var GoogleLLM = class {
     const text = (_a2 = completion.text) == null ? void 0 : _a2.replace(/^```json\n/, "").replace(/\n```$/, "");
     return text || "";
   }
-  async generateChat(messages) {
-    const completion = await this.google.models.generateContent({
-      contents: messages,
-      model: this.model
-    });
-    const response = completion.candidates[0].content;
-    return {
-      content: response.parts[0].text || "",
-      role: response.role
-    };
-  }
 };
 
 // src/oss/src/llms/azure.ts
@@ -526,23 +404,6 @@ var AzureOpenAILLM = class {
       };
     }
     return response.content || "";
-  }
-  async generateChat(messages) {
-    const completion = await this.client.chat.completions.create({
-      messages: messages.map((msg) => {
-        const role = msg.role;
-        return {
-          role,
-          content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content)
-        };
-      }),
-      model: this.model
-    });
-    const response = completion.choices[0].message;
-    return {
-      content: response.content || "",
-      role: response.role
-    };
   }
 };
 
@@ -598,116 +459,6 @@ var convertToLangchainMessages = (messages) => {
     }
   });
 };
-var LangchainLLM = class {
-  constructor(config) {
-    if (!config.model || typeof config.model !== "object") {
-      throw new Error(
-        "Langchain provider requires an initialized Langchain instance passed via the 'model' field in the LLM config."
-      );
-    }
-    if (typeof config.model.invoke !== "function") {
-      throw new Error(
-        "Provided Langchain 'instance' in the 'model' field does not appear to be a valid Langchain language model (missing invoke method)."
-      );
-    }
-    this.llmInstance = config.model;
-    this.modelName = this.llmInstance.modelId || this.llmInstance.model || "langchain-model";
-  }
-  async generateResponse(messages, response_format, tools) {
-    var _a2, _b, _c, _d, _e;
-    const langchainMessages = convertToLangchainMessages(messages);
-    let runnable = this.llmInstance;
-    const invokeOptions = {};
-    let isStructuredOutput = false;
-    let selectedSchema = null;
-    const systemPromptContent = ((_a2 = messages.find((m) => m.role === "system")) == null ? void 0 : _a2.content) || "";
-    const userPromptContent = ((_b = messages.find((m) => m.role === "user")) == null ? void 0 : _b.content) || "";
-    if (systemPromptContent.includes("Personal Information Organizer") && systemPromptContent.includes("extract relevant pieces of information")) {
-      selectedSchema = FactRetrievalSchema;
-    } else if (userPromptContent.includes("smart memory manager") && userPromptContent.includes("Compare newly retrieved facts")) {
-      selectedSchema = MemoryUpdateSchema;
-    }
-    if (selectedSchema && typeof this.llmInstance.withStructuredOutput === "function") {
-      try {
-        runnable = this.llmInstance.withStructuredOutput(
-          selectedSchema,
-          { name: (_c = tools == null ? void 0 : tools[0]) == null ? void 0 : _c.function.name }
-        );
-        isStructuredOutput = true;
-      } catch (e) {
-        isStructuredOutput = false;
-        if ((response_format == null ? void 0 : response_format.type) === "json_object") {
-          invokeOptions.response_format = { type: "json_object" };
-        }
-      }
-    } else if (selectedSchema && (response_format == null ? void 0 : response_format.type) === "json_object") {
-      if (((_d = this.llmInstance._identifyingParams) == null ? void 0 : _d.response_format) || this.llmInstance.response_format) {
-        invokeOptions.response_format = { type: "json_object" };
-      }
-    } else if (!selectedSchema && (response_format == null ? void 0 : response_format.type) === "json_object") {
-      if (((_e = this.llmInstance._identifyingParams) == null ? void 0 : _e.response_format) || this.llmInstance.response_format) {
-        invokeOptions.response_format = { type: "json_object" };
-      }
-    }
-    if (tools && tools.length > 0) {
-      if (typeof runnable.bindTools === "function") {
-        try {
-          runnable = runnable.bindTools(tools);
-        } catch (e) {
-        }
-      } else {
-      }
-    }
-    try {
-      const response = await runnable.invoke(langchainMessages, invokeOptions);
-      if (isStructuredOutput) {
-        return JSON.stringify(response);
-      } else if (response && response.tool_calls && Array.isArray(response.tool_calls)) {
-        const mappedToolCalls = response.tool_calls.map((call) => ({
-          name: call.name || "unknown_tool",
-          arguments: typeof call.args === "string" ? call.args : JSON.stringify(call.args)
-        }));
-        return {
-          content: response.content || "",
-          role: "assistant",
-          toolCalls: mappedToolCalls
-        };
-      } else if (response && typeof response.content === "string") {
-        return response.content;
-      } else {
-        return JSON.stringify(response);
-      }
-    } catch (error) {
-      throw error;
-    }
-  }
-  async generateChat(messages) {
-    const langchainMessages = convertToLangchainMessages(messages);
-    try {
-      const response = await this.llmInstance.invoke(langchainMessages);
-      if (response && typeof response.content === "string") {
-        return {
-          content: response.content,
-          role: response.lc_id ? "assistant" : "assistant"
-        };
-      } else {
-        console.warn(
-          `Unexpected response format from Langchain instance (${this.modelName}) for generateChat:`,
-          response
-        );
-        return {
-          content: JSON.stringify(response),
-          role: "assistant"
-        };
-      }
-    } catch (error) {
-      console.error(
-        `Error invoking Langchain instance (${this.modelName}) for generateChat:`,
-        error
-      );
-      throw error;
-    }
-  }
-};
 
-export { OpenAILLM, OpenAIStructuredLLM, AnthropicLLM, GroqLLM, MistralLLM, OllamaLLM, LMStudioLLM, DeepSeekLLM, GoogleLLM, AzureOpenAILLM, LangchainLLM };
+
+export { OpenAILLM, OpenAIStructuredLLM, AnthropicLLM, GroqLLM, MistralLLM, OllamaLLM, LMStudioLLM, DeepSeekLLM, GoogleLLM, AzureOpenAILLM };
