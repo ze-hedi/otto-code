@@ -1,7 +1,7 @@
 // runtime/pi-agent-utils.ts
 // Shared utilities for handling PiAgent events.
 
-import { AgentEvent } from './pi-agent';
+import type { AgentSessionEvent as AgentEvent } from '@mariozechner/pi-coding-agent';
 
 /**
  * Forwards relevant AgentEvents to a frontend client over SSE.
