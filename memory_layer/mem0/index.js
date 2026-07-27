@@ -23,7 +23,6 @@ export {
   DeepSeekLLM,
   GoogleLLM,
   AzureOpenAILLM,
-  LangchainLLM,
 } from "./llms.js";
 
 export {

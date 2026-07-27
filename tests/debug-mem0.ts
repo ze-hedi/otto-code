@@ -2,13 +2,18 @@
 import { config } from "dotenv";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import { Mem0 } from "../memory_layer/mem0";
+import { Mem0, Mem0Config } from "../memory_layer/mem0";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, "../.env") });
 
 async function main() {
-  const mem = new Mem0();
+
+  const mem = new Mem0({
+    llmProvider: "deepseek",
+    llmModel: "deepseek-chat",
+    apiKey: process.env.DEEPSEEK_API_KEY!,
+  });
   try {
     const r = await mem.add(
       [{ role: "user", content: "I love pizza" }],

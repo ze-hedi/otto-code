@@ -1,5 +1,5 @@
 import { OpenAIEmbedder, OllamaEmbedder, LMStudioEmbedder, GoogleEmbedder, AzureOpenAIEmbedder, LangchainEmbedder } from "./embedders.js";
-import { OpenAILLM, OpenAIStructuredLLM, AnthropicLLM, GroqLLM, MistralLLM, OllamaLLM, LMStudioLLM, DeepSeekLLM, GoogleLLM, AzureOpenAILLM, LangchainLLM } from "./llms.js";
+import { OpenAILLM, OpenAIStructuredLLM, AnthropicLLM, GroqLLM, MistralLLM, OllamaLLM, LMStudioLLM, DeepSeekLLM, GoogleLLM, AzureOpenAILLM } from "./llms.js";
 import { MemoryVectorStore, Qdrant, RedisDB, SupabaseDB, LangchainVectorStore, VectorizeDB, AzureAISearch, PGVector } from "./vector-stores.js";
 import { SQLiteManager, MemoryHistoryManager, SupabaseHistoryManager } from "./storage.js";
 
@@ -46,8 +46,6 @@ var LLMFactory = class {
         return new AzureOpenAILLM(config);
       case "mistral":
         return new MistralLLM(config);
-      case "langchain":
-        return new LangchainLLM(config);
       case "deepseek":
         return new DeepSeekLLM(config);
       default:

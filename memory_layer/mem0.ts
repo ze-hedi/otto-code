@@ -2,20 +2,35 @@
 // Self-contained wrapper for mem0ai OSS in-process memory
 // LLM: Anthropic claude-sonnet-4-6 | Embedder: Ollama all-minilm (local, 384 dims)
 
-import type {
-  Memory,
-  Message,
-  MemoryItem,
-  SearchResult,
-} from "./mem0/index.js";
+export interface Message {
+  role: string;
+  content: string;
+}
 
-export type { Message, MemoryItem, SearchResult };
+export interface MemoryItem {
+  id: string;
+  memory: string;
+  hash?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  score?: number;
+  metadata?: Record<string, any>;
+  user_id?: string;
+  agent_id?: string;
+  run_id?: string;
+}
+
+export interface SearchResult {
+  results: MemoryItem[];
+}
 
 export interface Mem0Config {
-  /** Anthropic API key (defaults to process.env.ANTHROPIC_API_KEY) */
-  anthropicApiKey?: string;
-  /** Claude model to use for memory extraction (default: "claude-sonnet-4-6") */
-  llmModel?: string;
+  /** API key for the LLM provider */
+  apiKey: string;
+  /** LLM provider (e.g. "anthropic", "openai", "groq", "ollama") */
+  llmProvider: string;
+  /** Model to use for memory extraction */
+  llmModel: string;
   /** Embedding provider: "openai" or "ollama" (default: "openai") */
   embedProvider?: "openai" | "ollama";
   /** Embedding model name (default: "text-embedding-3-small" for openai, "all-minilm" for ollama) */
@@ -79,28 +94,21 @@ export interface GetAllOptions {
   /** Maximum number of results */
   topK?: number;
 }
-
 export class Mem0 {
-  private memory: Memory | null = null;
+  private memory: any = null;
   private _config: Mem0Config;
 
-  constructor(config: Mem0Config = {}) {
+  constructor(config: Mem0Config) {
     this._config = config;
   }
 
   // Lazy init: dynamic import of mem0ai/oss + Memory construction on first use
-  private async _getMemory(): Promise<Memory> {
+  private async _getMemory() {
     if (this.memory) return this.memory;
 
     const { Memory } = await import("./mem0/index.js");
 
     const config = this._config;
-    const anthropicApiKey = config.anthropicApiKey ?? process.env.ANTHROPIC_API_KEY;
-    if (!anthropicApiKey) {
-      throw new Error(
-        "Anthropic API key required. Pass anthropicApiKey in config or set ANTHROPIC_API_KEY."
-      );
-    }
 
     const embedProvider = config.embedProvider ?? "openai";
     const isOpenAI = embedProvider === "openai";
@@ -127,10 +135,11 @@ export class Mem0 {
 
     this.memory = new Memory({
       llm: {
-        provider: "anthropic",
+        provider: config.llmProvider,
         config: {
-          apiKey: anthropicApiKey,
-          model: config.llmModel ?? "claude-sonnet-4-6",
+          apiKey: config.apiKey,
+          model: config.llmModel,
+          ...(config.llmBaseURL ? { baseURL: config.llmBaseURL } : {}),
         },
       },
       embedder: embedderConfig,
@@ -269,7 +278,7 @@ export class Mem0 {
   /**
    * Expose the raw Memory instance for advanced use-cases.
    */
-  async getRaw(): Promise<Memory> {
+  async getRaw() {
     return this._getMemory();
   }
 }

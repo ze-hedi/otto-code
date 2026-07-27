@@ -300,7 +300,7 @@ var DeepSeekLLM = class extends OpenAILLM {
     super({
       ...config,
       apiKey,
-      baseURL: config.baseURL || process.env.DEEPSEEK_API_BASE || "https://api.deepseek.com",
+      baseURL:  "https://api.deepseek.com",
       model: config.model || "deepseek-chat"
     });
   }

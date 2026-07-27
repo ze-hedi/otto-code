@@ -7,7 +7,16 @@ import { EmbedderFactory, LLMFactory, VectorStoreFactory, HistoryManagerFactory 
 import { DummyHistoryManager } from "./storage.js";
 import { getDefaultVectorStoreDbPath } from "./vector-stores.js";
 import { parse_vision_messages } from "./utils.js";
-import { ADDITIVE_EXTRACTION_PROMPT, AGENT_CONTEXT_SUFFIX, AdditiveExtractionSchema, generateAdditiveExtractionPrompt, extractJson } from "./prompts.js";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import { AdditiveExtractionSchema, generateAdditiveExtractionPrompt, extractJson } from "./prompts.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ADDITIVE_EXTRACTION_PROMPT = fs.readFileSync(
+  path.resolve(__dirname, "../prompts/additive-extraction.md"),
+  "utf-8"
+);
 import { ENTITY_BOOST_WEIGHT, lemmatizeForBm25, extractEntities, extractEntitiesBatch, getBm25Params, normalizeBm25, scoreAndRank } from "./scoring.js";
 
 // src/oss/src/memory/index.ts
@@ -406,11 +415,8 @@ var Memory = class _Memory {
         text: (_b = (_a2 = mem.payload) == null ? void 0 : _a2.data) != null ? _b : ""
       });
     }
-    const isAgentScoped = !!filters.agent_id && !filters.user_id;
     let systemPrompt = ADDITIVE_EXTRACTION_PROMPT;
-    if (isAgentScoped) {
-      systemPrompt += AGENT_CONTEXT_SUFFIX;
-    }
+    
     const userPrompt = generateAdditiveExtractionPrompt({
       existingMemories,
       newMessages: parsedMessages,
