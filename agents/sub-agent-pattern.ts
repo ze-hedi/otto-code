@@ -1,18 +1,11 @@
-import { Type, TSchema } from "typebox";
-import { ToolInput, PiAgent } from "./pi-agent.js";
+import { Type } from "typebox";
+import { PiAgent } from "./pi-agent.js";
+import { ToolInput, SubAgentToolConfig } from "./pi-agent-configs.js";
 import { RawPiAgent } from "./raw-pi-agent.js";
+import type { TSchema } from "typebox";
+import {handleEvent} from "./pi-agent-utils"; 
 
-export interface SubAgentToolConfig {
-  name: string;
-  description: string;
-  model: string;
-  systemPrompt: string;
-  builtInTools?: string[];
-  playground?: string;
-  parameters?: TSchema;
-  promptSnippet?: string;
-  promptGuidelines?: string[];
-}
+export type { SubAgentToolConfig };
 
 export interface PersistantSubAgentToolConfig {
   agent: PiAgent;
@@ -105,7 +98,7 @@ export function createSubAgentTool(config: SubAgentToolConfig): ToolInput {
 
         const messages = await agent.getMessages();
         const last = messages.filter((m) => m.role === "assistant").at(-1);
-
+        
         let output = "";
         if (last) {
           if (typeof last.content === "string") {
@@ -121,7 +114,7 @@ export function createSubAgentTool(config: SubAgentToolConfig): ToolInput {
         return { content: [{ type: "text", text: output || "(no output)" }] };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        return { content: [{ type: "text", text: `Error: ${msg}` }], isError: true };
+        return { content: [{ type: "text", text: `Error: subagent didn't get launched ${msg}` }], isError: true };
       }
     },
   };
