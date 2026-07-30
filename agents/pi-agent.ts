@@ -20,7 +20,8 @@ import {
 import { SettingsManager } from "@mariozechner/pi-coding-agent";
 import { getModel, Model, type Api, type KnownProvider, type ImageContent } from "@mariozechner/pi-ai";
 import type { Skill } from "@mariozechner/pi-coding-agent";
-import {type EventCallback,SkillInput, ToolInput, PiAgentConfig } from "./pi-agent-configs"
+import {type EventCallback, SkillInput, ToolInput, PiAgentConfig, SubAgentToolConfig } from "./pi-agent-configs"
+import { createSubAgentTool } from "./sub-agent-pattern.js";
 
 // ── Types extracted from AgentSessionEvent union ───────────────────────────────
 // This avoids importing from sub-packages (@mariozechner/pi-agent-core, @mariozechner/pi-ai)
@@ -65,6 +66,8 @@ export class PiAgent {
   protected _systemPrompt: string | undefined;
   /** When true, skip loading AGENTS.md/CLAUDE.md project context files. */
   protected _noContextFiles: boolean = false;
+  /** Sub-agent configs keyed by name, converted to tools on demand. */
+  protected _subAgents: Map<string, SubAgentToolConfig> = new Map();
 
   constructor(config: PiAgentConfig) {
     const [provider, modelName] = config.model.split("/");
@@ -112,6 +115,13 @@ export class PiAgent {
     this._mcpConnectionTimeout = config.mcpConnectionTimeout ?? 5000;
     this._builtInTools = config.builtInTools ?? ["read", "bash", "edit", "write"];
 
+    // Store sub-agent configs
+    if (config.subAgents) {
+      for (const [key, subAgentConfig] of Object.entries(config.subAgents)) {
+        this._subAgents.set(key, subAgentConfig);
+      }
+    }
+
     // Initialize custom tools from config
     this._registerToolsFromConfig(config.tools ?? []);
   }
@@ -122,7 +132,7 @@ export class PiAgent {
    * Convert ToolInput to ToolDefinition.
    * The execute function delegates to the external handler.
    */
-  private _createToolDefinition(toolInput: ToolInput): ToolDefinition {
+  protected _createToolDefinition(toolInput: ToolInput): ToolDefinition {
     return {
       name: toolInput.name,
       label: toolInput.label,
@@ -400,6 +410,18 @@ export class PiAgent {
   }
 
   // ── Public API ─────────────────────────────────────────────────────────────
+
+  // ── Sub-Agent Tools ───────────────────────────────────────────────────────
+
+  /**
+   * Create a single ToolInput from a sub-agent config by key.
+   * @param key - The key used in the subAgents config map.
+   */
+  createSubAgentTool(key: string): ToolInput {
+    const config = this._subAgents.get(key);
+    if (!config) throw new Error(`Sub-agent "${key}" not found in config`);
+    return createSubAgentTool(config);
+  }
 
   // ── Context Management ────────────────────────────────────────────────────
 

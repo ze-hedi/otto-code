@@ -14,6 +14,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import {type RawPiAgentConfig } from "./pi-agent-configs.js";
 import {PiAgent} from "./pi-agent"
+import { createSubAgentTool } from "./sub-agent-pattern.js";
 
 
 const builtInToolFactories: Record<string, (cwd: string) => ToolDefinition> = {
@@ -25,6 +26,7 @@ const builtInToolFactories: Record<string, (cwd: string) => ToolDefinition> = {
 
 export class RawPiAgent extends PiAgent {
   private _baseSystemPrompt: string | undefined;
+  private _subAgentToolNames: Set<string> = new Set();
 
   constructor(config: RawPiAgentConfig) {
     const { systemPrompt, ...baseConfig } = config;
@@ -54,10 +56,11 @@ export class RawPiAgent extends PiAgent {
       lines.push("");
     }
 
-    // Custom tools (registered via config.tools, e.g. sub-agent tools)
+    // Custom tools (registered via config.tools)
     const builtInNames = new Set(this._builtInTools);
     for (const [name, def] of this.toolDefinitions) {
       if (builtInNames.has(name)) continue; // already rendered above
+      if (this._subAgentToolNames.has(name)) continue; // rendered in own section
       lines.push(name);
       lines.push(def.description);
       if (def.promptSnippet) {
@@ -85,6 +88,31 @@ export class RawPiAgent extends PiAgent {
       }
     }
 
+    // Volatile sub-agents — create tools, register for execution, render in own section
+    if (this._subAgents.size > 0) {
+      lines.push("# Available Volatile Subagents", "");
+      lines.push("These are spawned subagents as a tool that don't keep context. You call them once, they do their job and their disappear")
+      for (const [key, config] of this._subAgents) {
+        const toolInput = createSubAgentTool(config);
+        const toolDef = this._createToolDefinition(toolInput);
+        this.toolDefinitions.set(toolInput.name, toolDef);
+        this._subAgentToolNames.add(toolInput.name);
+
+        lines.push(`## ${toolInput.name}`);
+        lines.push(toolInput.description);
+        if (toolInput.promptSnippet) {
+          lines.push(toolInput.promptSnippet);
+        }
+        if (toolInput.promptGuidelines?.length) {
+          lines.push("Guidelines:");
+          for (const g of toolInput.promptGuidelines) {
+            lines.push(`- ${g}`);
+          }
+        }
+        lines.push("");
+      }
+    }
+
     return lines.join("\n");
   }
 
@@ -98,8 +126,8 @@ export class RawPiAgent extends PiAgent {
     const session = await super._createSessionWith(sessionManager);
 
     // Strip the date/cwd lines that buildSystemPrompt() always appends
-    session.agent.state.systemPrompt = session.agent.state.systemPrompt
-      .replace(/\nCurrent working directory: .+/, "");
+    // session.agent.state.systemPrompt = session.agent.state.systemPrompt
+    //   .replace(/\nCurrent working directory: .+/, "");
 
     return session;
   }
