@@ -36,6 +36,23 @@ export interface ToolInput {
   ) => Promise<{ content: any[]; details?: any }>;
 }
 
+export interface PersistantSubAgentToolConfig {
+  name: string;
+  description: string;
+  parameters?: TSchema;
+  promptSnippet?: string;
+  promptGuidelines?: string[];
+}
+
+
+export interface PersistantSubAgentToolConfig {
+  name: string;
+  description: string;
+  parameters?: TSchema;
+  promptSnippet?: string;
+  promptGuidelines?: string[];
+}
+
 export interface SubAgentToolConfig {
   name: string;
   description: string;
@@ -90,6 +107,8 @@ export interface PiAgentConfig {
   builtInTools?: string[];
   /** Sub-agents exposed as tools. Key is used for lookup, value defines the agent config. */
   subAgents?: Record<string, SubAgentToolConfig>;
+
+  persistantSubAgents ?: Record<string,[PiAgentConfig,PersistantSubAgentToolConfig]>
   /** Compaction (context compression) settings */
   compaction?: {
     /** Enable/disable auto-compaction (default: true) */

@@ -20,7 +20,7 @@ import {
 import { SettingsManager } from "@mariozechner/pi-coding-agent";
 import { getModel, Model, type Api, type KnownProvider, type ImageContent } from "@mariozechner/pi-ai";
 import type { Skill } from "@mariozechner/pi-coding-agent";
-import {type EventCallback, SkillInput, ToolInput, PiAgentConfig, SubAgentToolConfig } from "./pi-agent-configs"
+import {type EventCallback, SkillInput, ToolInput, PiAgentConfig, SubAgentToolConfig , PersistantSubAgentToolConfig} from "./pi-agent-configs"
 import { createSubAgentTool } from "./sub-agent-pattern.js";
 
 // ── Types extracted from AgentSessionEvent union ───────────────────────────────
@@ -68,6 +68,9 @@ export class PiAgent {
   protected _noContextFiles: boolean = false;
   /** Sub-agent configs keyed by name, converted to tools on demand. */
   protected _subAgents: Map<string, SubAgentToolConfig> = new Map();
+
+  protected _persistentSubAgents: Map<string,PiAgent> = new Map(); 
+  protected _persistentSubAgentsTool: Map<string,ToolInput> = new Map() ; 
 
   constructor(config: PiAgentConfig) {
     const [provider, modelName] = config.model.split("/");
@@ -122,6 +125,9 @@ export class PiAgent {
       }
     }
 
+
+
+
     // Initialize custom tools from config
     this._registerToolsFromConfig(config.tools ?? []);
   }
@@ -163,6 +169,54 @@ export class PiAgent {
       },
     };
   }
+
+
+  protected _createPersistentSubAgentTool(config: PersistantSubAgentToolConfig, agent: PiAgent): ToolInput {
+  const parameters = config.parameters ?? Type.Object({
+    task: Type.String({ description: "The task and all context the sub-agent needs" }),
+  });
+
+  return {
+    name: config.name,
+    label: config.name.replace(/_/g, " "),
+    description: config.description,
+    parameters,
+    promptSnippet: config.promptSnippet,
+    promptGuidelines: config.promptGuidelines,
+    executionMode: "sequential",
+    execute: async (_toolCallId, params) => {
+      const entries = Object.entries(params as Record<string, unknown>);
+      const task = entries.map(([k, v]) => {
+        const val = Array.isArray(v) ? v.join(", ") : String(v);
+        return `${k}: ${val}`;
+      }).join("\n\n");
+
+      try {
+        await agent.chat(task);
+
+        const messages = await agent.getMessages();
+        const last = messages.filter((m) => m.role === "assistant").at(-1);
+
+        let output = "";
+        if (last) {
+          if (typeof last.content === "string") {
+            output = last.content;
+          } else if (Array.isArray(last.content)) {
+            output = last.content
+              .filter((b: any) => b.type === "text")
+              .map((b: any) => b.text)
+              .join("\n");
+          }
+        }
+
+        return { content: [{ type: "text", text: output || "(no output)" }] };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { content: [{ type: "text", text: `Error: ${msg}` }], isError: true };
+      }
+    },
+  };
+}
 
   /**
    * Register all tools from config by converting ToolInput to ToolDefinition.
