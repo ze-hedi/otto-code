@@ -1,6 +1,12 @@
 // pi-agent.ts
 // Clean class-based wrapper for Pi coding agent SDK
 
+// Patch Node.js fetch to route through http_proxy / https_proxy.
+// EnvHttpProxyAgent reads HTTP_PROXY, HTTPS_PROXY (and no_proxy) from the environment.
+// Unlike ProxyAgent, it routes HTTP and HTTPS through the appropriate proxy when both are set.
+import { EnvHttpProxyAgent, setGlobalDispatcher } from 'undici';
+setGlobalDispatcher(new EnvHttpProxyAgent());
+
 import fs from "fs";
 import os from "os";
 import path from "path";
