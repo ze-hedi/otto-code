@@ -44,6 +44,27 @@ let clarification_tool : ToolInput = {
     }
 }
 
+let schedule_subAgents : ToolInput = {
+    name : "schedule_subAgents" , 
+    label : "schedule sub agents tool" , 
+    description : "this tool should be called when the agent has establish a clear inpection of what it want to build this tool will create a clear plan of action using the available agents"
+    parameters: Type.Object({
+        tasks: Type.Array(Type.Object({
+            task : Type.String({description: "a clear description of a task to be run. You need to be specific "}) , 
+            agent : Type.Union([Type.Literal("cpp_agent"), Type.Literal("react_agent"), Type.Literal("qa_engineer")], {description: "which agent to assign this task to"}) , 
+            
+        }))
+    }), 
+    promptSnippet : "A tool that render a clear plan of task scheduled to be implemented in order", 
+    promptGuidelines: ["use this tool when you have a clear vision of the what you want to build during the current sprint", 
+                        "make sure that the task are well defined and contain all the details (dependencies, prefered objects etc)"
+    ] ,
+    execute : async (toolCallId, params) => {
+        return {content:[{type : "text", text: params}]} ; 
+    }
+
+}
+
 
 
 let brainstormer_subAgent_system_prompt : string = `
@@ -76,15 +97,66 @@ let brainstorming_agent_config: RawPiAgentConfig = {
 
  }
 
- let software_architect_agent_system_prompt = `
- You are 
+ let software_architect_agent_system_prompt : string = `
+ You are a senior software architecture with over 2 decades designing software and web services.
+ You are at the same time familiar enough with starting building software architecture from scratch as well as understanding an existing archtecture in order to enhance it and make it more manageable and maintainable.
+ Your approach should always be modular leading to a highly scalable and maintanable design that respect SOLID principles and put in practice the principle of design patterns. 
  
- 
+ you will be given initially the results of some brainstorming session or specs with some details about what we want to build.
+ Your mission is to analyze that input, understand it and develop a clear mental model of a software architect of it.
+ In you thinking process, you can ask as much questions as needed. the sole goal is to build a solid code architecture on which we can build production software. 
+
+
+ Once you've analyzed and understood the input, you goal is to generate an artefact of the form of folder called design : 
+ This folder should have the following structure : 
+ - overall.md : this file will contain an overview of the whole project with its goals and what we intent to build. 
+ (it should contain a overview of the different component that we want to build). 
+ - Subfolder : the design folder should contain different folder that represent different components of the system. These components are kind of high level one. Big chunks of the project that represent unit of the overall system 
+ - File : these subfoler should contai md file that are a specific description of a component that we need to build. 
+ This file should have the following parts : 
+    - Overview : an overview of the component we want to build 
+    - Dependencies : a quick descriptions of the different elements that this components depends on
+    - Specs : detailed specs of the different aspect we need to build to have this component ready. 
  `
 
- const agent = new RawPiAgent(brainstorming_agent_config) ; 
+ let software_architect_config : RawPiAgentConfig = {
+    name: "brainstorming_agent" , 
+    model: "deepseek/deepseek-v4-pro" , 
+    systemPrompt: brainstormer_subAgent_system_prompt, 
+    thinkingLevel : "high" , 
+    builtInTools : ['read','write',"bash","edit"],
+    tools : [clarification_tool], 
+    playground : "/home/bouchehdahed/code/benders_tui", 
 
- const system_prompt: string = await agent.getSystemPrompt() ; 
+ }
+
+ const software_architect_agent = new RawPiAgent(software_architect_config)
+
+
+
+let planner_system_prompt : string = `
+You are a technical leader/ scrum master with decade of experience in a the software lifecycle. 
+You have a deep technical expertise that allows you to inderstant artefacts built by software architect and software engineering. 
+You mix with that your managearial and product vision that enables you to build a clear schedules of sprints by analyzing spec documents.
+
+As input you can take a spec folder called architecture/ that will contain different md files that reperesents detailed description of the system components. 
+You will also receive a history of precedent sprints. You will also have an access to a dashboard that will contain some issues discovered by worker agents.
+You will also be provided with a list of implementation agents (such as a React software engineer, a QA etc..). 
+
+You main goal is to build yourself a clear context by inspecting all the information you have access to and build a clear plan of action.
+This plan of action will be dispatching clear well scoped task into the worker agents. 
+Your workflow should be as follow : 
+ 1- You analyze what has been already done: check what you have done in precedent sprints if there's any, read architecture specs if necessary. 
+ 2- Reason about the different elements you have in your team and how you can allocate work. 
+ 3- Reason about scheduling: the worker agent will collaborate between each other. So you should keep in mind a temporal scheduling 
+ (for example, you need to make sure that a task A done by an agent X that depends on task B scheduled for agent Y be scheduled after)
+ 4- Call the render_plan method that will dump the plan that will execute. 
+`
+
+
+//  const agent = new RawPiAgent(brainstorming_agent_config) ; 
+
+ const system_prompt: string = await software_architect_agent.getSystemPrompt() ; 
 
  console.log("system prompt ",system_prompt) ; 
 
@@ -93,7 +165,7 @@ while (true)
 {
     const input = await user_query("\nYou: ") ; 
     if (!input || input.toLocaleLowerCase() === "exit") break ; 
-    await agent.chat(input,handleEvent)
+    await software_architect_agent.chat(input,handleEvent)
 }
 
  rl.close() ; 
