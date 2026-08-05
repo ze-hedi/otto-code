@@ -12,7 +12,7 @@ import {
   createEditToolDefinition,
   createWriteToolDefinition,
 } from "@mariozechner/pi-coding-agent";
-import {type RawPiAgentConfig } from "./pi-agent-configs.js";
+import {ToolInput, type RawPiAgentConfig } from "./pi-agent-configs.js";
 import {PiAgent} from "./pi-agent"
 import { createSubAgentTool } from "./sub-agent-pattern.js";
 
@@ -31,6 +31,17 @@ export class RawPiAgent extends PiAgent {
   constructor(config: RawPiAgentConfig) {
     const { systemPrompt, ...baseConfig } = config;
     super(baseConfig);
+
+
+    if (config.persistantSubAgents) {
+      for (const [key, subAgentPair] of Object.entries(config.persistantSubAgents)) {
+        let subAgent = new RawPiAgent(subAgentPair[0]) ; 
+        this._persistentSubAgents.set(key,subAgent) ; 
+        let tool_input : ToolInput = this._createPersistentSubAgentTool(subAgentPair[1],subAgent ) ; 
+        this._persistentSubAgentsTool.set(key,tool_input) ; 
+      }
+    }
+
     this._baseSystemPrompt = systemPrompt;
     this._noContextFiles = true;
   }
@@ -111,6 +122,32 @@ export class RawPiAgent extends PiAgent {
         }
         lines.push("");
       }
+    }
+
+    if (this._persistentSubAgents.size>0) {
+
+      lines.push("# Available persistant Subagents","" ) ; 
+      lines.push("These are subAgent with persistent memory : They keep context between different calls") ; 
+      for (const [key,toolInput] of this._persistentSubAgentsTool) {
+        const toolDef = this._createToolDefinition(toolInput) ;
+        this.toolDefinitions.set(toolInput.name,toolDef) ;
+        this._subAgentToolNames.add(toolInput.name); 
+
+        lines.push(`## ${toolInput.name}`);
+        lines.push(toolInput.description);
+        if (toolInput.promptSnippet) {
+          lines.push(toolInput.promptSnippet);
+        }
+        if (toolInput.promptGuidelines?.length) {
+          lines.push("Guidelines:");
+          for (const g of toolInput.promptGuidelines) {
+            lines.push(`- ${g}`);
+          }
+        }
+        lines.push("");
+
+      }
+
     }
 
     return lines.join("\n");

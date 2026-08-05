@@ -1,23 +1,15 @@
 import { Type } from "typebox";
 import { PiAgent } from "./pi-agent.js";
-import { ToolInput, SubAgentToolConfig } from "./pi-agent-configs.js";
+import { ToolInput, SubAgentToolConfig , PersistantSubAgentToolConfig} from "./pi-agent-configs.js";
 import { RawPiAgent } from "./raw-pi-agent.js";
 import type { TSchema } from "typebox";
 import {handleEvent} from "./pi-agent-utils"; 
 
 export type { SubAgentToolConfig };
 
-export interface PersistantSubAgentToolConfig {
-  agent: PiAgent;
-  name: string;
-  description: string;
-  parameters?: TSchema;
-  promptSnippet?: string;
-  promptGuidelines?: string[];
-}
 
-// Creates a tool backed by a pre-built PiAgent that persists conversation history across calls (uses chat()).
-export function createPersistentSubAgentTool(config: PersistantSubAgentToolConfig): ToolInput {
+
+export function createPersistentSubAgentTool(config: PersistantSubAgentToolConfig, agent: PiAgent): ToolInput {
   const parameters = config.parameters ?? Type.Object({
     task: Type.String({ description: "The task and all context the sub-agent needs" }),
   });
@@ -38,9 +30,9 @@ export function createPersistentSubAgentTool(config: PersistantSubAgentToolConfi
       }).join("\n\n");
 
       try {
-        await config.agent.chat(task);
+        await agent.chat(task);
 
-        const messages = await config.agent.getMessages();
+        const messages = await agent.getMessages();
         const last = messages.filter((m) => m.role === "assistant").at(-1);
 
         let output = "";
