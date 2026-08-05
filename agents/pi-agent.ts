@@ -69,8 +69,6 @@ export class PiAgent {
   /** Sub-agent configs keyed by name, converted to tools on demand. */
   protected _subAgents: Map<string, SubAgentToolConfig> = new Map();
 
-  protected _persistentSubAgents: Map<string,PiAgent> = new Map(); 
-  protected _persistentSubAgentsTool: Map<string,ToolInput> = new Map() ; 
 
   constructor(config: PiAgentConfig) {
     const [provider, modelName] = config.model.split("/");

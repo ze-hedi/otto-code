@@ -108,7 +108,7 @@ export interface PiAgentConfig {
   /** Sub-agents exposed as tools. Key is used for lookup, value defines the agent config. */
   subAgents?: Record<string, SubAgentToolConfig>;
 
-  persistantSubAgents ?: Record<string,[PiAgentConfig,PersistantSubAgentToolConfig]>
+  persistantSubAgents ?: Record<string,[RawPiAgentConfig,PersistantSubAgentToolConfig]>
   /** Compaction (context compression) settings */
   compaction?: {
     /** Enable/disable auto-compaction (default: true) */
