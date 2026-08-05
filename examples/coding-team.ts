@@ -47,7 +47,7 @@ let clarification_tool : ToolInput = {
 let schedule_subAgents : ToolInput = {
     name : "schedule_subAgents" , 
     label : "schedule sub agents tool" , 
-    description : "this tool should be called when the agent has establish a clear inpection of what it want to build this tool will create a clear plan of action using the available agents"
+    description : "this tool should be called when the agent has establish a clear inpection of what it want to build this tool will create a clear plan of action using the available agents", 
     parameters: Type.Object({
         tasks: Type.Array(Type.Object({
             task : Type.String({description: "a clear description of a task to be run. You need to be specific "}) , 
@@ -154,18 +154,32 @@ Your workflow should be as follow :
 `
 
 
+ const planner_config : RawPiAgentConfig = {
+    name: "planner_agent" , 
+    model: "deepseek/deepseek-v4-pro" , 
+    systemPrompt: brainstormer_subAgent_system_prompt, 
+    thinkingLevel : "high" , 
+    builtInTools : ['read','write',"bash","edit"],
+    tools : [schedule_subAgents], 
+    playground : "/home/bouchehdahed/code/benders_tui", 
+
+ }
+
+ const planner_agent = new RawPiAgent(planner_config) ; 
+
+
 //  const agent = new RawPiAgent(brainstorming_agent_config) ; 
 
- const system_prompt: string = await software_architect_agent.getSystemPrompt() ; 
+ const system_prompt: string = await planner_agent.getSystemPrompt() ; 
 
  console.log("system prompt ",system_prompt) ; 
 
-const user_query = (prompt: string) => new Promise<string>((resolve) => rl.question(prompt, resolve));
-while (true) 
-{
-    const input = await user_query("\nYou: ") ; 
-    if (!input || input.toLocaleLowerCase() === "exit") break ; 
-    await software_architect_agent.chat(input,handleEvent)
-}
+// const user_query = (prompt: string) => new Promise<string>((resolve) => rl.question(prompt, resolve));
+// while (true) 
+// {
+//     const input = await user_query("\nYou: ") ; 
+//     if (!input || input.toLocaleLowerCase() === "exit") break ; 
+//     await software_architect_agent.chat(input,handleEvent)
+// }
 
  rl.close() ; 
