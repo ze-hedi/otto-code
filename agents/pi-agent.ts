@@ -175,7 +175,7 @@ export class PiAgent {
   }
 
 
-  protected _createPersistentSubAgentTool(config: PersistantSubAgentToolConfig, agent: PiAgent): ToolInput {
+  public _createPersistentSubAgentTool(config: PersistantSubAgentToolConfig, agent: PiAgent): ToolInput {
   const parameters = config.parameters ?? Type.Object({
     task: Type.String({ description: "The task and all context the sub-agent needs" }),
   });
