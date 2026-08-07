@@ -8,6 +8,7 @@ import {fileURLToPath} from "url";
 import { PiAgentConfig, PersistantSubAgentToolConfig } from "../agents/pi-agent-configs";
 import { createInterface } from "readline";
 import {handleEvent} from "../agents/pi-agent-utils"; 
+import { PiAgent } from "../agents/pi-agent";
 
 
 const __dirname = dirname(fileURLToPath(import.meta.url)) ; 
@@ -44,26 +45,32 @@ let clarification_tool : ToolInput = {
     }
 }
 
-let schedule_subAgents : ToolInput = {
-    name : "schedule_subAgents" , 
-    label : "schedule sub agents tool" , 
-    description : "this tool should be called when the agent has establish a clear inpection of what it want to build this tool will create a clear plan of action using the available agents", 
-    parameters: Type.Object({
-        tasks: Type.Array(Type.Object({
-            task : Type.String({description: "a clear description of a task to be run. You need to be specific "}) , 
-            agent : Type.Union([Type.Literal("cpp_agent"), Type.Literal("react_agent"), Type.Literal("qa_engineer")], {description: "which agent to assign this task to"}) , 
-            
-        }))
-    }), 
-    promptSnippet : "A tool that render a clear plan of task scheduled to be implemented in order", 
-    promptGuidelines: ["use this tool when you have a clear vision of the what you want to build during the current sprint", 
-                        "make sure that the task are well defined and contain all the details (dependencies, prefered objects etc)"
-    ] ,
-    execute : async (toolCallId, params) => {
-        return {content:[{type : "text", text: params}]} ; 
-    }
+function build_schedule_subAgents_tool(available_worker_agents:ToolInput[]) :  ToolInput {
 
+
+    let schedule_subAgents : ToolInput = {
+        name : "schedule_subAgents" , 
+        label : "schedule sub agents tool" , 
+        description : "this tool should be called when the agent has establish a clear inpection of what it want to build this tool will create a clear plan of action using the available agents", 
+        parameters: Type.Object({
+            tasks: Type.Array(Type.Object({
+                task : Type.String({description: "a clear description of a task to be run. You need to be specific "}) , 
+                agent : Type.Union(available_worker_agents.map(a => Type.Literal(a.name, { description: a.description })), {description: "which agent to assign this task to"}) , 
+            
+            }))
+        }), 
+        promptSnippet : "A tool that render a clear plan of task scheduled to be implemented in order", 
+        promptGuidelines: ["use this tool when you have a clear vision of the what you want to build during the current sprint", 
+                        "make sure that the task are well defined and contain all the details (dependencies, prefered objects etc)"
+        ] ,
+        terminate : true, 
+        execute : async (toolCallId, params) => {
+            return {content:[{type : "text", text: params}]} ; 
+        }
+    }
+    return schedule_subAgents ; 
 }
+
 
 
 
@@ -119,7 +126,7 @@ let brainstorming_agent_config: RawPiAgentConfig = {
     - Specs : detailed specs of the different aspect we need to build to have this component ready. 
  `
 
- let software_architect_config : RawPiAgentConfig = {
+let software_architect_config : RawPiAgentConfig = {
     name: "brainstorming_agent" , 
     model: "deepseek/deepseek-v4-pro" , 
     systemPrompt: brainstormer_subAgent_system_prompt, 
@@ -127,11 +134,152 @@ let brainstorming_agent_config: RawPiAgentConfig = {
     builtInTools : ['read','write',"bash","edit"],
     tools : [clarification_tool], 
     playground : "/home/bouchehdahed/code/benders_tui", 
-
  }
 
- const software_architect_agent = new RawPiAgent(software_architect_config)
 
+
+const software_architect_agent = new RawPiAgent(software_architect_config) ; 
+
+
+let python_dev_prompt_suffix : string = `
+## Software Engineering Standards
+
+You are an experienced Senior Python Software Engineer with extensive experience designing and maintaining large-scale production systems.
+
+When writing code, always optimize for long-term maintainability rather than the shortest implementation.
+
+Follow these principles:
+
+- Write clean, readable, and self-documenting code.
+- Favor composition over unnecessary inheritance.
+- Keep modules focused on a single responsibility.
+- Design APIs that are simple, predictable, and easy to extend.
+- Avoid duplication by extracting reusable abstractions when appropriate.
+- Do not over-engineer or introduce unnecessary abstractions.
+- Keep functions short and focused on a single task.
+- Prefer explicit code over clever or overly compact code.
+- Use descriptive names for variables, functions, classes, and modules.
+- Minimize coupling between modules and maximize cohesion.
+- Separate business logic, infrastructure, persistence, and presentation concerns.
+- Structure projects so that components can be tested independently.
+- Write code that is easy for another senior engineer to understand months later.
+
+### Python Best Practices
+
+- Follow PEP 8 and Python idioms.
+- Use type hints consistently.
+- Prefer dataclasses, enums, and protocols where appropriate.
+- Favor pathlib over os.path.
+- Prefer dependency injection over global state.
+- Raise meaningful exceptions instead of silently ignoring errors.
+- Avoid mutable global state.
+- Use context managers for resources.
+- Write informative docstrings only for public APIs or non-obvious behavior.
+- Keep imports organized and avoid circular dependencies.
+
+### Architecture
+
+Before implementing a feature:
+
+1. Understand the requirements.
+2. Decide where the code belongs.
+3. Reuse existing components whenever appropriate.
+4. Only introduce new modules when they improve separation of concerns.
+5. Preserve the project's architectural consistency.
+
+### Refactoring
+
+Whenever modifying existing code:
+
+- Improve the code incrementally.
+- Remove dead code when safe.
+- Eliminate duplication.
+- Preserve backward compatibility unless explicitly instructed otherwise.
+- Avoid unrelated refactoring.
+
+
+### Modification Strategy
+
+When editing an existing codebase:
+
+- First understand the current architecture before making changes.
+- Prefer extending existing abstractions over creating parallel ones.
+- Make the smallest change that correctly solves the problem.
+- Preserve public APIs unless explicitly instructed otherwise.
+- Do not rename files, classes, or functions without a compelling reason.
+- Keep diffs small and focused.
+- Never rewrite working code simply because you prefer a different style.
+- Match the surrounding code style unless asked to refactor.
+
+### Output Expectations
+
+When producing code:
+
+- Think about maintainability first.
+- Produce production-quality code.
+- Ensure the solution is modular and extensible.
+- Do not sacrifice readability for brevity.
+- If multiple reasonable designs exist, choose the simplest one that satisfies current requirements while remaining easy to extend.
+
+Your code should look like it was written by a thoughtful senior engineer reviewing it for a production codebase with years of expected maintenance.
+`
+
+let qa_engineer_prompt_suffix : string = ` 
+You are a Senior QA Engineer responsible for validating every feature before implementation is considered complete.
+
+For each request:
+
+- Analyze the requirements and identify expected behavior.
+- Think about happy paths, edge cases, error handling, and regression risks.
+- Write concise, realistic test scenarios before implementing tests.
+- Implement clean, maintainable, and deterministic tests.
+- Prefer reusable test helpers over duplicated logic.
+- Ensure tests are isolated, readable, and easy to debug.
+- Never assume behavior that isn't specified—call out ambiguities when necessary.
+
+Your goal is to maximize confidence in the software through high-quality test scenarios and robust automated tests.
+`
+ 
+const python_developer_config : PiAgentConfig = {
+    name : "python_developer", 
+    model : "deepseek/deepseek-v4-pro" , 
+    systemPromptSuffix : python_dev_prompt_suffix ,
+    thinkingLevel : "medium" , 
+    playground : "/home/bouchehdahed/code/benders_tui"
+ } ; 
+
+const python_developer_tool_input : ToolInput = {
+    name : "python_developer" , 
+    label : "python developer", 
+    description : 'This is an agent that is expert in writing python code with decade of experience with a deep mastery of clean code and software architecture' , 
+    parameters : Type.Object({Task : Type.String({description:"the task that the agent is supposed to handle"}) }) , 
+    execute : async (toolCallId, params) => {
+        return {content:[{type : "text", text: params}]} ; 
+    } 
+} 
+
+const qa_developer_tool_input : ToolInput = {
+    name : "qa_engineer", 
+    label : "qa engineer" , 
+    description : "This is an agent that is a QA expert with decade of exeperience working with developer and other IT workers. It excells at writing testing scenarios and running them",
+    parameters : Type.Object({Task : Type.String({description:"the task that the agent is supposed to handle"}) }) ,      
+    execute : async (toolCallId, params) => {
+        return {content:[{type : "text", text: params}]} ; 
+    } 
+}
+
+let python_developer = new PiAgent(python_developer_config) ; 
+
+
+const qa_engineer_config : PiAgentConfig = {
+    name : "qa_engineer", 
+    model : "deepseek/deepseek-v4-pro", 
+    systemPromptSuffix : qa_engineer_prompt_suffix, 
+    thinkingLevel : "medium" , 
+    playground : "/home/bouchehdahed/code/benders_tui"
+ } ; 
+
+let qa_engineer = new PiAgent(qa_engineer_config) ; 
 
 
 let planner_system_prompt : string = `
@@ -154,6 +302,12 @@ Your workflow should be as follow :
 `
 
 
+
+const schedule_subAgents = build_schedule_subAgents_tool([python_developer_tool_input,qa_developer_tool_input]) ; 
+
+
+qa_developer_tool_input
+
  const planner_config : RawPiAgentConfig = {
     name: "planner_agent" , 
     model: "deepseek/deepseek-v4-pro" , 
@@ -165,6 +319,13 @@ Your workflow should be as follow :
 
  }
 
+
+// interface 
+
+
+// class ProjectInternalDashBoard {
+//     private _s
+// }
  const planner_agent = new RawPiAgent(planner_config) ; 
 
 
@@ -174,12 +335,12 @@ Your workflow should be as follow :
 
  console.log("system prompt ",system_prompt) ; 
 
-// const user_query = (prompt: string) => new Promise<string>((resolve) => rl.question(prompt, resolve));
-// while (true) 
-// {
-//     const input = await user_query("\nYou: ") ; 
-//     if (!input || input.toLocaleLowerCase() === "exit") break ; 
-//     await software_architect_agent.chat(input,handleEvent)
-// }
+const user_query = (prompt: string) => new Promise<string>((resolve) => rl.question(prompt, resolve));
+while (true) 
+{
+    const input = await user_query("\nYou: ") ; 
+    if (!input || input.toLocaleLowerCase() === "exit") break ; 
+    await planner_agent.chat(input,handleEvent)
+}
 
  rl.close() ; 
