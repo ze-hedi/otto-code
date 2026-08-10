@@ -1,68 +1,56 @@
 # Otto Code
 
-Class-based wrapper for the Pi coding agent TypeScript SDK. Configure once, query multiple times, subscribe to streaming events.
+> **v0 — API is not stable yet.** This project is in early development. Class
+> shapes, config fields, event names, and module layout WILL change without
+> notice. Pin to an exact commit if you depend on it, and expect breakage on
+> upgrades.
 
-## Architecture
+A TypeScript wrapper around the [Pi coding agent](https://www.npmjs.com/package/@mariozechner/pi-coding-agent)
+SDK. Otto Code provides class-based agents (`PiAgent`), a parallel
+orchestrator (`PiOrchestrator`), a raw/no-tools agent factory
+(`createRawAgent`), and an Express runtime server that exposes agents to a
+React frontend over SSE.
 
-```
-PiAgent (pi-agent.ts)
-  ├─ Constructor: Configure model, system prompt, thinking level, session mode
-  ├─ query(): Execute prompt, returns session for streaming
-  └─ execute(): Execute prompt and wait for completion
+---
 
-AgentEvent subscription (from @mariozechner/pi-coding-agent)
-  ├─ message_update → text_delta (stream LLM tokens)
-  ├─ tool_call_start → agent invokes bash/read/write/edit
-  ├─ tool_call_end → tool result returned
-  ├─ message_end → LLM turn complete
-  └─ prompt_end → entire query complete
-```
+## Status
 
-## Setup
+| Surface                 | Stability                                  |
+| ----------------------- | ------------------------------------------ |
+| `PiAgent` constructor   | v0 — fields will be renamed/removed        |
+| `PiAgentEventHandlers`  | v0 — event names and signatures may change |
+| `PiOrchestrator`        | v0 — experimental, behavior may shift      |
+| Runtime REST API        | v0 — endpoints and payloads will change    |
+| Built-in tool semantics | inherited from Pi SDK, follow upstream     |
+
+No semver guarantees yet. There is no `1.0.0` release.
+
+---
+
+## Install
 
 ```bash
 npm install
-npx pi /login  # Authenticate with Anthropic API key
+npx pi /login   # store an Anthropic API key in Pi's auth storage
 ```
 
-Or set API key at runtime:
+Or pass the key at runtime:
 
-```typescript
+```ts
 const agent = new PiAgent({
   model: "anthropic/claude-sonnet-4-5",
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 ```
 
-### Troubleshooting
+A `.env.example` is included. Copy it to `.env` and fill in
+`ANTHROPIC_API_KEY` (and optionally `OPENAI_API_KEY`).
 
-**API Quota Exceeded Error:**
+---
 
-If you get an error like:
-```
-400 {"type":"error","error":{"type":"invalid_request_error","message":"Third-party apps now draw from your extra usage..."}}
-```
+## Quick start
 
-Solutions:
-1. Add API quota at [claude.ai/settings/usage](https://claude.ai/settings/usage)
-2. Or use a different API key: 
-   ```bash
-   export ANTHROPIC_API_KEY=sk-ant-...
-   npx pi /login
-   ```
-3. Or provide the key programmatically:
-   ```typescript
-   const agent = new PiAgent({
-     model: "anthropic/claude-sonnet-4-5",
-     apiKey: process.env.ANTHROPIC_API_KEY,
-   });
-   ```
-
-## Quick Start
-
-### Basic Usage
-
-```typescript
+```ts
 import { PiAgent } from "./pi-agent";
 
 const agent = new PiAgent({
@@ -72,383 +60,148 @@ const agent = new PiAgent({
 });
 
 await agent.execute("List all TypeScript files in this directory", (event) => {
-  // Stream text tokens to stdout
   if (
     event.type === "message_update" &&
     event.assistantMessageEvent.type === "text_delta"
   ) {
     process.stdout.write(event.assistantMessageEvent.delta);
   }
-
-  // Log tool calls
-  if (event.type === "tool_call_start") {
-    console.log(`\n⚙️ [${event.toolName}]`);
+  if (event.type === "tool_execution_start") {
+    console.error(`\n[${event.toolName}]`);
   }
 });
 ```
 
-### PR Reviewer
+See `quick-start.ts` for a working PR-review example.
 
-```typescript
-const prReviewer = new PiAgent({
-  model: "anthropic/claude-sonnet-4-5",
-  systemPromptSuffix: `
-You are a senior engineer doing PR reviews.
-- Be direct and opinionated
-- Flag bugs as BLOCKING
-- Flag style issues as NON-BLOCKING
-- Always suggest concrete fixes
+---
 
-Output format:
-## Summary
-## Blocking issues
-## Non-blocking suggestions
-  `,
-});
-
-await prReviewer.execute(
-  "Run git diff --staged and review all changes",
-  streamToStdout
-);
-```
-
-### Multiple Queries (Conversation)
-
-```typescript
-const agent = new PiAgent({
-  model: "anthropic/claude-sonnet-4-5",
-  sessionMode: "disk", // Persist session to disk
-});
-
-// First query
-await agent.execute("Analyze the codebase structure", streamToStdout);
-
-// Second query (agent remembers context from first query)
-await agent.execute("Now explain the main class in each file", streamToStdout);
-```
-
-## Configuration Options
-
-```typescript
-interface PiAgentConfig {
-  /** Model in "provider/model-name" format */
-  model: string;
-
-  /** Additional system prompt appended to Pi's default */
-  systemPromptSuffix?: string;
-
-  /** Thinking level: "off" | "low" | "medium" | "high" | "xhigh" */
-  thinkingLevel?: "off" | "low" | "medium" | "high" | "xhigh";
-
-  /** Override API key at runtime */
-  apiKey?: string;
-
-  /** Session persistence mode */
-  sessionMode?: "memory" | "disk" | "continue";
-
-  /** Working directory for disk-based sessions */
-  workingDir?: string;
-
-  /** Custom tools to register at construction time */
-  tools?: ToolInput[];
-
-  /** External tool execution handler */
-  onToolExecute?: (
-    toolCallId: string,
-    toolName: string,
-    params: any,
-    signal?: AbortSignal
-  ) => Promise<{ content: any[]; details?: any }>;
-}
-```
-
-## Event Types
-
-Subscribe to these events in your callback:
-
-| Event Type         | Description                                | Key Fields                      |
-| ------------------ | ------------------------------------------ | ------------------------------- |
-| `message_update`   | LLM streaming text tokens                  | `assistantMessageEvent.delta`   |
-| `tool_call_start`  | Agent starts calling a tool                | `toolName`, `input`             |
-| `tool_call_end`    | Tool execution finished                    | `toolName`, `output`            |
-| `message_end`      | One LLM turn complete                      | —                               |
-| `prompt_end`       | Entire query complete                      | —                               |
-| `compaction`       | Context window compacted (near token limit)| —                               |
-
-## Examples
-
-Run the included examples:
-
-```bash
-npm run example:basic          # Basic query with streaming
-npm run example:pr             # PR reviewer with custom system prompt
-npm run example:conversation   # Multiple queries, same session
-npm run example:logging        # Log all event types
-npm run example:nonblocking    # Start query without awaiting
-```
-
-## Built-in Tools
-
-The agent has four built-in tools (no MCP server needed):
-
-| Tool  | Description                               | Example Prompt                              |
-| ----- | ----------------------------------------- | ------------------------------------------- |
-| bash  | Execute shell commands                    | "Run git diff HEAD~1"                       |
-| read  | Read file contents                        | "Read src/main.ts and explain it"           |
-| write | Write new files                           | "Create a test file for src/utils.ts"       |
-| edit  | Edit existing files (find/replace)        | "Fix the bug in line 42 of src/parser.ts"   |
-
-## Custom Tools
-
-You can register custom tools to extend the agent's capabilities. Tools are defined using TypeBox schemas and executed via an external handler.
-
-### Define Tools at Construction
-
-```typescript
-import { PiAgent } from "./pi-agent";
-import { Type } from "typebox";
-
-const agent = new PiAgent({
-  model: "anthropic/claude-sonnet-4-5",
-  
-  // Define custom tools
-  tools: [
-    {
-      name: "search_database",
-      label: "Search Database",
-      description: "Search the user database by name or email",
-      parameters: Type.Object({
-        query: Type.String({ description: "Search query" }),
-        limit: Type.Optional(Type.Number({ description: "Max results", default: 10 })),
-      }),
-    },
-  ],
-  
-  // Handle tool execution
-  onToolExecute: async (toolCallId, toolName, params) => {
-    if (toolName === "search_database") {
-      const results = await searchDB(params.query, params.limit);
-      return {
-        content: [{ type: "text", text: JSON.stringify(results) }],
-        details: { count: results.length },
-      };
-    }
-    throw new Error(`Unknown tool: ${toolName}`);
-  },
-});
-```
-
-### Add Tools Dynamically
-
-```typescript
-// Add a tool after agent creation
-agent.addTool({
-  name: "get_weather",
-  label: "Get Weather",
-  description: "Get current weather for a location",
-  parameters: Type.Object({
-    location: Type.String({ description: "City name" }),
-  }),
-});
-
-// Check if a tool is registered
-console.log(agent.hasTool("get_weather")); // true
-
-// List all registered tools
-console.log(agent.getRegisteredTools()); // ["search_database", "get_weather"]
-
-// Remove a tool
-agent.removeTool("get_weather");
-```
-
-### Tool Input Interface
-
-```typescript
-interface ToolInput {
-  name: string;                      // Tool name for LLM calls
-  label: string;                     // Human-readable label
-  description: string;               // What the tool does (for LLM)
-  parameters: TSchema;               // TypeBox schema for parameters
-  promptSnippet?: string;            // One-line description for system prompt
-  promptGuidelines?: string[];       // Usage guidelines for system prompt
-  executionMode?: "sequential" | "parallel";  // Execution mode
-}
-```
-
-### Tool Execution Handler
-
-The `onToolExecute` handler receives:
-- `toolCallId`: Unique ID for this tool call
-- `toolName`: Name of the tool being called
-- `params`: Parsed parameters (validated against schema)
-- `signal`: Optional AbortSignal for cancellation
-
-It must return:
-```typescript
-{
-  content: Array<{ type: "text", text: string }>,  // Tool output
-  details?: any,                                   // Optional metadata
-}
-```
-
-### Complete Example
-
-See `examples/custom-tools.ts` for a complete working example with database search and weather tools.
-
-## Use Cases
-
-### Code Review
-
-```typescript
-await agent.execute(`
-  Run git diff main...HEAD and review:
-  1. Are there any bugs or regressions?
-  2. Is the code well-structured?
-  3. Are there missing tests?
-`);
-```
-
-### Changelog Generation
-
-```typescript
-await agent.execute(`
-  Run git log --oneline -20, group commits into features/fixes/chores,
-  and write a CHANGELOG.md entry.
-`);
-```
-
-### Refactoring
-
-```typescript
-await agent.execute(`
-  Read all files in src/, find all occurrences of function getCwd(),
-  and rename it to getCurrentWorkingDirectory() everywhere.
-`);
-```
-
-### Test Generation
-
-```typescript
-await agent.execute(`
-  Read src/parser.ts and generate comprehensive unit tests
-  in tests/parser.test.ts using Jest.
-`);
-```
-
-## Session Modes
-
-| Mode       | Description                              | Use Case                              |
-| ---------- | ---------------------------------------- | ------------------------------------- |
-| `memory`   | In-memory only, no disk writes           | Quick one-off queries                 |
-| `disk`     | Save session to `.jsonl` file            | Resume later, inspect history         |
-| `continue` | Resume most recent disk session          | Multi-query conversations             |
-
-## API Reference
+## Core API (subject to change)
 
 ### `PiAgent`
 
-#### Constructor
+- `new PiAgent(config: PiAgentConfig)` — construct.
+- `execute(prompt, onEvent?)` — run a one-shot prompt and await completion.
+- `chat(message, onEvent?)` — run on a persistent session (preserves history).
+- `query(prompt, onEvent?)` — start a run and return the `AgentSession` without
+  awaiting `agent_end`.
+- `addTool / removeTool / hasTool / getRegisteredTools` — manage custom tools
+  at runtime.
+- `getCurrentSession()` — currently active `AgentSession` (or `null`).
 
-```typescript
-constructor(config: PiAgentConfig)
-```
+### `PiAgentConfig` (selected fields)
 
-#### `query(prompt: string, onEvent?: EventCallback): Promise<AgentSession>`
+| Field                | Type                                              | Notes                                                |
+| -------------------- | ------------------------------------------------- | ---------------------------------------------------- |
+| `model`              | `"provider/model-name"`                           | Required.                                            |
+| `systemPromptSuffix` | `string`                                          | Appended to Pi's default system prompt.              |
+| `thinkingLevel`      | `"off" \| "low" \| "medium" \| "high" \| "xhigh"` | Defaults to `"medium"`.                              |
+| `apiKey`             | `string`                                          | Overrides Pi's stored auth at runtime.               |
+| `sessionMode`        | `"memory" \| "disk" \| "continue"`                | Persistence behavior.                                |
+| `workingDir`         | `string`                                          | Where disk sessions are stored.                      |
+| `playground`         | `string`                                          | Agent's CWD for `bash` / file tools.                 |
+| `skills`             | `SkillInput[]`                                    | Inject markdown skills into the session.             |
+| `handlers`           | `PiAgentEventHandlers`                            | Structured per-event callbacks; see `pi-agent.ts`.   |
+| `tools`              | `ToolInput[]`                                     | Custom tools (TypeBox schemas).                      |
+| `onToolExecute`      | `(id, name, params, signal) => Promise<...>`      | Handler for custom tool calls.                       |
 
-Execute a prompt and return the session immediately (non-blocking). Subscribe to events via `onEvent` or by calling `session.subscribe()` later.
+### Built-in tools
 
-#### `execute(prompt: string, onEvent?: EventCallback): Promise<void>`
+`bash`, `read`, `write`, `edit` — provided by the Pi SDK. Strip them with
+`createRawAgent({ ... })` from `raw-agent.ts` if you only want custom tools
+(or none at all).
 
-Execute a prompt and wait for `prompt_end` event before resolving.
+### `PiOrchestrator`
 
-#### `getCurrentSession(): AgentSession | null`
+Lightweight router that registers named sub-agents and exposes a single
+`delegate` tool to a top-level agent. Sub-agents run in parallel via
+`Promise.all`. See `pi-orchestrator.ts`.
 
-Get the currently active session (if any).
+### Events
 
-## About result.txt
+`PiAgentEventHandlers` exposes granular callbacks: `onAgentStart` /
+`onAgentEnd`, `onTurnStart` / `onTurnEnd`, message and thinking deltas, tool
+lifecycle (`onToolStart` / `onToolUpdate` / `onToolEnd`), session
+compaction, retries, and a catch-all `onEvent`. The full list lives in
+`pi-agent.ts`.
 
-The `result.txt` file contains **mock output** demonstrating the expected behavior of all 5 examples. It was created because the examples require an active Anthropic API key with available quota.
+---
 
-**What's included:**
-- Output from all 5 example scenarios (basic, PR review, conversation, logging, non-blocking)
-- Shows event streaming flow (tool calls, text deltas, completion)
-- Demonstrates PR reviewer output format
-- Examples of bash tool execution and file operations
+## Runtime server
 
-**Why it exists:**
-When the API quota is exceeded, the examples can't run live. This file shows what you would see when the examples run successfully with a valid API key and quota.
+`runtime/server.ts` is an Express server that wraps `PiAgent` instances for
+the React frontend in `frontend/react-app/`. It exposes:
 
-**To run examples live:**
-1. Ensure you have API quota (see Troubleshooting above)
-2. Run any example: `npm run example:basic`, `npm run example:pr`, etc.
-3. The real output will stream to your terminal instead
+- `POST /runtime/run` — instantiate an agent.
+- `POST /runtime/chat/:id` — send a message, response streams over SSE.
+- `GET  /runtime/status` — list active agents.
+- `GET  /runtime/logs[/:id]` — retrieve captured event logs.
+- `DELETE /runtime/agents/:id` — drop an agent from memory.
 
-## Local CI with GitHub Actions
-
-This project includes a GitHub Actions workflow that runs **locally only** using [act](https://github.com/nektos/act). This allows you to build and test the project using the Claude API on your local machine.
-
-### Prerequisites
-
-1. Install act:
-   ```bash
-   # macOS
-   brew install act
-   
-   # Linux
-   curl https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash
-   
-   # Windows (with Chocolatey)
-   choco install act-cli
-   ```
-
-2. Install Docker (required by act)
-
-3. Set up your API key:
-   ```bash
-   cp .env.example .env
-   # Edit .env and add your ANTHROPIC_API_KEY
-   ```
-
-### Running the CI
-
-Run the full CI pipeline locally:
+Start it:
 
 ```bash
-act -j build-and-test --secret-file .env
+cd runtime
+npm install
+npm start    # defaults to PORT=5000
 ```
 
-This will:
-1. Install dependencies
-2. Build the TypeScript code (type checking)
-3. Run tests using the Claude API
-4. Display results
+CORS is wide open and there's no auth — local/trusted networks only.
+Full details and request/response shapes are in `runtime/runtime_details.md`
+(also expect changes).
 
-### Run individual steps
+---
 
-You can also run the build and test scripts directly:
+## Repository layout
+
+```
+.
+├── pi-agent.ts            # PiAgent class + event handler interfaces
+├── pi-orchestrator.ts     # PiOrchestrator (parallel sub-agent delegation)
+├── raw-agent.ts           # createRawAgent factory (no built-in tools)
+├── pi-agent-utils.ts      # shared helpers (event printing, etc.)
+├── mem0.ts                # mem0ai integration (experimental)
+├── quick-start.ts         # minimal PR-review example
+├── examples/              # custom-tools.ts and more
+├── tests/                 # ad-hoc tsx test scripts
+├── runtime/               # Express server bridging PiAgent <-> frontend
+├── frontend/              # React app + workflow UI
+├── database/              # MongoDB models + seed scripts
+└── otto_settings.json     # local config
+```
+
+---
+
+## Examples
 
 ```bash
-# Type checking only
-npm run build
-
-# Run tests with Claude API
-npm test
-
-# Type checking (alias)
-npm run typecheck
+npm run example:basic
+npm run example:pr
+npm run example:conversation
+npm run example:logging
+npm run example:nonblocking
 ```
 
-### CI Workflow Details
+Each script reads the same `examples.ts` entry and selects a scenario. If
+the Anthropic API quota is exhausted, the agent will return a 400 — see
+`result.txt` for a mock of what successful runs look like.
 
-The workflow is configured in `.github/workflows/local-ci.yml` and includes:
-- Node.js 20 setup
-- Dependency installation via `npm ci`
-- TypeScript compilation and type checking
-- Automated testing using Claude API
-- Result reporting
+---
 
-**Note:** The workflow is designed to run locally only and will not execute on GitHub's servers. This ensures your Claude API key stays on your machine and you have full control over API usage.
+## Type checking and tests
+
+```bash
+npm run build       # tsc --noEmit
+npm run typecheck   # same
+npm test            # tsx test-simple.ts
+```
+
+A local-only GitHub Actions workflow lives at `.github/workflows/` and is
+intended to run via [`act`](https://github.com/nektos/act), not on GitHub's
+runners — it would otherwise consume your API quota.
+
+---
 
 ## License
 
-MIT
+MIT.
