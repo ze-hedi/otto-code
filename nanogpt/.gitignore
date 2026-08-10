@@ -1,0 +1,24 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+env/
+.env
+
+# Data and artifacts
+data/
+out/
+logs/*.jsonl
+logs/*.log
+*.bin
+*.npy
+*.pt
+*.ckpt
+wandb/
+
+# IDE
+.vscode/
+.idea/
+*.swp

@@ -1,0 +1,11 @@
+torch>=2.4
+numpy
+tiktoken
+tqdm
+pyyaml
+requests
+datasets
+huggingface_hub
+# Test-only / reference comparison; not used in the training path.
+transformers
+pytest

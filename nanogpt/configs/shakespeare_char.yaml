@@ -1,0 +1,43 @@
+# 5-min smoke test on a single GPU. Char-level Shakespeare.
+# Vocab is tiny so we use a small model instead of GPT-2.
+
+model:
+  n_layer: 6
+  n_head: 6
+  n_embd: 384
+  block_size: 256
+  vocab_size: 128          # ASCII; padded to nice number
+  dropout: 0.1
+  bias: false
+
+optim:
+  optimizer: adamw
+  lr: 1.0e-3
+  min_lr: 1.0e-4
+  betas: [0.9, 0.99]
+  weight_decay: 0.1
+  grad_clip: 1.0
+  warmup_steps: 100
+  max_steps: 5000
+
+batch:
+  batch_tokens: 16384
+  micro_batch_size: 64
+  seq_len: 256
+
+runtime:
+  dtype: bfloat16
+  compile: false
+  ddp: false
+  tf32: true
+
+eval:
+  eval_interval: 250
+  eval_iters: 20
+  hellaswag_interval: 0
+
+checkpoint:
+  interval: 500
+
+data:
+  kind: shakespeare_char
