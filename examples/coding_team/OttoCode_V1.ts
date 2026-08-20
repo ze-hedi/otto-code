@@ -197,7 +197,7 @@ function build_schedule_subAgents_tool(
             "CRITICAL — Verification mandate: after EVERY batch of worker implementation tasks you MUST append a verifier task. The verifier task description must list every file that was created or modified by the preceding workers so the verifier can write tests covering all of them. Never deliver a plan that lacks a verifier task.",
             "for large sprints you may interleave verifier tasks between worker batches — e.g. worker A, worker B, verifier (covers A+B), worker C, verifier (covers C). This catches issues early before more code is built on top."
         ],
-        terminate: true,
+        terminate: false,
         execute: async (toolCallId, params) => {
             const results: string[] = [];
             for (const t of params.tasks) {
