@@ -1,9 +1,26 @@
+/*
+
+This test has for goal is to check if the dag pipeline is working successfuly. 
+Input data : so we will consider the following DAG (a complete dummy test)
+ 
+     
+                                |-----> technical skills analyst    
+cv_reader -------> delgates ----|
+                                |-----> leadership skills analyst    
+
+
+
+The mechanism of workflow is as follow : 
+        - We will have a sort of factory, it will store all the available agents. 
+        - We identify these agents by an id that we will use to add tthe agent in the workflow
+*/
+
 import { ToolInput } from "../agents/pi-agent-configs"
 import { RawPiAgent } from "../agents/raw-pi-agent";
 import { Type } from "@sinclair/typebox"
-import { DelegationInterface } from "../agents/workflow-types";
+import { DelegationInterface, AgentsStorage, Workflow , InterfaceStorage,AgentInterface} from "../agents/workflow-types";
 
-
+// ================================== SECTION 1 : building the DAG Interface ==================================
 let delegationToolInput : ToolInput = {
     name: "delegation_tool",
     label : "delegation tool", 
@@ -28,4 +45,84 @@ let subAgentOutputsNames : [string,string][] = [
 
 let delegationInterface = new DelegationInterface(delegationToolInput, SubAgentInputsNames,subAgentOutputsNames ) ;
 
-console.log("runned succeffuly  !! ") ; 
+let InterfaceMaps : Map<string,AgentInterface> = new Map() ;
+InterfaceMaps.set("delegatiion",delegationInterface) ; 
+
+const interfaceStorage = new InterfaceStorage(InterfaceMaps) ; 
+console.log("interface storage is screated correctly ") ; 
+
+
+// ================================== SECTION 2 : Building agents storage ==================================
+
+let cvReaderSystemPrompt : string = `You are a CV reader, a professional recruiter with a decade of experience. Your job is to read a candidate's resume and produce a structured summary of their identity, experience, education, and skills, extracting only what is explicitly visible and never inventing information.`
+
+let technicalAnalystSystemPrompt : string = `You are a technical analyst, a mid-level HR with a technical background. Analyze the candidate's technical skills and experience to produce a complete assessment of the technical aspect of the profile.`
+
+let softSkillAnalystSystemPrompt : string = `You are a soft-skill analyst, an HR specialized in soft skills and leadership. Analyze the candidate's interpersonal, communication, and leadership qualities to produce an assessment of their soft skills.`
+
+let cvReader = new RawPiAgent({
+    name : "cv_reader" ,
+    model : "deepseek/deepseek-v4-pro" ,
+    systemPrompt : cvReaderSystemPrompt ,
+    builtInTools : ["read"] ,
+    playground : process.cwd() ,
+    sessionMode : "memory" ,
+})
+
+let technicalAnalyst = new RawPiAgent({
+    name : "technical_analyst" ,
+    model : "deepseek/deepseek-v4-pro" ,
+    systemPrompt : technicalAnalystSystemPrompt ,
+    builtInTools : [] ,
+    playground : process.cwd() ,
+    sessionMode : "memory" ,
+})
+
+let softSkillAnalyst = new RawPiAgent({
+    name : "soft_skill_analyst" ,
+    model : "deepseek/deepseek-v4-pro" ,
+    systemPrompt : softSkillAnalystSystemPrompt ,
+    builtInTools : [] ,
+    playground : process.cwd() ,
+    sessionMode : "memory" ,
+})
+
+let agentsStorage = new AgentsStorage(new Map([
+    ["cv_reader", cvReader] ,
+    ["technical_analyst", technicalAnalyst] ,
+    ["soft_skill_analyst", softSkillAnalyst] ,
+]))
+
+
+
+// ================================== SECTION 3 : building the workflow input ==================================
+
+let workflowInput = {
+    components : [
+        { id : "cv_reader", type : "agent", x : 224, y : 330 } ,
+        { id : "delegates", type : "interface", x : 623, y : 330 } ,
+        { id : "technical_analyst", type : "agent", x : 653, y : 171 } ,
+        { id : "soft_skill_analyst", type : "agent", x : 653, y : 493 } ,
+    ] ,
+    connections : [
+        { from : "cv_reader", fromSide : "right", to : "delegates", toSide : "left" } ,
+        { from : "delegates", fromSide : "right", to : "technical_analyst", toSide : "left" } ,
+        { from : "delegates", fromSide : "right", to : "soft_skill_analyst", toSide : "left" } ,
+    ] ,
+}
+
+let workflow = new Workflow(workflowInput, agentsStorage) ;
+workflow.buildExecutionQueue() ;
+
+const { levels, predecessors, successors } = workflow.executionQueue ;
+
+console.log("\nlevels (agent nodes only):") ;
+levels.forEach((level, i) =>
+    console.log(`  [${i}] ${level.map((n) => n.id).join(", ")}`) ,
+) ;
+
+console.log("\nsuccessors:") ;
+for (const [id, succs] of successors)
+    console.log(`  ${id} -> ${succs.map((n) => n.id).join(", ") || "(none)"}`) ;
+
+console.log("\nrunned succeffuly  !! ") ; 

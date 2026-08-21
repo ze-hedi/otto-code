@@ -1,14 +1,47 @@
-
-
+import { PiAgent } from "./pi-agent";
+import { RawPiAgent } from "./raw-pi-agent";
 import { ToolInput } from "./pi-agent-configs"
 import { Type } from "@sinclair/typebox"
 
+//class to store available agents
+export class AgentsStorage {
+    private availableAgents_ : Map<string, [PiAgent, boolean]> ; 
 
-class AgentInterface {
+    constructor(availableAgents ?: Map<string,PiAgent>) 
+    {
+        this.availableAgents_ = new Map<string, [PiAgent, boolean]>() ;
+        for (const [id, agent] of availableAgents ?? []) {
+            this.availableAgents_.set(id, [agent, true]) ;
+        }
+    }
+
+    public getAgentByID(id: string) : PiAgent | false  {
+        const AgentPair = this.availableAgents_.get(id) 
+        if (AgentPair && AgentPair[1]) 
+            return  AgentPair[0]; 
+        return false 
+    }
+}
+
+
+
+export class AgentInterface {
     protected name_ : string ; 
     constructor(name:string) {this.name_ = name } ; 
 } ; 
 
+//class to store available interfaces 
+export class InterfaceStorage {
+    private availablesInterfaces_ : Map<string,AgentInterface> ;
+
+    constructor(availablesInterfaces : Map<string,AgentInterface>) {
+        this.availablesInterfaces_ = availablesInterfaces ; 
+    }
+
+    public getInterfaceByID(id:string) : AgentInterface {
+        return this.availablesInterfaces_.get(id) ;   
+    }
+}
 
 
 export class DelegationInterface extends AgentInterface{
@@ -78,12 +111,17 @@ export class Workflow {
     private ExecutionQueue_ : ExecutionQueueResult ; 
     private components_ :  WorkflowNode[] ; 
     private connections_ : WorkflowEdge[] ; 
+    private agents_ : Map<string,PiAgent> ; 
+    private agentsStorage_ : AgentsStorage ; 
 
 
-    constructor(workflowRecord : Record<string, any> ) 
+    constructor(workflowRecord : Record<string, any>, agentsStorage : AgentsStorage ) 
     {
         const components = workflowRecord["components"] as WorkflowComponent[];
         const connections = workflowRecord["connections"] as WorkflowConnection[];
+
+        this.agents_ = new Map<string, PiAgent>() ; 
+        this.agentsStorage_ = agentsStorage ; 
 
         this.components_ = components.map((c) => ({
             id: c.id,
@@ -95,14 +133,28 @@ export class Workflow {
     public get executionQueue(): ExecutionQueueResult { return this.ExecutionQueue_ ; }
 
 
-
+    //This method will be called to build the execution queue based on the Kahn Algorithm
     public buildExecutionQueue(
         nodes: WorkflowNode[] = this.components_,
         connections: WorkflowEdge[] = this.connections_,
     ) {
         // Index nodes by id
         const nodeMap = new Map<string, WorkflowNode>();
-        for (const node of nodes) nodeMap.set(node.id, node);
+        for (const node of nodes){
+            if (node.type === NodeType.agent)  {
+                let requsestedAgent = this.agentsStorage_.getAgentByID(node.id) ; 
+                console.log(`got agent : ${requsestedAgent}`); 
+                if (requsestedAgent === false)
+                    throw new Error(`${node.id} is not avaiblae !!!`) ; 
+                else 
+                    this.agents_.set(node.id,requsestedAgent); 
+
+            }
+
+            
+            nodeMap.set(node.id, node);
+
+        }
 
         // Skip edges that reference missing nodes
         const validEdges = connections.filter(
@@ -159,9 +211,28 @@ export class Workflow {
             .filter((level) => level.length > 0);
 
         this.ExecutionQueue_ = { levels: runLevels, predecessors, successors };
-         
+
+        for (const level of runLevels) {
+            console.log("new level") ; 
+            for (const node of level) {
+                const nodeSuccessors = successors.get(node.id) || [] ; 
+                console.log(`agent ${node.id}`)
+                for (const succ of nodeSuccessors) {
+                    if (succ?.type === NodeType.node) 
+                    {
+                        console.log(`we need to add this tool ${succ.id}`)
+                    }
+                }
+                
+            }
+
         }
 
+        
+         
+        }
+        
+        //Once we've built the queue we check that the DAG respect all the rules
         compileGraph() : void 
         {
             const {levels, successors, predecessors} = this.ExecutionQueue_ ; 
@@ -180,5 +251,16 @@ export class Workflow {
                 }
             }
         }
+
+        //Once we made sure that the graph is good we start running it. 
+        //It should works as follow : 
+        //We start by giving user inputs for the agent of the first level 
+        run() : void 
+        {
+
+        }
+
+
+
 } ;
 
