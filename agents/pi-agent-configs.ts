@@ -19,7 +19,7 @@ export interface ToolInput {
   /** Description for the LLM to understand when to use this tool */
   description: string;
   /** TypeBox schema for tool parameters */
-  parameters: TSchema;
+  parameters?: TSchema;
   /** Optional: One-line snippet for "Available tools" section in system prompt */
   promptSnippet?: string;
   /** Optional: Guidelines appended to system prompt */

@@ -1,4 +1,4 @@
-import { Workflow, NodeType } from "../agents/workflows/workflow_types.js";
+import { Workflow, NodeType } from "../agents/workflow_types.js";
 
 const input = {
   components: [
