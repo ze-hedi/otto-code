@@ -15,8 +15,7 @@ The mechanism of workflow is as follow :
         - We identify these agents by an id that we will use to add tthe agent in the workflow
 */
 
-import { ToolInput } from "../agents/pi-agent-configs"
-import { RawPiAgent } from "../agents/raw-pi-agent";
+import { ToolInput, RawPiAgentConfig } from "../agents/pi-agent-configs"
 import { Type } from "@sinclair/typebox"
 import { DelegationInterface, AgentsStorage, Workflow , InterfaceStorage,AgentInterface} from "../agents/workflow-types";
 
@@ -46,7 +45,7 @@ let subAgentOutputsNames : [string,string][] = [
 let delegationInterface = new DelegationInterface(delegationToolInput, SubAgentInputsNames,subAgentOutputsNames ) ;
 
 let InterfaceMaps : Map<string,AgentInterface> = new Map() ;
-InterfaceMaps.set("delegatiion",delegationInterface) ; 
+InterfaceMaps.set("delegates",delegationInterface) ; 
 
 const interfaceStorage = new InterfaceStorage(InterfaceMaps) ; 
 console.log("interface storage is screated correctly ") ; 
@@ -60,37 +59,37 @@ let technicalAnalystSystemPrompt : string = `You are a technical analyst, a mid-
 
 let softSkillAnalystSystemPrompt : string = `You are a soft-skill analyst, an HR specialized in soft skills and leadership. Analyze the candidate's interpersonal, communication, and leadership qualities to produce an assessment of their soft skills.`
 
-let cvReader = new RawPiAgent({
+let cvReaderConfig : RawPiAgentConfig = {
     name : "cv_reader" ,
     model : "deepseek/deepseek-v4-pro" ,
     systemPrompt : cvReaderSystemPrompt ,
     builtInTools : ["read"] ,
     playground : process.cwd() ,
     sessionMode : "memory" ,
-})
+}
 
-let technicalAnalyst = new RawPiAgent({
+let technicalAnalystConfig : RawPiAgentConfig = {
     name : "technical_analyst" ,
     model : "deepseek/deepseek-v4-pro" ,
     systemPrompt : technicalAnalystSystemPrompt ,
     builtInTools : [] ,
     playground : process.cwd() ,
     sessionMode : "memory" ,
-})
+}
 
-let softSkillAnalyst = new RawPiAgent({
+let softSkillAnalystConfig : RawPiAgentConfig = {
     name : "soft_skill_analyst" ,
     model : "deepseek/deepseek-v4-pro" ,
     systemPrompt : softSkillAnalystSystemPrompt ,
     builtInTools : [] ,
     playground : process.cwd() ,
     sessionMode : "memory" ,
-})
+}
 
 let agentsStorage = new AgentsStorage(new Map([
-    ["cv_reader", cvReader] ,
-    ["technical_analyst", technicalAnalyst] ,
-    ["soft_skill_analyst", softSkillAnalyst] ,
+    ["cv_reader", cvReaderConfig] ,
+    ["technical_analyst", technicalAnalystConfig] ,
+    ["soft_skill_analyst", softSkillAnalystConfig] ,
 ]))
 
 
@@ -111,7 +110,7 @@ let workflowInput = {
     ] ,
 }
 
-let workflow = new Workflow(workflowInput, agentsStorage) ;
+let workflow = new Workflow(workflowInput, agentsStorage, interfaceStorage) ;
 workflow.buildExecutionQueue() ;
 
 const { levels, predecessors, successors } = workflow.executionQueue ;

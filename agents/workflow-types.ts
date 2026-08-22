@@ -1,25 +1,26 @@
 import { PiAgent } from "./pi-agent";
 import { RawPiAgent } from "./raw-pi-agent";
+import { PiAgentConfig, RawPiAgentConfig } from "./pi-agent-configs";
 import { ToolInput } from "./pi-agent-configs"
 import { Type } from "@sinclair/typebox"
 
+//Type guard : RawPiAgentConfig has `systemPrompt`, PiAgentConfig has `systemPromptSuffix`
+export function isRawPiAgentConfig(config : PiAgentConfig) : config is RawPiAgentConfig {
+    return "systemPrompt" in config ;
+}
+
 //class to store available agents
+//we store agent with their config and the agent object so we can instiate as much copies 
 export class AgentsStorage {
-    private availableAgents_ : Map<string, [PiAgent, boolean]> ; 
+    private availableAgents_ : Map<string, PiAgentConfig> ; 
 
-    constructor(availableAgents ?: Map<string,PiAgent>) 
-    {
-        this.availableAgents_ = new Map<string, [PiAgent, boolean]>() ;
-        for (const [id, agent] of availableAgents ?? []) {
-            this.availableAgents_.set(id, [agent, true]) ;
-        }
+    constructor(availableAgents ?: Map<string,PiAgentConfig>) {
+        this.availableAgents_ = availableAgents ; 
     }
+    
 
-    public getAgentByID(id: string) : PiAgent | false  {
-        const AgentPair = this.availableAgents_.get(id) 
-        if (AgentPair && AgentPair[1]) 
-            return  AgentPair[0]; 
-        return false 
+    public getAgentByID(id: string) : PiAgentConfig {
+        return this.availableAgents_.get(id) ; 
     }
 }
 
@@ -27,7 +28,14 @@ export class AgentsStorage {
 
 export class AgentInterface {
     protected name_ : string ; 
+    protected toolForSuccessors_ : ToolInput ;
+    protected subAgentsInputsNames_ : [string,string][] ;
+    protected subAgentsOutputNames_ : [string,string][] ; 
+
     constructor(name:string) {this.name_ = name } ; 
+    public getTool() : ToolInput {
+        return this.toolForSuccessors_ ; 
+    }
 } ; 
 
 //class to store available interfaces 
@@ -45,12 +53,7 @@ export class InterfaceStorage {
 
 
 export class DelegationInterface extends AgentInterface{
-    private toolForSuccessors_ : ToolInput ;
-    private subAgentsInputsNames_ : [string,string][] ;
-    private subAgentsOutputNames_ : [string,string][] ; 
-
-
-
+    
     constructor(toolForSuccessors: ToolInput, subAgentsInputsNames : [string,string][],subAgentsOutputNames : [string,string][] ){
         super("delegation_interface") ; 
         this.toolForSuccessors_ = toolForSuccessors ;  
@@ -69,7 +72,7 @@ export class DelegationInterface extends AgentInterface{
 
 
 
-export enum NodeType { agent, node }
+export enum NodeType { agent, interface }
 
 export interface WorkflowNode {
   id: string;
@@ -112,46 +115,67 @@ export class Workflow {
     private components_ :  WorkflowNode[] ; 
     private connections_ : WorkflowEdge[] ; 
     private agents_ : Map<string,PiAgent> ; 
-    private agentsStorage_ : AgentsStorage ; 
+    private agentsStorage_ : AgentsStorage ;
+    private interfaceStorage_ : InterfaceStorage ;  
 
 
-    constructor(workflowRecord : Record<string, any>, agentsStorage : AgentsStorage ) 
+    constructor(workflowRecord : Record<string, any>, agentsStorage : AgentsStorage, 
+        interfaceStorage : InterfaceStorage
+     ) 
     {
         const components = workflowRecord["components"] as WorkflowComponent[];
         const connections = workflowRecord["connections"] as WorkflowConnection[];
 
         this.agents_ = new Map<string, PiAgent>() ; 
         this.agentsStorage_ = agentsStorage ; 
+        this.interfaceStorage_ = interfaceStorage ; 
+        console.log(`interface storage state : ${this.interfaceStorage_}`) ; 
+        
 
         this.components_ = components.map((c) => ({
             id: c.id,
-            type: c.type === "agent" ? NodeType.agent : NodeType.node,
+            type: c.type === "agent" ? NodeType.agent : NodeType.interface,
         }));
         this.connections_ = connections.map((c) => ({ from: c.from, to: c.to }));
     } ; 
 
     public get executionQueue(): ExecutionQueueResult { return this.ExecutionQueue_ ; }
 
+    //this ethod will allow building the underlying agent objects 
+    public buildWorfklowAgents(): void 
+    {
+        for (const node of this.components_) {
+            if (node.type === NodeType.agent) {
+                console.log(`agent to build : ${node.id}`)
+                let lTools2Inject : ToolInput[] = []; 
+                let successors = this.ExecutionQueue_.successors.get(node.id) ; 
+                if (successors) 
+                    for (const succ of successors) {
+                        if (succ.type === NodeType.interface) {
+                            let link = this.interfaceStorage_.getInterfaceByID(succ.id) ; 
+                            let tool2Inject = link.getTool() ; 
+                            console.log(`tool name : ${tool2Inject.name}`) ; 
+                            lTools2Inject.push(tool2Inject) ;
+                        }
+                    }
+                    let agentConfig = this.agentsStorage_.getAgentByID(node.id) ; 
+                    agentConfig.tools = lTools2Inject ;
+                    if (isRawPiAgentConfig(agentConfig) ) {
+                        const agent = new RawPiAgent(agentConfig) ; 
+                        console.log(`built ${node.id} agent successfuly !! `) ; 
+                        this.agents_.set(node.id,agent) ; 
+                    }
+            }
+        }
+    }
 
     //This method will be called to build the execution queue based on the Kahn Algorithm
     public buildExecutionQueue(
         nodes: WorkflowNode[] = this.components_,
         connections: WorkflowEdge[] = this.connections_,
     ) {
-        // Index nodes by id
         const nodeMap = new Map<string, WorkflowNode>();
-        for (const node of nodes){
-            if (node.type === NodeType.agent)  {
-                let requsestedAgent = this.agentsStorage_.getAgentByID(node.id) ; 
-                console.log(`got agent : ${requsestedAgent}`); 
-                if (requsestedAgent === false)
-                    throw new Error(`${node.id} is not avaiblae !!!`) ; 
-                else 
-                    this.agents_.set(node.id,requsestedAgent); 
-
-            }
-
-            
+        for (const node of nodes){            
             nodeMap.set(node.id, node);
 
         }
@@ -218,7 +242,7 @@ export class Workflow {
                 const nodeSuccessors = successors.get(node.id) || [] ; 
                 console.log(`agent ${node.id}`)
                 for (const succ of nodeSuccessors) {
-                    if (succ?.type === NodeType.node) 
+                    if (succ?.type === NodeType.interface) 
                     {
                         console.log(`we need to add this tool ${succ.id}`)
                     }
@@ -227,8 +251,8 @@ export class Workflow {
             }
 
         }
-
-        
+            console.log("~~~~~~~~~~~~ started bbuilding the underlying agent ")  ; 
+            this.buildWorfklowAgents() ; 
          
         }
         
@@ -243,7 +267,7 @@ export class Workflow {
                     if (node.type === NodeType.agent) {
                         const nodeSuccessors = successors.get(node.id) || [] ; 
                         for (const succ of  nodeSuccessors) {
-                            if (succ.type === NodeType.node) 
+                            if (succ.type === NodeType.interface) 
                                 throw new Error(
                             `invalid workflow : ${node.id} need an interface to ${succ.id} `)  ;                   
                         } 
