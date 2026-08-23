@@ -1,6 +1,6 @@
 import { Type } from "typebox";
 import { PiAgent } from "./pi-agent.js";
-import { ToolInput, SubAgentToolConfig , PersistantSubAgentToolConfig} from "./pi-agent-configs.js";
+import { ToolInput, SubAgentToolConfig , PersistantSubAgentToolConfig} from "./pi-agent-types.js";
 import { RawPiAgent } from "./raw-pi-agent.js";
 import type { TSchema } from "typebox";
 import {handleEvent} from "./pi-agent-utils"; 

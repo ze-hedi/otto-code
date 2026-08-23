@@ -12,7 +12,8 @@ import {
   createEditToolDefinition,
   createWriteToolDefinition,
 } from "@mariozechner/pi-coding-agent";
-import {ToolInput, type RawPiAgentConfig } from "./pi-agent-configs.js";
+import {ToolInput} from "./pi-agent-types.js";
+import {type RawPiAgentConfig } from "./pi-agent-configs.js";
 import {PiAgent} from "./pi-agent"
 import { createSubAgentTool } from "./sub-agent-pattern.js";
 

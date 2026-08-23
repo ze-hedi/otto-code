@@ -26,7 +26,8 @@ import {
 import { SettingsManager } from "@mariozechner/pi-coding-agent";
 import { getModel, Model, type Api, type KnownProvider, type ImageContent } from "@mariozechner/pi-ai";
 import type { Skill } from "@mariozechner/pi-coding-agent";
-import {type EventCallback, SkillInput, ToolInput, PiAgentConfig, SubAgentToolConfig , PersistantSubAgentToolConfig} from "./pi-agent-configs"
+import {type EventCallback, SkillInput, ToolInput, SubAgentToolConfig , PersistantSubAgentToolConfig} from "./pi-agent-types"
+import {PiAgentConfig} from "./pi-agent-configs"
 import { createSubAgentTool } from "./sub-agent-pattern.js";
 
 // ── Types extracted from AgentSessionEvent union ───────────────────────────────

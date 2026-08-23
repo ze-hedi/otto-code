@@ -15,9 +15,18 @@ The mechanism of workflow is as follow :
         - We identify these agents by an id that we will use to add tthe agent in the workflow
 */
 
-import { ToolInput, RawPiAgentConfig } from "../agents/pi-agent-configs"
+import { ToolInput } from "../agents/pi-agent-types"
+import { RawPiAgentConfig } from "../agents/pi-agent-configs"
 import { Type } from "@sinclair/typebox"
-import { DelegationInterface, AgentsStorage, Workflow , InterfaceStorage,AgentInterface} from "../agents/workflow-types";
+import { AgentsStorage, InterfaceStorage} from "../agents/workflow-types";
+import { DelegationInterface, AgentInterface } from "../agents/workflow-interface";
+import { Workflow } from "../agents/workflow";
+import { config } from "dotenv";
+import { dirname, resolve } from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+config({ path: resolve(__dirname, "../.env") });
 
 // ================================== SECTION 1 : building the DAG Interface ==================================
 let delegationToolInput : ToolInput = {
@@ -113,15 +122,31 @@ let workflowInput = {
 let workflow = new Workflow(workflowInput, agentsStorage, interfaceStorage) ;
 workflow.buildExecutionQueue() ;
 
-const { levels, predecessors, successors } = workflow.executionQueue ;
+let availableAgents = workflow.getAvailableAgents() ; 
 
-console.log("\nlevels (agent nodes only):") ;
-levels.forEach((level, i) =>
-    console.log(`  [${i}] ${level.map((n) => n.id).join(", ")}`) ,
-) ;
+for (const agent of availableAgents) {
+    const sysPrompt =  await agent.getSystemPrompt() ; 
+    console.log(sysPrompt) ; 
+    console.log("\n\n\n")
+}
 
-console.log("\nsuccessors:") ;
-for (const [id, succs] of successors)
-    console.log(`  ${id} -> ${succs.map((n) => n.id).join(", ") || "(none)"}`) ;
+await workflow.run([`Analyze this CV and delegate the technical and soft-skill analysis to the downstream agents :
 
-console.log("\nrunned succeffuly  !! ") ; 
+John Doe
+Software Engineer
+john.doe@example.com | +1 555 123 4567
+
+Experience
+- Backend Engineer, Acme Corp (2020-Present): built REST APIs in Node.js, worked with PostgreSQL and Docker.
+- Junior Developer, StartupX (2018-2020): maintained Python scripts and internal tools.
+
+Education
+- BSc Computer Science, State University (2018)
+
+Skills
+- Node.js, TypeScript, Python, SQL, Docker, Git
+
+Leadership
+- Mentored 2 interns, led a small team on a billing migration project.
+`]) ;
+
