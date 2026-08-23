@@ -130,23 +130,23 @@ for (const agent of availableAgents) {
     console.log("\n\n\n")
 }
 
-await workflow.run([`Analyze this CV and delegate the technical and soft-skill analysis to the downstream agents :
+// await workflow.run([`Analyze this CV and delegate the technical and soft-skill analysis to the downstream agents :
 
-John Doe
-Software Engineer
-john.doe@example.com | +1 555 123 4567
+// John Doe
+// Software Engineer
+// john.doe@example.com | +1 555 123 4567
 
-Experience
-- Backend Engineer, Acme Corp (2020-Present): built REST APIs in Node.js, worked with PostgreSQL and Docker.
-- Junior Developer, StartupX (2018-2020): maintained Python scripts and internal tools.
+// Experience
+// - Backend Engineer, Acme Corp (2020-Present): built REST APIs in Node.js, worked with PostgreSQL and Docker.
+// - Junior Developer, StartupX (2018-2020): maintained Python scripts and internal tools.
 
-Education
-- BSc Computer Science, State University (2018)
+// Education
+// - BSc Computer Science, State University (2018)
 
-Skills
-- Node.js, TypeScript, Python, SQL, Docker, Git
+// Skills
+// - Node.js, TypeScript, Python, SQL, Docker, Git
 
-Leadership
-- Mentored 2 interns, led a small team on a billing migration project.
-`]) ;
+// Leadership
+// - Mentored 2 interns, led a small team on a billing migration project.
+// `]) ;
 

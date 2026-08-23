@@ -51,6 +51,7 @@ export class RawPiAgent extends PiAgent {
   }
 
   private async _buildToolsSection(): Promise<string> {
+    
     const lines = ["# Available Tools", ""];
 
     // Built-in tools
@@ -153,7 +154,8 @@ export class RawPiAgent extends PiAgent {
       }
 
     }
-
+    if (lines.length == 2)
+      return "" ; 
     return lines.join("\n");
   }
 

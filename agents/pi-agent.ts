@@ -29,6 +29,7 @@ import type { Skill } from "@mariozechner/pi-coding-agent";
 import {type EventCallback, SkillInput, ToolInput, SubAgentToolConfig , PersistantSubAgentToolConfig} from "./pi-agent-types"
 import {PiAgentConfig} from "./pi-agent-configs"
 import { createSubAgentTool } from "./sub-agent-pattern.js";
+import { AgentInterface } from './workflow-interface.js';
 
 // ── Types extracted from AgentSessionEvent union ───────────────────────────────
 // This avoids importing from sub-packages (@mariozechner/pi-agent-core, @mariozechner/pi-ai)
@@ -75,6 +76,8 @@ export class PiAgent {
   protected _noContextFiles: boolean = false;
   /** Sub-agent configs keyed by name, converted to tools on demand. */
   protected _subAgents: Map<string, SubAgentToolConfig> = new Map();
+  /**  Iterface that we will need in the case of workfow*/
+  protected _agentInterfaces : AgentInterface[] ; 
 
 
   constructor(config: PiAgentConfig) {
@@ -100,6 +103,7 @@ export class PiAgent {
       );
     }
     this.model = model;
+    this._agentInterfaces = config.interfaceTools ; 
 
     this.config = {
       systemPromptSuffix: config.systemPromptSuffix ?? "",
@@ -135,6 +139,8 @@ export class PiAgent {
 
     // Initialize custom tools from config
     this._registerToolsFromConfig(config.tools ?? []);
+    if ( config.interfaceTools)
+      this._registerInterfaceToolsFromConfig(config.interfaceTools) ; 
   }
 
   // ── Tool Management ────────────────────────────────────────────────────────
@@ -231,6 +237,21 @@ export class PiAgent {
       const toolDef = this._createToolDefinition(toolInput);
       this.toolDefinitions.set(toolInput.name, toolDef);
     }
+  }
+
+  /**
+   * Register all tools from the interfaces 
+  */
+
+  private _registerInterfaceToolsFromConfig(agentInterfaces: AgentInterface[]) : void {
+    if (agentInterfaces) 
+        for (let agentInterface of agentInterfaces) {
+            let tool2Inject = agentInterface?.getTool() ; 
+            const toolDef = this._createToolDefinition(tool2Inject) ; 
+            this.toolDefinitions.set(tool2Inject.name,toolDef) ; 
+      }
+
+
   }
 
   // ── MCP Tool Definition ────────────────────────────────────────────────────
@@ -423,6 +444,13 @@ export class PiAgent {
         this._pendingApprovals.delete(toolCallId);
         return undefined; // proceed with execution
       };
+    }
+    if (this._agentInterfaces && this._agentInterfaces.length > 0 )
+    {
+        session.agent.afterToolCall = async ({toolCall, args}) => {
+        console.log("########### print message after tool call ######### ") ; 
+        console.log(`called tool ${toolCall.name}`)
+      }
     }
 
     this.currentSession = session;

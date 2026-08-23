@@ -1,5 +1,5 @@
 import { RawPiAgent } from "./raw-pi-agent";
-import { RawPiAgentConfig } from "./pi-agent-configs";
+import type { RawPiAgentConfig } from "./pi-agent-configs";
 import { ToolInput } from "./pi-agent-types";
 import { handleEvent } from "./pi-agent-utils";
 import {
@@ -12,6 +12,7 @@ import {
     WorkflowConnection,
     ExecutionQueueResult,
 } from "./workflow-types";
+import { AgentInterface } from "./workflow-interface";
 
 export class Workflow {
     private ExecutionQueue_ : ExecutionQueueResult ; 
@@ -50,24 +51,38 @@ export class Workflow {
         for (const node of this.components_) {
             if (node.type === NodeType.agent) {
                 console.log(`agent to build : ${node.id}`)
-                let lTools2Inject : ToolInput[] = []; 
+                let links : AgentInterface[] = []; 
                 let successors = this.ExecutionQueue_.successors.get(node.id) ; 
+                let predecessors = this.ExecutionQueue_.predecessors.get(node.id) ; 
+                console.log(`node causing issue : ${node.id}`)
                 let agentConfig = this.agentsStorage_?.getAgentByID(node.id) ; 
+                let promptSuffix : string ; 
                 if (successors) 
                     for (const succ of successors) {
                         if (succ.type === NodeType.interface) {
-                            let link = this.interfaceStorage_?.getInterfaceByID(succ.id) ; 
-                            let tool2Inject = link?.getTool() ; 
-                            let promptsuffix_ = link?.getPromptSuffix() ; 
-                            if (promptsuffix_) 
-                               agentConfig.systemPrompt += "\n" + promptsuffix_ ;      
-                            
-                            console.log(`tool name : ${tool2Inject?.name}`) ; 
-                            lTools2Inject?.push(tool2Inject) ;
+                            const link = this.interfaceStorage_?.getInterfaceByID(succ.id) ; 
+                            const promptSuffix = link.getOutputPromptSuffix() ; 
+                            if (promptSuffix) 
+                                agentConfig.systemPrompt += "\n" + promptSuffix  ; 
+                            links.push(link) ; 
+
                         }
                     }
+                if (predecessors) 
+                    for (const pred of predecessors) {
+                          if (pred.type === NodeType.interface) {
+                            const link = this.interfaceStorage_?.getInterfaceByID(pred.id) ; 
+                            const promptSuffix = link.getInputPromptSuffix() ; 
+                            if (promptSuffix) 
+                                agentConfig.systemPrompt += "\n" + promptSuffix  ; 
+                            
+                        }
+
+                }
+                    
+                
                     if (agentConfig) {
-                        agentConfig.tools = lTools2Inject ;
+                        agentConfig.interfaceTools = links ; 
                         const agent = new RawPiAgent(agentConfig) ; 
                         console.log(`built ${node.id} agent successfuly !! `) ; 
                         this.agents_.set(node.id,agent) ; 
@@ -76,6 +91,16 @@ export class Workflow {
         }
     }
 
+
+    // public buildExecutionDependencies() {
+    //         const {levels, successors, predecessors} = this.ExecutionQueue_ ;
+    //         if (levels.length > 1){ 
+    //             for (level)
+    //             let predecessors = predecessors.get() ; 
+
+    //         } 
+
+    // }
     //This method will be called to build the execution queue based on the Kahn Algorithm
     public buildExecutionQueue(
         nodes: WorkflowNode[] = this.components_,

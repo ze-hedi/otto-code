@@ -8,12 +8,12 @@ import { AgentInterface } from "./workflow-interface";
 export class AgentsStorage {
     private availableAgents_ : Map<string, RawPiAgentConfig> ; 
 
-    constructor(availableAgents ?: Map<string,PiAgentConfig>) {
+    constructor(availableAgents ?: Map<string,RawPiAgentConfig>) {
         this.availableAgents_ = availableAgents ; 
     }
     
 
-    public getAgentByID(id: string) : PiAgentConfig {
+    public getAgentByID(id: string) : RawPiAgentConfig {
         return this.availableAgents_.get(id) ; 
     }
 }
