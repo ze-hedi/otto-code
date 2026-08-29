@@ -155,7 +155,7 @@ export class RawPiAgent extends PiAgent {
 
     }
     if (lines.length == 2)
-      return "" ; 
+      return "" ;    
     return lines.join("\n");
   }
 

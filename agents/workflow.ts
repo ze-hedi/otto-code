@@ -57,22 +57,28 @@ export class Workflow {
                 console.log(`node causing issue : ${node.id}`)
                 let agentConfig = this.agentsStorage_?.getAgentByID(node.id) ; 
                 let promptSuffix : string ; 
-                if (successors) 
+                if (successors)
                     for (const succ of successors) {
                         if (succ.type === NodeType.interface) {
-                            const link = this.interfaceStorage_?.getInterfaceByID(succ.id) ; 
-                            const promptSuffix = link.getOutputPromptSuffix() ; 
-                            if (promptSuffix) 
-                                agentConfig.systemPrompt += "\n" + promptSuffix  ; 
-                            links.push(link) ; 
-
+                            const link = this.interfaceStorage_?.getInterfaceByID(succ.id) ;
+                            const promptSuffix = link.getInputPromptSuffix() ;
+                            if (promptSuffix)
+                                agentConfig.systemPrompt += "\n" + promptSuffix ;
+                            // wrap execute to store the tool params on the interface node
+                            const agentId = node.id ;
+                            const originalExecute = link.getTool().execute ;
+                            link.getTool().execute = async (toolCallId, params, signal) => {
+                                link.addResult(agentId, params) ;
+                                return originalExecute(toolCallId, params, signal) ;
+                            } ;
+                            links.push(link) ;
                         }
                     }
                 if (predecessors) 
                     for (const pred of predecessors) {
                           if (pred.type === NodeType.interface) {
-                            const link = this.interfaceStorage_?.getInterfaceByID(pred.id) ; 
-                            const promptSuffix = link.getInputPromptSuffix() ; 
+                            const link = this.interfaceStorage_?.getInterfaceByID(pred.id) ;
+                            const promptSuffix = link.getOutputPromptSuffix() ; 
                             if (promptSuffix) 
                                 agentConfig.systemPrompt += "\n" + promptSuffix  ; 
                             
@@ -225,6 +231,34 @@ export class Workflow {
                 const agent = this.agents_.get(firstLevel[i].id) ;
                 if (!agent) throw new Error(`no agent built for ${firstLevel[i].id}`) ;
                 await agent.chat(lvl_1_inputs[i], handleEvent) ;
+            }
+
+            for (let i = 1; i < this.ExecutionQueue_.levels.length; i++) {
+                const tasks : Promise<void>[] = [] ;
+
+                for (const node of this.ExecutionQueue_.levels[i]) {
+                    const agent = this.agents_.get(node.id) ;
+                    if (!agent) throw new Error(`no agent built for ${node.id}`) ;
+
+                    const predecessors = this.ExecutionQueue_.predecessors.get(node.id) ?? [] ;
+                    const interfacePred = predecessors.find(n => n.type === NodeType.interface) ;
+                    if (!interfacePred) continue ;
+
+                    const results = this.interfaceStorage_.getInterfaceByID(interfacePred.id).getResults() ;
+                    if (results.length === 0) {
+                        console.log(`[workflow] skipping ${node.id} — no results on predecessor interface ${interfacePred.id}`) ;
+                        continue ;
+                    }
+
+                    console.log(`[workflow] launching ${node.id} with ${results.length} result(s) from interface ${interfacePred.id}`) ;
+                    const input = results
+                        .map(([agentId, response]) => `[${agentId}]: ${response}`)
+                        .join("\n") ;
+
+                    tasks.push(agent.chat(input, handleEvent)) ;
+                }
+
+                await Promise.all(tasks) ;
             }
         }
 
