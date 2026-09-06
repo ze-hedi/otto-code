@@ -52,7 +52,10 @@ export class PiAgent {
     playground: string;
     skills: SkillInput[];
   };
-  protected currentSession: AgentSession | null = null;
+  /** Map of session_key → AgentSession. The initial session is stored under "main". */
+  protected _sessions: Map<string, AgentSession> = new Map();
+  /** Session key that key-less calls resolve to. Address other sessions by passing their key. */
+  protected _activeSessionKey: string = "main";
   protected skillsTmpDir: string | null = null;
   protected toolDefinitions: Map<string, ToolDefinition> = new Map();
   private _hasApiKey: boolean = false;
@@ -292,6 +295,11 @@ export class PiAgent {
 
   // ── Session management ─────────────────────────────────────────────────────
 
+  /** The session that key-less calls resolve to ("main"), or null if it does not exist yet. */
+  protected get currentSession(): AgentSession | null {
+    return this._sessions.get(this._activeSessionKey) ?? null;
+  }
+
   protected _writeSkillsToTmp(): { tmpDir: string; skills: Skill[] } {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-skills-"));
     const skills: Skill[] = [];
@@ -329,7 +337,9 @@ export class PiAgent {
     return { tmpDir, skills };
   }
 
-  private async _createSession(): Promise<AgentSession> {
+  /** Build a session per `config.sessionMode` and store it under `key` (default: the active key). */
+  private async _createSession(key?: string): Promise<AgentSession> {
+    const sessionKey = key ?? this._activeSessionKey;
     const sessionDir = this._sessionDir ?? this.config.workingDir;
     let sessionManager: SessionManager;
     switch (this.config.sessionMode) {
@@ -337,10 +347,11 @@ export class PiAgent {
         sessionManager = SessionManager.inMemory(this.config.playground);
         break;
       case "disk": {
-        // Use custom filename: <agentName>_<date>.jsonl
+        // Use custom filename: <agentName>[_<sessionKey>]_<date>.jsonl
         const safeName = (this._name ?? "agent").replace(/[^a-zA-Z0-9_-]/g, "_");
+        const safeKey = sessionKey === this._activeSessionKey ? "" : `_${sessionKey.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
         const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-        const filename = `${safeName}_${timestamp}.jsonl`;
+        const filename = `${safeName}${safeKey}_${timestamp}.jsonl`;
         const filePath = path.join(sessionDir, filename);
         sessionManager = SessionManager.open(filePath, sessionDir, this.config.playground);
         break;
@@ -349,12 +360,15 @@ export class PiAgent {
         sessionManager = SessionManager.continueRecent(this.config.playground, sessionDir);
         break;
     }
-    return this._createSessionWith(sessionManager);
+    const session = await this._createSessionWith(sessionManager);
+    this._sessions.set(sessionKey, session);
+    return session;
   }
 
   /**
    * Core session creation: builds resource loader, settings, and calls createAgentSession.
    * Shared by _createSession() and loadSession().
+   * The caller stores the returned session under its key.
    */
   protected async _createSessionWith(sessionManager: SessionManager): Promise<AgentSession> {
     // Always build a resource loader so we can:
@@ -453,7 +467,6 @@ export class PiAgent {
       }
     }
 
-    this.currentSession = session;
     return session;
   }
 
@@ -551,14 +564,21 @@ export class PiAgent {
   /**
    * Connect to a single MCP server by name, discover tools, and register them.
    * Call this before the first chat()/execute() so tools are available in the session.
-   * Can be called again to reconnect (old tools from that server are replaced).
+   * A live bridge for the same endpoint is reused; pass `reconnect` to force a fresh one.
    * @param serverName - Name identifying the MCP server
    * @param endpoint - Endpoint URL (falls back to the configured URL for this serverName)
+   * @param reconnect - Tear down and rebuild the bridge even if it is already connected
    * @returns Array of discovered tool names from this server
    */
-  async connectMcp(serverName: string, endpoint?: string): Promise<string[]> {
+  async connectMcp(serverName: string, endpoint?: string, reconnect = false): Promise<string[]> {
     const url = endpoint ?? this._mcpServers.get(serverName);
     if (!url) throw new Error(`No endpoint configured for MCP server "${serverName}". Set it in mcpServers config or pass it to connectMcp().`);
+
+    // Reuse a live bridge: creating another session must not tear down servers
+    // that already-running sessions are using.
+    if (!reconnect && this._mcpBridges.has(serverName) && this._mcpServers.get(serverName) === url) {
+      return this.getMcpTools(serverName);
+    }
 
     // Tear down previous connection for this server if reconnecting
     await this._disconnectServer(serverName);
@@ -582,7 +602,7 @@ export class PiAgent {
       registered.push(mcpTool.name);
     }
 
-    if (this.currentSession) {
+    if (this._sessions.size > 0) {
       console.warn("[pi-agent] MCP tools registered but require a new session to take effect.");
     }
 
@@ -661,14 +681,54 @@ export class PiAgent {
   }
 
   /**
-   * Get or create the persistent session.
+   * Get or create the persistent session for a key.
    * Subsequent calls reuse the same session (continuous conversation).
+   * @param key - Session key (defaults to "main"). Non-default keys must already exist —
+   *   create them with createNewSession().
    */
-  async getSession(): Promise<AgentSession> {
-    if (!this.currentSession) {
-      await this._createSession();
+  async getSession(key?: string): Promise<AgentSession> {
+    const sessionKey = key ?? this._activeSessionKey;
+    const existing = this._sessions.get(sessionKey);
+    if (existing) return existing;
+    if (sessionKey !== this._activeSessionKey) {
+      throw new Error(`Session "${sessionKey}" not found. Call createNewSession() first.`);
     }
-    return this.currentSession!;
+    return this._createSession(sessionKey);
+  }
+
+  // ── Multi-session ──────────────────────────────────────────────────────────
+
+  /**
+   * Create an additional session under `key`, alongside the existing ones.
+   * The new session inherits the agent's model, playground, tools and skills — only the
+   * conversation (context window + history) is separate. It does NOT become the default
+   * session: address it explicitly, e.g. `chat(msg, onEvent, key)`.
+   * Await each call; concurrent creation is not supported.
+   * @param key - Unique session key (throws if already in use)
+   * @returns The newly created session
+   */
+  async createNewSession(key: string): Promise<AgentSession> {
+    if (this._sessions.has(key)) throw new Error(`Session "${key}" already exists`);
+    if (this.config.sessionMode === "continue" && this._sessions.size > 0) {
+      throw new Error('createNewSession() is not supported with sessionMode "continue".');
+    }
+    if (this._toolCallGuardrails.size > 0) {
+      console.warn("[pi-agent] Tool approvals are agent-level — do not run guarded sessions concurrently.");
+    }
+    return this._createSession(key);
+  }
+
+  /** Returns the keys of all active sessions. */
+  listSessions(): string[] {
+    return Array.from(this._sessions.keys());
+  }
+
+  /** Logs the active session keys, marking the one key-less calls resolve to. */
+  printSessions(): void {
+    const keys = this.listSessions().map((key) =>
+      key === this._activeSessionKey ? `${key} (default)` : key
+    );
+    console.log(`[pi-agent] sessions = [${keys.join(", ")}]`);
   }
 
   /**
@@ -683,7 +743,9 @@ export class PiAgent {
       undefined,
       cwdOverride ?? this.config.playground
     );
-    return this._createSessionWith(sessionManager);
+    const session = await this._createSessionWith(sessionManager);
+    this._sessions.set(this._activeSessionKey, session);
+    return session;
   }
 
   /**
@@ -720,9 +782,10 @@ export class PiAgent {
    * Send a message on the persistent session, preserving conversation history.
    * Subsequent calls reuse the same session so the agent remembers prior turns.
    * Throws if the stream ends with an error.
+   * @param key - Session key to talk to (defaults to "main")
    */
-  async chat(message: string, onEvent?: EventCallback): Promise<void> {
-    const session = await this.getSession();
+  async chat(message: string, onEvent?: EventCallback, key?: string): Promise<void> {
+    const session = await this.getSession(key);
     let streamError: Error | undefined;
     const unsubError = session.subscribe((event) => {
       if (
@@ -744,8 +807,8 @@ export class PiAgent {
   }
 
   /** Get the currently active session (if any) */
-  getCurrentSession(): AgentSession | null {
-    return this.currentSession;
+  getCurrentSession(key?: string): AgentSession | null {
+    return this._sessions.get(key ?? this._activeSessionKey) ?? null;
   }
 
   /** Get the compaction settings (from config or null if using defaults). */
@@ -754,8 +817,8 @@ export class PiAgent {
   }
 
   /** Get all messages from the current session */
-  async getMessages(): Promise<AgentMessage[]> {
-    const session = await this.getSession();
+  async getMessages(key?: string): Promise<AgentMessage[]> {
+    const session = await this.getSession(key);
     return session.messages;
   }
 }
