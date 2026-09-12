@@ -756,8 +756,9 @@ export class PiAgent {
     query: string,
     images?: ImageContent[],
     onEvent?: EventCallback,
+    key?: string,
   ): Promise<void> {
-    const session = await this._createSession();
+    const session = await this._createSession(key);
     let streamError: Error | undefined;
     const unsubError = session.subscribe((event) => {
       if (
