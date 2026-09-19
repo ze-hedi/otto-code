@@ -817,6 +817,12 @@ export class PiAgent {
     return this._compaction ?? null;
   }
 
+  /** Register a tool at runtime (available on next session creation). */
+  registerTool(tool: ToolInput): void {
+    const toolDef = this._createToolDefinition(tool);
+    this.toolDefinitions.set(tool.name, toolDef);
+  }
+
   /** Get all messages from the current session */
   async getMessages(key?: string): Promise<AgentMessage[]> {
     const session = await this.getSession(key);

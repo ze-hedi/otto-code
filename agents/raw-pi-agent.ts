@@ -26,7 +26,7 @@ const builtInToolFactories: Record<string, (cwd: string) => ToolDefinition> = {
 };
 
 export class RawPiAgent extends PiAgent {
-  private _baseSystemPrompt: string | undefined;
+  public _baseSystemPrompt: string | undefined;
   private _subAgentToolNames: Set<string> = new Set();
   protected _persistentSubAgents: Map<string,PiAgent> = new Map(); 
   protected _persistentSubAgentsTool: Map<string,ToolInput> = new Map() ; 
