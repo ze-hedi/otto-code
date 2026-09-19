@@ -823,6 +823,11 @@ export class PiAgent {
     this.toolDefinitions.set(tool.name, toolDef);
   }
 
+  /** Unregister a tool by name. */
+  unregisterTool(name: string): void {
+    this.toolDefinitions.delete(name);
+  }
+
   /** Get all messages from the current session */
   async getMessages(key?: string): Promise<AgentMessage[]> {
     const session = await this.getSession(key);

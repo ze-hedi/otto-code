@@ -16,7 +16,7 @@ export interface MeetingTranscript {
 }
 
 export class Meeting {
-  private agents: { name: string; description: string; agent: RawPiAgent; originalPrompt: string; votedConsensus: boolean }[];
+  private agents: { name: string; description: string; agent: RawPiAgent; originalPrompt: string; votedConsensus: boolean; lastConsensusMessage: string }[];
   private goal: string;
   private sessionKey = "meeting";
   private transcript: MeetingTurn[] = [];
@@ -30,6 +30,7 @@ export class Meeting {
       ...a,
       originalPrompt: a.agent._baseSystemPrompt ?? "",
       votedConsensus: false,
+      lastConsensusMessage: "",
     }));
   }
 
@@ -48,13 +49,14 @@ export class Meeting {
       a.agent.registerTool({
         name: "declare_consensus",
         label: "Declare Consensus",
-        description: "Call this when you believe the meeting has reached consensus on the goal. The meeting ends only when ALL participants declare consensus in the same round.",
+        description: "Call this when you believe the meeting has reached consensus. Provide a brief closing message summarizing your agreement and readiness to move forward. The meeting ends when ALL participants have declared consensus.",
         parameters: Type.Object({
-          summary: Type.String({ description: "Brief summary of what was agreed upon" }),
+          message: Type.String({ description: "Your closing message: confirm you agree, briefly summarize what was decided, and state you're ready to move forward." }),
         }),
         terminate: true,
-        execute: async () => {
+        execute: async (_toolCallId, params) => {
           self.votedConsensus = true;
+          self.lastConsensusMessage = params.message;
           return { content: [{ type: "text", text: "Consensus declared." }] };
         },
       });
@@ -95,7 +97,7 @@ export class Meeting {
 
         await speaker.agent.chat(prompt, onEvent, this.sessionKey);
         const messages = await speaker.agent.getMessages(this.sessionKey);
-        const text = this._extractLastAssistantText(messages);
+        const text = this._extractLastAssistantText(messages) || speaker.lastConsensusMessage;
 
         this.transcript.push({ round, agentName: speaker.name, message: text });
 
