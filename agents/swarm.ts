@@ -49,7 +49,7 @@ export class Swarm {
     return `You are a coordinator agent. You receive user requests and delegate them to the appropriate specialist agent.\n\n# Available Specialists\n${agentLines.join("\n")}\n\nYour job has two phases:\n1. First, clarify the user's request by asking questions if needed.\n2. Then, synthesize a clear goal paragraph that captures what needs to be discussed and decided by the team.`;
   }
 
-  async run(userInput: string, maxRounds: number = 10, onEvent?: EventCallback): Promise<void> {
+  async run(userInput: string, maxRounds: number = 5, onEvent?: EventCallback): Promise<void> {
     const sessionKey = `swarm-${randomUUID()}`;
 
     // Phase 1: Clarification + Synthesis
@@ -102,6 +102,50 @@ export class Swarm {
       this.synthesizedGoal,
     );
 
-    await meeting.run(maxRounds, onEvent);
+    const transcript = await meeting.run(maxRounds, onEvent);
+
+    // Phase 3: Task Planning (iterative)
+    // Coordinator connects to task-manager MCP and builds tasks round by round
+    const taskSessionKey = `tasks-${randomUUID()}`;
+    await this.coordinator.createNewSession(taskSessionKey);
+
+    const mcpEndpoint = "http://localhost:3100";
+    await this.coordinator.connectMcp("task-manager", mcpEndpoint);
+
+    const transcriptSummary = transcript.turns
+      .map((t) => `[${t.agentName}]: ${t.message}`)
+      .join("\n\n");
+
+    const specialists = this.agents.map((a) => `- **${a.name}**: ${a.description}`).join("\n");
+
+    const taskPlanningPrompt = `You just finished a team meeting. Here is the context:
+
+# Goal
+${this.synthesizedGoal}
+
+# Meeting Transcript
+${transcriptSummary}
+
+# Available Specialists
+${specialists}
+
+# Your Mission — Iterative Task Planning
+
+You must now break down the agreed-upon goal into a structured task plan. Work iteratively, NOT all at once:
+
+**Round 1 — High-level breakdown**: Identify the major workstreams or phases needed to accomplish the goal. Add ONE task per workstream using add_task. Each task description should summarize the workstream scope. Stop after this round.
+
+**Round 2 — Decompose each workstream**: For each high-level workstream, break it into smaller, concrete subtasks. Add each subtask with add_task. Assign each to the most appropriate specialist. Stop after this round.
+
+**Round 3 — Review and refine**: Use get_tasks to review everything you've created. Check for gaps, overlaps, or missing dependencies. Add any missing tasks or update existing ones with update_task. Stop after this round.
+
+IMPORTANT RULES:
+- Only add 1-3 tasks per tool call round. Think before each addition.
+- Assign each task to the most appropriate specialist agent.
+- Set all initial states to "opened".
+- After each round, pause and reflect on what's still missing before continuing.
+- When you are satisfied the plan is complete, say "TASK_PLANNING_COMPLETE".`;
+
+    await this.coordinator.chat(taskPlanningPrompt, onEvent, taskSessionKey);
   }
 }
