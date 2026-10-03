@@ -341,9 +341,8 @@ export class PiAgent {
     fs.mkdirSync(sessionDir, { recursive: true });
 
     const safeName = (this._name ?? "agent").replace(/[^a-zA-Z0-9_-]/g, "_");
-    const safeKey = sessionKey === this._activeSessionKey ? "" : `_${sessionKey.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const filename = `${safeName}${safeKey}_${timestamp}.jsonl`;
+    const safeKey = sessionKey.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const filename = `${safeName}-${safeKey}.jsonl`;
     const filePath = path.join(sessionDir, filename);
     const sessionManager = SessionManager.open(filePath, sessionDir, this.config.playground);
 
