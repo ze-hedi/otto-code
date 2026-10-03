@@ -46,7 +46,7 @@ export class PiAgent {
   protected modelRegistry: ModelRegistry;
   protected model: Model<Api>;
   protected config: Required<
-    Omit<PiAgentConfig, "apiKey" | "workingDir" | "playground" | "model" | "skills" | "tools" | "compaction" | "sessionDir" | "name" | "toolCallGuardrails" | "mcpServers" | "mcpConnectionTimeout" | "builtInTools">
+    Omit<PiAgentConfig, "apiKey" | "workingDir" | "playground" | "model" | "skills" | "tools" | "compaction" | "name" | "toolCallGuardrails" | "mcpServers" | "mcpConnectionTimeout" | "builtInTools">
   > & {
     workingDir: string;
     playground: string;
@@ -61,7 +61,6 @@ export class PiAgent {
   private _hasApiKey: boolean = false;
   protected _provider: string = "";
   protected _compaction: PiAgentConfig["compaction"];
-  protected _sessionDir: string | undefined;
   protected _name: string | undefined;
   protected _toolCallGuardrails: Set<string> = new Set();
   protected _pendingApprovals: Map<string, { resolve: (approved: boolean) => void; comment?: string }> = new Map();
@@ -111,7 +110,6 @@ export class PiAgent {
     this.config = {
       systemPromptSuffix: config.systemPromptSuffix ?? "",
       thinkingLevel: config.thinkingLevel ?? "medium",
-      sessionMode: config.sessionMode ?? "memory",
       workingDir: config.workingDir ?? process.cwd(),
       playground: config.playground ?? process.cwd(),
       skills: config.skills ?? [],
@@ -119,7 +117,6 @@ export class PiAgent {
 
     // Store optional overrides for session creation
     this._name = config.name;
-    this._sessionDir = config.sessionDir;
     this._compaction = config.compaction;
     this._toolCallGuardrails = new Set(config.toolCallGuardrails ?? []);
     if (config.mcpServers) {
@@ -337,29 +334,19 @@ export class PiAgent {
     return { tmpDir, skills };
   }
 
-  /** Build a session per `config.sessionMode` and store it under `key` (default: the active key). */
+  /** Build a disk-persisted session under `<playground>/.otto-sessions/` and store it under `key`. */
   private async _createSession(key?: string): Promise<AgentSession> {
     const sessionKey = key ?? this._activeSessionKey;
-    const sessionDir = this._sessionDir ?? this.config.workingDir;
-    let sessionManager: SessionManager;
-    switch (this.config.sessionMode) {
-      case "memory":
-        sessionManager = SessionManager.inMemory(this.config.playground);
-        break;
-      case "disk": {
-        // Use custom filename: <agentName>[_<sessionKey>]_<date>.jsonl
-        const safeName = (this._name ?? "agent").replace(/[^a-zA-Z0-9_-]/g, "_");
-        const safeKey = sessionKey === this._activeSessionKey ? "" : `_${sessionKey.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
-        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-        const filename = `${safeName}${safeKey}_${timestamp}.jsonl`;
-        const filePath = path.join(sessionDir, filename);
-        sessionManager = SessionManager.open(filePath, sessionDir, this.config.playground);
-        break;
-      }
-      case "continue":
-        sessionManager = SessionManager.continueRecent(this.config.playground, sessionDir);
-        break;
-    }
+    const sessionDir = path.join(this.config.playground, ".otto-sessions");
+    fs.mkdirSync(sessionDir, { recursive: true });
+
+    const safeName = (this._name ?? "agent").replace(/[^a-zA-Z0-9_-]/g, "_");
+    const safeKey = sessionKey === this._activeSessionKey ? "" : `_${sessionKey.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const filename = `${safeName}${safeKey}_${timestamp}.jsonl`;
+    const filePath = path.join(sessionDir, filename);
+    const sessionManager = SessionManager.open(filePath, sessionDir, this.config.playground);
+
     const session = await this._createSessionWith(sessionManager);
     this._sessions.set(sessionKey, session);
     return session;
@@ -709,9 +696,6 @@ export class PiAgent {
    */
   async createNewSession(key: string): Promise<AgentSession> {
     if (this._sessions.has(key)) throw new Error(`Session "${key}" already exists`);
-    if (this.config.sessionMode === "continue" && this._sessions.size > 0) {
-      throw new Error('createNewSession() is not supported with sessionMode "continue".');
-    }
     if (this._toolCallGuardrails.size > 0) {
       console.warn("[pi-agent] Tool approvals are agent-level — do not run guarded sessions concurrently.");
     }

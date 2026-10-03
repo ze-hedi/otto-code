@@ -17,9 +17,7 @@ export interface PiAgentConfig {
   thinkingLevel?: "off" | "low" | "medium" | "high" | "xhigh";
   /** Optional: override API key at runtime */
   apiKey?: string;
-  /** Session persistence: "memory" | "disk" | "continue" */
-  sessionMode?: "memory" | "disk" | "continue";
-  /** Working directory for disk-based sessions */
+  /** Working directory (fallback cwd when playground is not set) */
   workingDir?: string;
   /** Repository/directory the agent will operate in (cwd for file and shell tools) */
   playground?: string;
@@ -29,8 +27,6 @@ export interface PiAgentConfig {
   tools?: ToolInput[];
   /** interfaces tools: when we are on graph mode  */
   interfaceTools?: AgentInterface[]; 
-  /** Override directory for session persistence (used by SessionManager.create). */
-  sessionDir?: string;
   /** Tool names that require user approval before executing (default: [] = no guardrails) */
   toolCallGuardrails?: string[];
   /**
