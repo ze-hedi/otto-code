@@ -16,6 +16,14 @@ interface AgentDoc {
   }
 }
 
+interface SessionInfo {
+  filename: string
+  sessionKey: string
+  sessionId: string | null
+  createdAt: string | null
+  sizeBytes: number
+}
+
 function timeAgo(date: string): string {
   const seconds = Math.floor((Date.now() - new Date(date).getTime()) / 1000)
   if (seconds < 60) return 'just now'
@@ -27,9 +35,20 @@ function timeAgo(date: string): string {
   return `${days}d ago`
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  const kb = bytes / 1024
+  if (kb < 1024) return `${kb.toFixed(1)} KB`
+  return `${(kb / 1024).toFixed(1)} MB`
+}
+
 export function AgentsListPage() {
   const [agents, setAgents] = useState<AgentDoc[]>([])
   const [loading, setLoading] = useState(true)
+  const [popup, setPopup] = useState<{ agentId: string; agentName: string } | null>(null)
+  const [sessions, setSessions] = useState<SessionInfo[]>([])
+  const [sessionsLoading, setSessionsLoading] = useState(false)
+  const [popupBusy, setPopupBusy] = useState(false)
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -47,6 +66,42 @@ export function AgentsListPage() {
       setAgents(prev => prev.filter(a => a.agent_id !== agentId))
     }
   }
+
+  const openSessionsPopup = async (agent: AgentDoc) => {
+    setPopup({ agentId: agent.agent_id, agentName: agent.config.name || 'Unnamed Agent' })
+    setSessions([])
+    setSessionsLoading(true)
+    setPopupBusy(false)
+
+    try {
+      const [sessionsRes, statusRes] = await Promise.all([
+        fetch(`http://localhost:4000/agents/${agent.agent_id}/sessions`),
+        fetch(`http://localhost:4000/agents/${agent.agent_id}/status`),
+      ])
+      if (sessionsRes.ok) setSessions(await sessionsRes.json())
+      if (statusRes.ok) {
+        const status = await statusRes.json()
+        setPopupBusy(status.busy)
+      }
+    } catch {}
+    setSessionsLoading(false)
+  }
+
+  const loadSessionAndNavigate = async (agentId: string, filename: string) => {
+    await fetch(`http://localhost:4000/agents/${agentId}/load-session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename }),
+    })
+    navigate(`/chat/${agentId}`)
+  }
+
+  const newChatAndNavigate = async (agentId: string) => {
+    await fetch(`http://localhost:4000/agents/${agentId}/new-session`, { method: 'POST' })
+    navigate(`/chat/${agentId}`)
+  }
+
+  const closePopup = () => setPopup(null)
 
   return (
     <div className="agents-page">
@@ -75,7 +130,7 @@ export function AgentsListPage() {
           <div
             key={agent.agent_id}
             className="agent-card"
-            onClick={() => navigate(`/chat/${agent.agent_id}`)}
+            onClick={() => openSessionsPopup(agent)}
           >
             <div className="card-header">
               <span className="card-name">
@@ -114,6 +169,62 @@ export function AgentsListPage() {
           </div>
         ))}
       </div>
+
+      {popup && (
+        <>
+          <div className="popup-backdrop" onClick={closePopup} />
+          <div className="popup-modal">
+            <div className="popup-header">
+              <h3>{popup.agentName}</h3>
+              <button className="popup-close" onClick={closePopup}>&times;</button>
+            </div>
+            <div className="popup-body">
+              {popupBusy && (
+                <div
+                  className="popup-busy"
+                  onClick={() => navigate(`/chat/${popup.agentId}`)}
+                >
+                  <span className="busy-spinner" />
+                  <span>Agent is working...</span>
+                  <span className="busy-goto">Go to chat &rarr;</span>
+                </div>
+              )}
+
+              <button
+                className="new-chat-btn"
+                onClick={() => newChatAndNavigate(popup.agentId)}
+                disabled={popupBusy}
+              >
+                + New Chat
+              </button>
+
+              {sessionsLoading && (
+                <div className="popup-loading">Loading sessions...</div>
+              )}
+
+              {!sessionsLoading && sessions.length === 0 && (
+                <div className="popup-empty">No saved sessions yet</div>
+              )}
+
+              {sessions.map(s => (
+                <div
+                  key={s.filename}
+                  className="session-row"
+                  onClick={() => loadSessionAndNavigate(popup.agentId, s.filename)}
+                >
+                  <div className="session-row-main">
+                    <span className="session-key">{s.sessionKey}</span>
+                    <span className="session-size">{formatBytes(s.sizeBytes)}</span>
+                  </div>
+                  {s.createdAt && (
+                    <span className="session-time">{timeAgo(s.createdAt)}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }

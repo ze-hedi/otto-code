@@ -2,7 +2,7 @@ import { Router } from "express";
 import fs from "fs";
 import path from "path";
 import readline from "readline";
-import { createAgent, deleteAgent, getActiveAgent, getOrActivateAgent, getAgentDoc, getAllAgentDocs } from "../services/agent-manager.js";
+import { createAgent, deleteAgent, getActiveAgent, getOrActivateAgent, getAgentDoc, getAllAgentDocs, getSessionKey, setSessionKey, markBusy, markIdle, getAgentBusyState, getAgentEmitter } from "../services/agent-manager.js";
 import { handleEventWithClient } from "../../../../agents/pi-agent-utils.js";
 import type { SerializableAgentConfig } from "../types.js";
 
@@ -48,6 +48,12 @@ router.delete("/:id", async (req, res) => {
     return;
   }
   res.json({ deleted: true });
+});
+
+// ── Agent busy status ──────────────────────────────────────────────────────
+
+router.get("/:id/status", (req, res) => {
+  res.json(getAgentBusyState(req.params.id));
 });
 
 // ── Full system prompt (includes tool snippets) ────────────────────────────
@@ -164,6 +170,7 @@ router.post("/:id/load-session", async (req, res) => {
   try {
     console.log(`[load-session] Loading session from: ${filePath}`);
     const session = await agent.loadSession(filePath);
+    setSessionKey(req.params.id, "main");
     console.log(`[load-session] Session loaded, messages count: ${session.messages.length}`);
     res.json({ loaded: true });
   } catch (err: any) {
@@ -172,10 +179,34 @@ router.post("/:id/load-session", async (req, res) => {
   }
 });
 
+// ── Create a fresh session (avoids resuming old "main") ───────────────────
+
+router.post("/:id/new-session", async (req, res) => {
+  const agent = await getOrActivateAgent(req.params.id);
+  if (!agent) {
+    res.status(404).json({ error: "Agent not found" });
+    return;
+  }
+
+  const key = `chat-${Date.now()}`;
+  await agent.createNewSession(key);
+  setSessionKey(req.params.id, key);
+  console.log(`[new-session] Created session "${key}" for agent ${req.params.id}`);
+  res.json({ sessionKey: key });
+});
+
 // ── Chat SSE endpoint ──────────────────────────────────────────────────────
 
 router.post("/:id/chat", async (req, res) => {
   console.log(`[chat] POST /agents/${req.params.id}/chat`);
+
+  // Guard: reject if agent is already streaming
+  const busyState = getAgentBusyState(req.params.id);
+  if (busyState.busy) {
+    res.status(409).json({ error: "Agent is already processing a message" });
+    return;
+  }
+
   const agent = await getOrActivateAgent(req.params.id);
   if (!agent) {
     console.log(`[chat] Agent not found: ${req.params.id}`);
@@ -190,6 +221,9 @@ router.post("/:id/chat", async (req, res) => {
     return;
   }
 
+  const sessionKey = getSessionKey(req.params.id);
+  const emitter = markBusy(req.params.id, sessionKey);
+
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
@@ -203,27 +237,76 @@ router.post("/:id/chat", async (req, res) => {
     if (!closed) {
       console.log("[chat] SSE send:", JSON.stringify(payload).slice(0, 200));
       res.write(`data: ${JSON.stringify(payload)}\n\n`);
-      // Force the chunk through the socket immediately
       (res.socket as any)?.flush?.();
       (res as any).flush?.();
     }
   };
 
   try {
-    // Wait for streaming to actually finish via the event callback,
-    // not via chat() promise (which can resolve before events flush)
     await new Promise<void>((resolve, reject) => {
       agent.chat(message, (event) => {
         handleEventWithClient(event, send);
+        // Broadcast to event bus so reconnecting clients receive events
+        handleEventWithClient(event, (payload) => emitter.emit("event", payload));
         if (event.type === "agent_end") resolve();
-      }).catch(reject);
+      }, sessionKey).catch(reject);
     });
   } catch (err: any) {
     console.error("[chat] error:", err);
     send({ type: "error", message: err?.message ?? String(err) });
   } finally {
+    markIdle(req.params.id);
     res.end();
   }
+});
+
+// ── SSE reconnection endpoint ──────────────────────────────────────────────
+
+router.get("/:id/events", (req, res) => {
+  const state = getAgentBusyState(req.params.id);
+  if (!state.busy) {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders();
+    res.write(`data: ${JSON.stringify({ type: "agent_idle" })}\n\n`);
+    res.end();
+    return;
+  }
+
+  const emitter = getAgentEmitter(req.params.id);
+  if (!emitter) {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.flushHeaders();
+    res.write(`data: ${JSON.stringify({ type: "agent_idle" })}\n\n`);
+    res.end();
+    return;
+  }
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+
+  const onEvent = (payload: object) => {
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    (res.socket as any)?.flush?.();
+    (res as any).flush?.();
+  };
+
+  const onDone = () => {
+    res.write(`data: ${JSON.stringify({ type: "agent_idle" })}\n\n`);
+    res.end();
+  };
+
+  emitter.on("event", onEvent);
+  emitter.once("done", onDone);
+
+  res.on("close", () => {
+    emitter.off("event", onEvent);
+    emitter.off("done", onDone);
+  });
 });
 
 // ── Message history endpoint ────────────────────────────────────────────────
@@ -302,7 +385,8 @@ router.get("/:id/messages", async (req, res) => {
   }
 
   try {
-    const messages = await agent.getMessages();
+    const sessionKey = getSessionKey(req.params.id);
+    const messages = await agent.getMessages(sessionKey);
     const transformed = transformMessages(messages);
     console.log(`[messages] Raw: ${messages.length}, Transformed: ${transformed.length}`);
     if (messages.length > 0) {

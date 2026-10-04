@@ -25,6 +25,79 @@ interface AgentConfig {
   playground?: string
 }
 
+/** Process SSE events from a ReadableStream reader, appending to `parts` and calling `updateMessage` on each event. */
+async function processSSEStream(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  parts: MessagePart[],
+  updateMessage: () => void,
+) {
+  const decoder = new TextDecoder()
+  let buf = ''
+
+  const lastPart = (type: string) =>
+    parts.length > 0 && parts[parts.length - 1].type === type ? parts[parts.length - 1] : null
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buf += decoder.decode(value, { stream: true })
+
+    while (buf.includes('\n')) {
+      const idx = buf.indexOf('\n')
+      const line = buf.slice(0, idx)
+      buf = buf.slice(idx + 1)
+
+      if (!line.startsWith('data: ')) continue
+      let ev: any
+      try { ev = JSON.parse(line.slice(6)) } catch { continue }
+
+      if (ev.type === 'agent_idle') break
+
+      if (ev.type === 'thinking' && ev.text) {
+        const existing = lastPart('thinking') as { type: 'thinking'; content: string } | null
+        if (existing) {
+          existing.content += ev.text
+        } else {
+          parts.push({ type: 'thinking', content: ev.text })
+        }
+        updateMessage()
+      } else if (ev.type === 'delta' && ev.text) {
+        const existing = lastPart('text') as { type: 'text'; content: string } | null
+        if (existing) {
+          existing.content += ev.text
+        } else {
+          parts.push({ type: 'text', content: ev.text })
+        }
+        updateMessage()
+      } else if (ev.type === 'tool_start') {
+        parts.push({
+          type: 'tool',
+          name: ev.name,
+          input: JSON.stringify(ev.args, null, 2),
+          status: 'running',
+        })
+        updateMessage()
+      } else if (ev.type === 'tool_end') {
+        for (let i = parts.length - 1; i >= 0; i--) {
+          const p = parts[i]
+          if (p.type === 'tool' && p.name === ev.name && p.status === 'running') {
+            const resultStr = typeof ev.result === 'string' ? ev.result : JSON.stringify(ev.result, null, 2)
+            p.result = resultStr.length > 1500 ? resultStr.slice(0, 1500) + '\n... (truncated)' : resultStr
+            p.isError = ev.isError
+            p.status = 'done'
+            break
+          }
+        }
+        updateMessage()
+      } else if (ev.type === 'error') {
+        parts.push({ type: 'text', content: `Error: ${ev.message}` })
+        updateMessage()
+      }
+    }
+  }
+}
+
 export function ChatPage() {
   const { agentId } = useParams<{ agentId: string }>()
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -33,6 +106,7 @@ export function ChatPage() {
   const [agentConfig, setAgentConfig] = useState<AgentConfig | null>(null)
   const [showDetails, setShowDetails] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -44,6 +118,61 @@ export function ChatPage() {
       .then(r => r.ok ? r.json() : null)
       .then(doc => { if (doc?.config) setAgentConfig(doc.config) })
       .catch(() => {})
+  }, [agentId])
+
+  // On mount: load messages, then check if agent is busy and reconnect to stream
+  useEffect(() => {
+    if (!agentId) return
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    ;(async () => {
+      try {
+        // Load existing messages
+        const msgsRes = await fetch(`http://localhost:4000/agents/${agentId}/messages`, { signal: controller.signal })
+        const msgs: ChatMessage[] = msgsRes.ok ? await msgsRes.json() : []
+        if (msgs.length > 0) setMessages(msgs)
+
+        // Check if agent is currently streaming
+        const statusRes = await fetch(`http://localhost:4000/agents/${agentId}/status`, { signal: controller.signal })
+        const status = await statusRes.json()
+
+        if (status.busy) {
+          setBusy(true)
+
+          // Find or create the assistant message slot to append streaming parts to
+          const lastMsg = msgs[msgs.length - 1]
+          const isLastAssistant = lastMsg?.role === 'assistant'
+          const parts: MessagePart[] = isLastAssistant ? [...lastMsg.parts] : []
+          const assistantIdx = isLastAssistant ? msgs.length - 1 : msgs.length
+
+          if (!isLastAssistant) {
+            setMessages(prev => [...prev, { role: 'assistant', content: '', parts: [] }])
+          }
+
+          const updateMessage = () => {
+            const snapshot = parts.map(p => ({ ...p }))
+            setMessages(prev => {
+              const next = [...prev]
+              next[assistantIdx] = { role: 'assistant', content: '', parts: snapshot }
+              return next
+            })
+          }
+
+          // Subscribe to the event stream for remaining events
+          const eventsRes = await fetch(`http://localhost:4000/agents/${agentId}/events`, { signal: controller.signal })
+          if (eventsRes.ok && eventsRes.body) {
+            await processSSEStream(eventsRes.body.getReader(), parts, updateMessage)
+          }
+
+          setBusy(false)
+        }
+      } catch (err: any) {
+        if (err.name !== 'AbortError') console.error('[chat] reconnect error:', err)
+      }
+    })()
+
+    return () => { controller.abort() }
   }, [agentId])
 
   useEffect(() => {
@@ -72,6 +201,9 @@ export function ChatPage() {
     setInput('')
     setBusy(true)
 
+    const controller = new AbortController()
+    abortRef.current = controller
+
     const msgs: ChatMessage[] = [...messages, { role: 'user', content: text, parts: [] }]
     msgs.push({ role: 'assistant', content: '', parts: [] })
     const assistantIdx = msgs.length - 1
@@ -88,14 +220,12 @@ export function ChatPage() {
       })
     }
 
-    const lastPart = (type: string) =>
-      parts.length > 0 && parts[parts.length - 1].type === type ? parts[parts.length - 1] : null
-
     try {
       const res = await fetch(`http://localhost:4000/agents/${agentId}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text }),
+        signal: controller.signal,
       })
 
       if (!res.ok) {
@@ -103,71 +233,12 @@ export function ChatPage() {
         throw new Error(errText)
       }
 
-      const reader = res.body!.getReader()
-      const decoder = new TextDecoder()
-      let buf = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buf += decoder.decode(value, { stream: true })
-
-        while (buf.includes('\n')) {
-          const idx = buf.indexOf('\n')
-          const line = buf.slice(0, idx)
-          buf = buf.slice(idx + 1)
-
-          if (!line.startsWith('data: ')) continue
-          let ev: any
-          try { ev = JSON.parse(line.slice(6)) } catch { continue }
-
-          if (ev.type === 'thinking' && ev.text) {
-            const existing = lastPart('thinking') as { type: 'thinking'; content: string } | null
-            if (existing) {
-              existing.content += ev.text
-            } else {
-              parts.push({ type: 'thinking', content: ev.text })
-            }
-            updateMessage()
-          } else if (ev.type === 'delta' && ev.text) {
-            const existing = lastPart('text') as { type: 'text'; content: string } | null
-            if (existing) {
-              existing.content += ev.text
-            } else {
-              parts.push({ type: 'text', content: ev.text })
-            }
-            updateMessage()
-          } else if (ev.type === 'tool_start') {
-            parts.push({
-              type: 'tool',
-              name: ev.name,
-              input: JSON.stringify(ev.args, null, 2),
-              status: 'running',
-            })
-            updateMessage()
-          } else if (ev.type === 'tool_end') {
-            // find the last running tool with this name
-            for (let i = parts.length - 1; i >= 0; i--) {
-              const p = parts[i]
-              if (p.type === 'tool' && p.name === ev.name && p.status === 'running') {
-                const resultStr = typeof ev.result === 'string' ? ev.result : JSON.stringify(ev.result, null, 2)
-                p.result = resultStr.length > 1500 ? resultStr.slice(0, 1500) + '\n... (truncated)' : resultStr
-                p.isError = ev.isError
-                p.status = 'done'
-                break
-              }
-            }
-            updateMessage()
-          } else if (ev.type === 'error') {
-            parts.push({ type: 'text', content: `Error: ${ev.message}` })
-            updateMessage()
-          }
-        }
-      }
+      await processSSEStream(res.body!.getReader(), parts, updateMessage)
     } catch (err: any) {
-      parts.push({ type: 'text', content: `Error: ${err.message}` })
-      updateMessage()
+      if (err.name !== 'AbortError') {
+        parts.push({ type: 'text', content: `Error: ${err.message}` })
+        updateMessage()
+      }
     }
 
     setBusy(false)
