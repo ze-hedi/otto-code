@@ -50,6 +50,10 @@ export class RawPiAgent extends PiAgent {
     this._noContextFiles = true;
   }
 
+  get fullSystemPrompt(): string | undefined {
+    return this._systemPrompt;
+  }
+
   private async _buildToolsSection(): Promise<string> {
     
     const lines = ["# Available Tools", ""];

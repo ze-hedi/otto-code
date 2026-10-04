@@ -14,16 +14,49 @@ interface ChatMessage {
   parts: MessagePart[]  // used for assistant messages
 }
 
+interface AgentConfig {
+  name?: string
+  description?: string
+  model: string
+  systemPrompt?: string
+  builtInTools?: string[]
+  mcpServers?: Record<string, string>
+  thinkingLevel?: string
+  playground?: string
+}
+
 export function ChatPage() {
   const { agentId } = useParams<{ agentId: string }>()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
+  const [agentConfig, setAgentConfig] = useState<AgentConfig | null>(null)
+  const [showDetails, setShowDetails] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  useEffect(() => {
+    if (!agentId) return
+    fetch(`http://localhost:4000/agents/${agentId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(doc => { if (doc?.config) setAgentConfig(doc.config) })
+      .catch(() => {})
+  }, [agentId])
+
+  useEffect(() => {
+    if (!showDetails || !agentId) return
+    fetch(`http://localhost:4000/agents/${agentId}/system-prompt`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.systemPrompt) {
+          setAgentConfig(prev => prev ? { ...prev, systemPrompt: data.systemPrompt } : prev)
+        }
+      })
+      .catch(() => {})
+  }, [showDetails, agentId])
 
   useEffect(() => {
     const ta = document.querySelector<HTMLTextAreaElement>('.input-bar textarea')
@@ -146,10 +179,91 @@ export function ChatPage() {
         <div className="header-inner">
           <Link to="/" className="back-link">← Back</Link>
           <div className="chat-title">
-            <h2>Chat</h2>
+            <h2>{agentConfig?.name || 'Chat'}</h2>
             <span className="agent-id">{agentId?.slice(0, 8)}...</span>
           </div>
+          <button
+            className="details-btn"
+            onClick={() => setShowDetails(!showDetails)}
+            title="Agent details"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="16" x2="12" y2="12" />
+              <line x1="12" y1="8" x2="12.01" y2="8" />
+            </svg>
+          </button>
         </div>
+      </div>
+
+      {showDetails && <div className="details-backdrop" onClick={() => setShowDetails(false)} />}
+      <div className={`details-panel ${showDetails ? 'open' : ''}`}>
+        <div className="details-panel-header">
+          <h3>Agent Details</h3>
+          <button className="details-close" onClick={() => setShowDetails(false)}>&times;</button>
+        </div>
+        {agentConfig ? (
+          <div className="details-body">
+            {agentConfig.name && (
+              <div className="detail-field">
+                <span className="detail-label">Name</span>
+                <span className="detail-value">{agentConfig.name}</span>
+              </div>
+            )}
+            <div className="detail-field">
+              <span className="detail-label">Model</span>
+              <span className="detail-value mono">{agentConfig.model}</span>
+            </div>
+            {agentConfig.description && (
+              <div className="detail-field">
+                <span className="detail-label">Description</span>
+                <span className="detail-value">{agentConfig.description}</span>
+              </div>
+            )}
+            {agentConfig.thinkingLevel && agentConfig.thinkingLevel !== 'off' && (
+              <div className="detail-field">
+                <span className="detail-label">Thinking</span>
+                <span className="detail-chip">{agentConfig.thinkingLevel}</span>
+              </div>
+            )}
+            {agentConfig.builtInTools && agentConfig.builtInTools.length > 0 && (
+              <div className="detail-field">
+                <span className="detail-label">Tools</span>
+                <div className="detail-chips">
+                  {agentConfig.builtInTools.map(t => (
+                    <span key={t} className="detail-chip">{t}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {agentConfig.mcpServers && Object.keys(agentConfig.mcpServers).length > 0 && (
+              <div className="detail-field">
+                <span className="detail-label">MCP Servers</span>
+                <div className="detail-chips">
+                  {Object.keys(agentConfig.mcpServers).map(name => (
+                    <span key={name} className="detail-chip">{name}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {agentConfig.playground && (
+              <div className="detail-field">
+                <span className="detail-label">Playground</span>
+                <span className="detail-value mono">{agentConfig.playground}</span>
+              </div>
+            )}
+            {agentConfig.systemPrompt && (
+              <div className="detail-field">
+                <span className="detail-label">System Prompt</span>
+                <pre className="detail-prompt">{agentConfig.systemPrompt}</pre>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="details-body">
+            <span className="detail-value">Loading...</span>
+          </div>
+        )}
       </div>
 
       <div className="messages-area">

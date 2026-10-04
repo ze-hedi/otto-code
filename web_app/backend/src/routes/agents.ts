@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createAgent, getActiveAgent, getAgentDoc, getAllAgentDocs } from "../services/agent-manager.js";
+import { createAgent, deleteAgent, getActiveAgent, getAgentDoc, getAllAgentDocs } from "../services/agent-manager.js";
 import { handleEventWithClient } from "../../../../agents/pi-agent-utils.js";
 import type { SerializableAgentConfig } from "../types.js";
 
@@ -34,6 +34,29 @@ router.get("/:id", async (req, res) => {
     return;
   }
   res.json(doc);
+});
+
+// ── Delete agent ──────────────────────────────────────────────────────────
+
+router.delete("/:id", async (req, res) => {
+  const deleted = await deleteAgent(req.params.id);
+  if (!deleted) {
+    res.status(404).json({ error: "Agent not found" });
+    return;
+  }
+  res.json({ deleted: true });
+});
+
+// ── Full system prompt (includes tool snippets) ────────────────────────────
+
+router.get("/:id/system-prompt", async (req, res) => {
+  const agent = getActiveAgent(req.params.id);
+  if (!agent) {
+    res.status(404).json({ error: "Agent not found or not active" });
+    return;
+  }
+  const prompt = (agent as any).fullSystemPrompt ?? (agent as any)._baseSystemPrompt ?? null;
+  res.json({ systemPrompt: prompt });
 });
 
 // ── Chat SSE endpoint ──────────────────────────────────────────────────────

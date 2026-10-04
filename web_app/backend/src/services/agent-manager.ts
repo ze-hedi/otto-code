@@ -69,3 +69,13 @@ export async function getAgentDoc(agentId: string): Promise<AgentDocument | null
 export async function getAllAgentDocs(): Promise<AgentDocument[]> {
   return getCollection().find().toArray();
 }
+
+export async function deleteAgent(agentId: string): Promise<boolean> {
+  const agent = activeAgents.get(agentId);
+  if (agent) {
+    await agent.disconnectMcp().catch(() => {});
+    activeAgents.delete(agentId);
+  }
+  const result = await getCollection().deleteOne({ agent_id: agentId });
+  return result.deletedCount > 0;
+}

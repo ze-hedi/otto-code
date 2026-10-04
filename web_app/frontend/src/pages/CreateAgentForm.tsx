@@ -100,6 +100,7 @@ export function CreateAgentForm() {
   return (
     <div className="form-container">
       <div className="form-header">
+        <Link to="/" className="form-back-link">&larr; Back to Agents</Link>
         <h1>Create Agent</h1>
         <p className="form-subtitle">Configure a new RawPiAgent instance</p>
       </div>
