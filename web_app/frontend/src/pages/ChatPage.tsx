@@ -11,9 +11,10 @@ type SubAgentPart =
 type MessagePart =
   | { type: 'thinking'; content: string }
   | { type: 'text'; content: string }
-  | { type: 'tool'; name: string; input: string; result?: string; isError?: boolean; status: 'running' | 'done' }
+  | { type: 'tool'; name: string; input: string; result?: string; isError?: boolean; status: 'running' | 'done'; toolCallId?: string }
   | { type: 'subagent'; toolCallId: string; toolName: string; status: 'running' | 'done'; parts: SubAgentPart[]; result?: string; isError?: boolean }
   | { type: 'tool_approval'; toolCallId: string; toolName: string; args: string; status: 'pending' | 'approved' | 'rejected' }
+  | { type: 'clarification'; toolCallId: string; questions: string[]; answers: string[]; status: 'pending' | 'answered' }
 
 interface ChatMessage {
   role: 'user' | 'assistant'
@@ -86,27 +87,27 @@ async function processSSEStream(
         }
         updateMessage()
       } else if (ev.type === 'tool_start') {
-        // Check if this is a subagent tool (will receive subagent_event updates)
-        // We create a subagent part; if no subagent_events arrive it just acts like a tool
-        if (ev.toolCallId) {
-          parts.push({
-            type: 'subagent',
-            toolCallId: ev.toolCallId,
-            toolName: ev.name,
-            status: 'running',
-            parts: [],
-          })
-        } else {
-          parts.push({
-            type: 'tool',
-            name: ev.name,
-            input: JSON.stringify(ev.args, null, 2),
-            status: 'running',
-          })
-        }
+        parts.push({
+          type: 'tool',
+          name: ev.name,
+          input: JSON.stringify(ev.args, null, 2),
+          status: 'running',
+          toolCallId: ev.toolCallId,
+        })
         updateMessage()
       } else if (ev.type === 'subagent_event') {
-        // Find the subagent part by toolCallId
+        // Promote tool part to subagent on first subagent_event
+        const toolIdx = parts.findIndex(p => p.type === 'tool' && (p as any).toolCallId === ev.toolCallId)
+        if (toolIdx !== -1) {
+          const old = parts[toolIdx] as any
+          parts[toolIdx] = {
+            type: 'subagent',
+            toolCallId: ev.toolCallId,
+            toolName: old.name,
+            status: 'running',
+            parts: [],
+          }
+        }
         const sa = parts.find(p => p.type === 'subagent' && (p as any).toolCallId === ev.toolCallId) as any
         if (sa) {
           const subParts: SubAgentPart[] = sa.parts
@@ -146,7 +147,25 @@ async function processSSEStream(
           status: 'pending',
         })
         updateMessage()
+      } else if (ev.type === 'clarification_required') {
+        parts.push({
+          type: 'clarification',
+          toolCallId: ev.toolCallId,
+          questions: ev.questions,
+          answers: ev.questions.map(() => ''),
+          status: 'pending',
+        })
+        updateMessage()
       } else if (ev.type === 'tool_end') {
+        // Remove any clarification part for this tool call
+        if (ev.toolCallId) {
+          for (let i = parts.length - 1; i >= 0; i--) {
+            if (parts[i].type === 'clarification' && (parts[i] as any).toolCallId === ev.toolCallId) {
+              parts.splice(i, 1)
+              break
+            }
+          }
+        }
         // Try subagent part first (by toolCallId), then fall back to regular tool
         let matched = false
         if (ev.toolCallId) {
@@ -162,7 +181,8 @@ async function processSSEStream(
         if (!matched) {
           for (let i = parts.length - 1; i >= 0; i--) {
             const p = parts[i]
-            if (p.type === 'tool' && p.name === ev.name && p.status === 'running') {
+            if (p.type === 'tool' && p.status === 'running' &&
+                (ev.toolCallId ? (p as any).toolCallId === ev.toolCallId : p.name === ev.name)) {
               const resultStr = typeof ev.result === 'string' ? ev.result : JSON.stringify(ev.result, null, 2)
               p.result = resultStr.length > 1500 ? resultStr.slice(0, 1500) + '\n... (truncated)' : resultStr
               p.isError = ev.isError
@@ -348,6 +368,43 @@ export function ChatPage() {
       }))
     } catch (err) {
       console.error('[chat] tool approval error:', err)
+    }
+  }
+
+  function updateClarificationAnswer(toolCallId: string, index: number, value: string) {
+    setMessages(prev => prev.map(msg => {
+      if (msg.role !== 'assistant') return msg
+      const updated = msg.parts.map(p =>
+        p.type === 'clarification' && p.toolCallId === toolCallId
+          ? { ...p, answers: p.answers.map((a: string, i: number) => i === index ? value : a) }
+          : p
+      )
+      return { ...msg, parts: updated }
+    }))
+  }
+
+  async function submitClarification(toolCallId: string) {
+    const part = messages.flatMap(m => m.parts).find(
+      p => p.type === 'clarification' && p.toolCallId === toolCallId
+    ) as Extract<MessagePart, { type: 'clarification' }> | undefined
+    if (!part) return
+    try {
+      await fetch(`http://localhost:4000/agents/${agentId}/clarification-answer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ toolCallId, answers: part.answers }),
+      })
+      setMessages(prev => prev.map(msg => {
+        if (msg.role !== 'assistant') return msg
+        const updated = msg.parts.map(p =>
+          p.type === 'clarification' && p.toolCallId === toolCallId
+            ? { ...p, status: 'answered' as const }
+            : p
+        )
+        return { ...msg, parts: updated }
+      }))
+    } catch (err) {
+      console.error('[chat] clarification submit error:', err)
     }
   }
 
@@ -590,6 +647,46 @@ export function ChatPage() {
                                 }}
                               >
                                 Reject
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    }
+                    if (part.type === 'clarification') {
+                      return (
+                        <div key={j} className={`part-clarification ${part.status}`}>
+                          <div className="clarification-header">
+                            <span className="clarification-icon">?</span>
+                            <span className="tool-name">Clarification needed</span>
+                            {part.status === 'pending' && <span className="approval-badge pending">Awaiting answers</span>}
+                            {part.status === 'answered' && <span className="approval-badge approved">Answered</span>}
+                          </div>
+                          <div className="clarification-questions">
+                            {part.questions.map((q: string, qi: number) => (
+                              <div key={qi} className="clarification-qa">
+                                <label className="clarification-q">{q}</label>
+                                {part.status === 'pending' ? (
+                                  <textarea
+                                    className="clarification-input"
+                                    rows={2}
+                                    value={part.answers[qi]}
+                                    onChange={e => updateClarificationAnswer(part.toolCallId, qi, e.target.value)}
+                                    placeholder="Your answer..."
+                                  />
+                                ) : (
+                                  <p className="clarification-a">{part.answers[qi]}</p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                          {part.status === 'pending' && (
+                            <div className="approval-actions">
+                              <button
+                                className="approval-btn approve"
+                                onClick={() => submitClarification(part.toolCallId)}
+                              >
+                                Submit Answers
                               </button>
                             </div>
                           )}

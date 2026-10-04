@@ -12,7 +12,8 @@ const MODELS = [
 
 const THINKING_LEVELS = ['off', 'low', 'medium', 'high', 'xhigh'] as const
 
-const BUILT_IN_TOOLS = ['read', 'bash', 'edit', 'write', 'grep', 'ls']
+const BUILT_IN_TOOLS = ['read', 'bash', 'edit', 'write']
+const EXTRA_TOOLS = ['clarify']
 
 interface McpEntry {
   name: string
@@ -42,6 +43,7 @@ export function CreateAgentForm() {
   const [selectedTools, setSelectedTools] = useState<string[]>(['read', 'bash', 'edit', 'write'])
   const [mcpServers, setMcpServers] = useState<McpEntry[]>([])
   const [subAgents, setSubAgents] = useState<SubAgentEntry[]>([])
+  const [extraTools, setExtraTools] = useState<string[]>([])
   const [guardrails, setGuardrails] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -50,6 +52,12 @@ export function CreateAgentForm() {
 
   const toggleTool = (tool: string) => {
     setSelectedTools(prev =>
+      prev.includes(tool) ? prev.filter(t => t !== tool) : [...prev, tool]
+    )
+  }
+
+  const toggleExtraTool = (tool: string) => {
+    setExtraTools(prev =>
       prev.includes(tool) ? prev.filter(t => t !== tool) : [...prev, tool]
     )
   }
@@ -118,6 +126,7 @@ export function CreateAgentForm() {
       ...(playground && { playground }),
       builtInTools: selectedTools,
       ...(guardrails && { toolCallGuardrails: ['bash', 'write', 'edit'] }),
+      ...(extraTools.includes('clarify') && { clarificationTool: true }),
       ...(Object.keys(mcpMap).length > 0 && { mcpServers: mcpMap }),
       ...(subAgents.length > 0 && {
         subAgents: Object.fromEntries(
@@ -257,7 +266,7 @@ export function CreateAgentForm() {
 
         {/* Built-in Tools */}
         <div className="field">
-          <label>Built-in Tools</label>
+          <label>Tools</label>
           <div className="chip-group">
             {BUILT_IN_TOOLS.map(tool => (
               <button
@@ -267,6 +276,17 @@ export function CreateAgentForm() {
                 onClick={() => toggleTool(tool)}
               >
                 <span className="tool-icon">{selectedTools.includes(tool) ? '✓' : '+'}</span>
+                {tool}
+              </button>
+            ))}
+            {EXTRA_TOOLS.map(tool => (
+              <button
+                key={tool}
+                type="button"
+                className={`chip tool-chip ${extraTools.includes(tool) ? 'active' : ''}`}
+                onClick={() => toggleExtraTool(tool)}
+              >
+                <span className="tool-icon">{extraTools.includes(tool) ? '✓' : '+'}</span>
                 {tool}
               </button>
             ))}

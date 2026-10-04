@@ -2,7 +2,7 @@ import { Router } from "express";
 import fs from "fs";
 import path from "path";
 import readline from "readline";
-import { createAgent, deleteAgent, getActiveAgent, getOrActivateAgent, getAgentDoc, getAllAgentDocs, getSessionKey, setSessionKey, markBusy, markIdle, getAgentBusyState, getAgentEmitter } from "../services/agent-manager.js";
+import { createAgent, deleteAgent, getActiveAgent, getOrActivateAgent, getAgentDoc, getAllAgentDocs, getSessionKey, setSessionKey, markBusy, markIdle, getAgentBusyState, getAgentEmitter, setClarificationCallback, resolveClarification } from "../services/agent-manager.js";
 import { handleEventWithClient } from "../../../../agents/pi-agent-utils.js";
 import type { SerializableAgentConfig } from "../types.js";
 
@@ -249,6 +249,13 @@ router.post("/:id/chat", async (req, res) => {
     emitter.emit("event", payload);
   });
 
+  // Wire clarification tool SSE event
+  setClarificationCallback(req.params.id, (toolCallId, questions) => {
+    const payload = { type: 'clarification_required', toolCallId, questions };
+    send(payload);
+    emitter.emit("event", payload);
+  });
+
   try {
     await new Promise<void>((resolve, reject) => {
       agent.chat(message, (event) => {
@@ -309,6 +316,18 @@ router.post("/:id/tool-reject", (req, res) => {
   if (!toolCallId) { res.status(400).json({ error: "toolCallId is required" }); return; }
   agent.rejectToolCall(toolCallId, comment);
   res.json({ success: true });
+});
+
+// ── Clarification answer endpoint ─────────────────────────────────────────────
+
+router.post("/:id/clarification-answer", (req, res) => {
+  const { toolCallId, answers } = req.body as { toolCallId?: string; answers?: string[] };
+  if (!toolCallId || !Array.isArray(answers)) {
+    res.status(400).json({ error: "toolCallId and answers[] are required" });
+    return;
+  }
+  const resolved = resolveClarification(toolCallId, answers);
+  res.json({ success: resolved });
 });
 
 // ── SSE reconnection endpoint ──────────────────────────────────────────────

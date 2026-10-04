@@ -719,6 +719,81 @@
   border-color: #ef4444;
 }
 
+/* ── Clarification card ───────────────────────────── */
+
+.part-clarification {
+  border: 1px solid #6366f1;
+  border-left: 3px solid #6366f1;
+  border-radius: 8px;
+  padding: 10px 14px;
+  background: var(--bg);
+}
+
+.part-clarification.answered {
+  opacity: 0.7;
+}
+
+.clarification-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.clarification-icon {
+  font-size: 14px;
+  font-weight: 700;
+  color: #6366f1;
+  width: 20px;
+  height: 20px;
+  border: 2px solid #6366f1;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.clarification-qa {
+  margin-bottom: 10px;
+}
+
+.clarification-qa:last-child {
+  margin-bottom: 0;
+}
+
+.clarification-q {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.clarification-input {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--font);
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.clarification-input:focus {
+  border-color: #6366f1;
+}
+
+.clarification-a {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+  padding: 4px 0;
+}
+
 /* ── Subagent details ──────────────────────────────── */
 
 .detail-subagents {

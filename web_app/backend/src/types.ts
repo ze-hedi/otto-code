@@ -20,6 +20,7 @@ export interface SerializableAgentConfig {
   mcpServers?: Record<string, string>;
   mcpConnectionTimeout?: number;
   toolCallGuardrails?: string[];
+  clarificationTool?: boolean;
   thinkingLevel?: "off" | "low" | "medium" | "high" | "xhigh";
   subAgents?: Record<string, SerializableSubAgentConfig>;
   compaction?: {
