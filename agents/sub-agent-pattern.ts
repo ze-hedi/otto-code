@@ -70,7 +70,7 @@ export function createSubAgentTool(config: SubAgentToolConfig): ToolInput {
     promptSnippet: config.promptSnippet,
     promptGuidelines: config.promptGuidelines,
     executionMode: "parallel",
-    execute: async (_toolCallId, params) => {
+    execute: async (_toolCallId, params, _signal, onUpdate) => {
       const entries = Object.entries(params as Record<string, unknown>);
       const task = entries.map(([k, v]) => {
         const val = Array.isArray(v) ? v.join(", ") : String(v);
@@ -86,7 +86,12 @@ export function createSubAgentTool(config: SubAgentToolConfig): ToolInput {
       });
 
       try {
-        await agent.execute(task);
+        await agent.execute(task, undefined, onUpdate ? (event) => {
+          onUpdate({
+            content: [{ type: "text", text: "" }],
+            details: { subagentEvent: true, event },
+          });
+        } : undefined);
 
         const messages = await agent.getMessages();
         const last = messages.filter((m) => m.role === "assistant").at(-1);

@@ -28,11 +28,30 @@ export function handleEventWithClient(event: AgentEvent, send: (payload: object)
       break;
 
     case "tool_execution_start":
-      send({ type: 'tool_start', name: event.toolName, args: event.args });
+      send({ type: 'tool_start', name: event.toolName, toolCallId: event.toolCallId, args: event.args });
       break;
 
+    case "tool_execution_update": {
+      const details = (event.partialResult as any)?.details;
+      if (details?.subagentEvent && details.event) {
+        const sub = details.event;
+        if (sub.type === "message_update") {
+          if (sub.assistantMessageEvent.type === "text_delta") {
+            send({ type: 'subagent_event', toolCallId: event.toolCallId, toolName: event.toolName, subType: 'delta', text: sub.assistantMessageEvent.delta });
+          } else if (sub.assistantMessageEvent.type === "thinking_delta") {
+            send({ type: 'subagent_event', toolCallId: event.toolCallId, toolName: event.toolName, subType: 'thinking', text: sub.assistantMessageEvent.delta });
+          }
+        } else if (sub.type === "tool_execution_start") {
+          send({ type: 'subagent_event', toolCallId: event.toolCallId, toolName: event.toolName, subType: 'tool_start', name: sub.toolName, args: sub.args });
+        } else if (sub.type === "tool_execution_end") {
+          send({ type: 'subagent_event', toolCallId: event.toolCallId, toolName: event.toolName, subType: 'tool_end', name: sub.toolName, result: sub.result, isError: sub.isError });
+        }
+      }
+      break;
+    }
+
     case "tool_execution_end":
-      send({ type: 'tool_end', name: event.toolName, result: event.result, isError: event.isError });
+      send({ type: 'tool_end', name: event.toolName, toolCallId: event.toolCallId, result: event.result, isError: event.isError });
       break;
   }
 }

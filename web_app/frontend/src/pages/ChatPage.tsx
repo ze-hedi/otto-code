@@ -3,10 +3,16 @@ import { useParams, Link } from 'react-router-dom'
 import Markdown from 'react-markdown'
 import './ChatPage.css'
 
+type SubAgentPart =
+  | { type: 'thinking'; content: string }
+  | { type: 'text'; content: string }
+  | { type: 'tool'; name: string; input: string; result?: string; isError?: boolean; status: 'running' | 'done' }
+
 type MessagePart =
   | { type: 'thinking'; content: string }
   | { type: 'text'; content: string }
   | { type: 'tool'; name: string; input: string; result?: string; isError?: boolean; status: 'running' | 'done' }
+  | { type: 'subagent'; toolCallId: string; toolName: string; status: 'running' | 'done'; parts: SubAgentPart[]; result?: string; isError?: boolean }
 
 interface ChatMessage {
   role: 'user' | 'assistant'
@@ -71,22 +77,80 @@ async function processSSEStream(
         }
         updateMessage()
       } else if (ev.type === 'tool_start') {
-        parts.push({
-          type: 'tool',
-          name: ev.name,
-          input: JSON.stringify(ev.args, null, 2),
-          status: 'running',
-        })
+        // Check if this is a subagent tool (will receive subagent_event updates)
+        // We create a subagent part; if no subagent_events arrive it just acts like a tool
+        if (ev.toolCallId) {
+          parts.push({
+            type: 'subagent',
+            toolCallId: ev.toolCallId,
+            toolName: ev.name,
+            status: 'running',
+            parts: [],
+          })
+        } else {
+          parts.push({
+            type: 'tool',
+            name: ev.name,
+            input: JSON.stringify(ev.args, null, 2),
+            status: 'running',
+          })
+        }
         updateMessage()
+      } else if (ev.type === 'subagent_event') {
+        // Find the subagent part by toolCallId
+        const sa = parts.find(p => p.type === 'subagent' && (p as any).toolCallId === ev.toolCallId) as any
+        if (sa) {
+          const subParts: SubAgentPart[] = sa.parts
+          const lastSub = (type: string) =>
+            subParts.length > 0 && subParts[subParts.length - 1].type === type ? subParts[subParts.length - 1] : null
+
+          if (ev.subType === 'thinking' && ev.text) {
+            const existing = lastSub('thinking') as { type: 'thinking'; content: string } | null
+            if (existing) { existing.content += ev.text }
+            else { subParts.push({ type: 'thinking', content: ev.text }) }
+          } else if (ev.subType === 'delta' && ev.text) {
+            const existing = lastSub('text') as { type: 'text'; content: string } | null
+            if (existing) { existing.content += ev.text }
+            else { subParts.push({ type: 'text', content: ev.text }) }
+          } else if (ev.subType === 'tool_start') {
+            subParts.push({ type: 'tool', name: ev.name, input: JSON.stringify(ev.args, null, 2), status: 'running' })
+          } else if (ev.subType === 'tool_end') {
+            for (let i = subParts.length - 1; i >= 0; i--) {
+              const p = subParts[i]
+              if (p.type === 'tool' && p.name === ev.name && p.status === 'running') {
+                const resultStr = typeof ev.result === 'string' ? ev.result : JSON.stringify(ev.result, null, 2)
+                p.result = resultStr.length > 1500 ? resultStr.slice(0, 1500) + '\n... (truncated)' : resultStr
+                p.isError = ev.isError
+                p.status = 'done'
+                break
+              }
+            }
+          }
+          updateMessage()
+        }
       } else if (ev.type === 'tool_end') {
-        for (let i = parts.length - 1; i >= 0; i--) {
-          const p = parts[i]
-          if (p.type === 'tool' && p.name === ev.name && p.status === 'running') {
+        // Try subagent part first (by toolCallId), then fall back to regular tool
+        let matched = false
+        if (ev.toolCallId) {
+          const sa = parts.find(p => p.type === 'subagent' && (p as any).toolCallId === ev.toolCallId) as any
+          if (sa) {
             const resultStr = typeof ev.result === 'string' ? ev.result : JSON.stringify(ev.result, null, 2)
-            p.result = resultStr.length > 1500 ? resultStr.slice(0, 1500) + '\n... (truncated)' : resultStr
-            p.isError = ev.isError
-            p.status = 'done'
-            break
+            sa.result = resultStr.length > 1500 ? resultStr.slice(0, 1500) + '\n... (truncated)' : resultStr
+            sa.isError = ev.isError
+            sa.status = 'done'
+            matched = true
+          }
+        }
+        if (!matched) {
+          for (let i = parts.length - 1; i >= 0; i--) {
+            const p = parts[i]
+            if (p.type === 'tool' && p.name === ev.name && p.status === 'running') {
+              const resultStr = typeof ev.result === 'string' ? ev.result : JSON.stringify(ev.result, null, 2)
+              p.result = resultStr.length > 1500 ? resultStr.slice(0, 1500) + '\n... (truncated)' : resultStr
+              p.isError = ev.isError
+              p.status = 'done'
+              break
+            }
           }
         }
         updateMessage()
@@ -403,6 +467,68 @@ export function ChatPage() {
                               <pre className={`tool-pre ${part.isError ? 'tool-error' : ''}`}>{part.result}</pre>
                             </details>
                           )}
+                        </div>
+                      )
+                    }
+                    if (part.type === 'subagent') {
+                      return (
+                        <div key={j} className={`part-subagent ${part.status}`}>
+                          <div className="subagent-header">
+                            <span className="subagent-icon">⚡</span>
+                            <span className="tool-name">{part.toolName}</span>
+                            {part.status === 'running' && <span className="tool-spinner" />}
+                            {part.status === 'done' && (
+                              <span className={`tool-status ${part.isError ? 'error' : 'ok'}`}>
+                                {part.isError ? 'error' : 'done'}
+                              </span>
+                            )}
+                          </div>
+                          <div className="subagent-stream" ref={el => { if (el && part.status === 'running') el.scrollTop = el.scrollHeight }}>
+                            {part.parts.length === 0 && part.status === 'running' && (
+                              <div className="typing-indicator">
+                                <span /><span /><span />
+                              </div>
+                            )}
+                            {part.parts.map((sp, k) => {
+                              if (sp.type === 'thinking') {
+                                return (
+                                  <details key={k} className="part-thinking">
+                                    <summary>Thinking</summary>
+                                    <div className="thinking-content">{sp.content}</div>
+                                  </details>
+                                )
+                              }
+                              if (sp.type === 'text') {
+                                return (
+                                  <div key={k} className="assistant-message">
+                                    <Markdown>{sp.content}</Markdown>
+                                  </div>
+                                )
+                              }
+                              if (sp.type === 'tool') {
+                                return (
+                                  <div key={k} className={`part-tool ${sp.status}`}>
+                                    <div className="tool-header">
+                                      <span className="tool-name">{sp.name}</span>
+                                      {sp.status === 'running' && <span className="tool-spinner" />}
+                                      {sp.status === 'done' && (
+                                        <span className={`tool-status ${sp.isError ? 'error' : 'ok'}`}>
+                                          {sp.isError ? 'error' : 'done'}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {sp.result !== undefined && (
+                                      <details className="tool-section">
+                                        <summary>Result</summary>
+                                        <pre className={`tool-pre ${sp.isError ? 'tool-error' : ''}`}>{sp.result}</pre>
+                                      </details>
+                                    )}
+                                  </div>
+                                )
+                              }
+                              return null
+                            })}
+                          </div>
                         </div>
                       )
                     }

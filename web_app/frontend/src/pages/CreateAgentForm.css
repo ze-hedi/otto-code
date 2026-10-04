@@ -276,6 +276,60 @@
   background: var(--accent-light);
 }
 
+/* ── Subagent cards ────────────────────────────────── */
+
+.field-hint {
+  font-size: 12px;
+  color: var(--text-light);
+  margin: 0 0 10px;
+}
+
+.subagent-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 10px;
+  background: var(--surface);
+}
+
+.subagent-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  user-select: none;
+}
+
+.subagent-summary::-webkit-details-marker {
+  display: none;
+}
+
+.subagent-summary::before {
+  content: '▸';
+  font-size: 10px;
+  margin-right: 8px;
+  transition: transform 0.15s;
+}
+
+.subagent-card[open] .subagent-summary::before {
+  transform: rotate(90deg);
+}
+
+.subagent-fields {
+  padding: 0 14px 14px;
+}
+
+.subagent-fields .field {
+  margin-bottom: 14px;
+}
+
+.subagent-fields .field:last-child {
+  margin-bottom: 0;
+}
+
 /* ── Submit ─────────────────────────────────────────── */
 
 .submit-btn {

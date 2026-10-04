@@ -19,6 +19,18 @@ interface McpEntry {
   url: string
 }
 
+interface SubAgentEntry {
+  key: string
+  name: string
+  description: string
+  model: string
+  systemPrompt: string
+  builtInTools: string[]
+  playground: string
+  promptSnippet: string
+  promptGuidelines: string
+}
+
 export function CreateAgentForm() {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -29,6 +41,7 @@ export function CreateAgentForm() {
   const [playground, setPlayground] = useState('')
   const [selectedTools, setSelectedTools] = useState<string[]>(['read', 'bash', 'edit', 'write'])
   const [mcpServers, setMcpServers] = useState<McpEntry[]>([])
+  const [subAgents, setSubAgents] = useState<SubAgentEntry[]>([])
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<{ agent_id: string } | null>(null)
@@ -54,6 +67,34 @@ export function CreateAgentForm() {
     setMcpServers(prev => prev.filter((_, i) => i !== index))
   }
 
+  const addSubAgent = () => {
+    setSubAgents(prev => [...prev, {
+      key: '', name: '', description: '', model: MODELS[0],
+      systemPrompt: '', builtInTools: ['read', 'bash'], playground: '',
+      promptSnippet: '', promptGuidelines: '',
+    }])
+  }
+
+  const updateSubAgent = (index: number, field: keyof SubAgentEntry, value: any) => {
+    setSubAgents(prev => prev.map((entry, i) =>
+      i === index ? { ...entry, [field]: value } : entry
+    ))
+  }
+
+  const removeSubAgent = (index: number) => {
+    setSubAgents(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const toggleSubAgentTool = (index: number, tool: string) => {
+    setSubAgents(prev => prev.map((entry, i) => {
+      if (i !== index) return entry
+      const tools = entry.builtInTools.includes(tool)
+        ? entry.builtInTools.filter(t => t !== tool)
+        : [...entry.builtInTools, tool]
+      return { ...entry, builtInTools: tools }
+    }))
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
@@ -76,6 +117,25 @@ export function CreateAgentForm() {
       ...(playground && { playground }),
       builtInTools: selectedTools,
       ...(Object.keys(mcpMap).length > 0 && { mcpServers: mcpMap }),
+      ...(subAgents.length > 0 && {
+        subAgents: Object.fromEntries(
+          subAgents
+            .filter(s => s.key && s.name && s.model && s.systemPrompt)
+            .map(s => {
+              const guidelines = s.promptGuidelines.split('\n').map(l => l.trim()).filter(Boolean)
+              return [s.key, {
+                name: s.name,
+                description: s.description,
+                model: s.model,
+                systemPrompt: s.systemPrompt,
+                builtInTools: s.builtInTools,
+                ...(s.playground && { playground: s.playground }),
+                ...(s.promptSnippet && { promptSnippet: s.promptSnippet }),
+                ...(guidelines.length > 0 && { promptGuidelines: guidelines }),
+              }]
+            })
+        ),
+      }),
     }
 
     try {
@@ -248,6 +308,116 @@ export function CreateAgentForm() {
               ))}
               <button type="button" className="add-btn" onClick={addMcpServer}>
                 + Add MCP Server
+              </button>
+            </div>
+
+            {/* Volatile Subagents */}
+            <div className="field">
+              <label>Volatile Subagents</label>
+              <p className="field-hint">Stateless agents spawned as tools — fresh instance per call, no memory between invocations.</p>
+              {subAgents.map((sa, i) => (
+                <details key={i} className="subagent-card" open={!sa.key}>
+                  <summary className="subagent-summary">
+                    <span>{sa.name || sa.key || `Subagent ${i + 1}`}</span>
+                    <button type="button" className="remove-btn" onClick={e => { e.preventDefault(); removeSubAgent(i) }}>
+                      &times;
+                    </button>
+                  </summary>
+                  <div className="subagent-fields">
+                    <div className="field-row">
+                      <div className="field">
+                        <label>Tool Key <span className="required">*</span></label>
+                        <input
+                          type="text"
+                          placeholder="e.g. explorer"
+                          value={sa.key}
+                          onChange={e => updateSubAgent(i, 'key', e.target.value.replace(/[^a-zA-Z0-9_]/g, '_'))}
+                          className="mono"
+                        />
+                      </div>
+                      <div className="field">
+                        <label>Name <span className="required">*</span></label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Code Explorer"
+                          value={sa.name}
+                          onChange={e => updateSubAgent(i, 'name', e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="field">
+                      <label>Description</label>
+                      <input
+                        type="text"
+                        placeholder="What this subagent does..."
+                        value={sa.description}
+                        onChange={e => updateSubAgent(i, 'description', e.target.value)}
+                      />
+                    </div>
+                    <div className="field">
+                      <label>Model <span className="required">*</span></label>
+                      <select value={sa.model} onChange={e => updateSubAgent(i, 'model', e.target.value)}>
+                        {MODELS.map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label>System Prompt <span className="required">*</span></label>
+                      <textarea
+                        rows={3}
+                        placeholder="Instructions for this subagent..."
+                        value={sa.systemPrompt}
+                        onChange={e => updateSubAgent(i, 'systemPrompt', e.target.value)}
+                      />
+                    </div>
+                    <div className="field">
+                      <label>Playground Directory</label>
+                      <input
+                        type="text"
+                        placeholder="/path/to/repo (optional)"
+                        value={sa.playground}
+                        onChange={e => updateSubAgent(i, 'playground', e.target.value)}
+                        className="mono"
+                      />
+                    </div>
+                    <div className="field">
+                      <label>Built-in Tools</label>
+                      <div className="chip-group">
+                        {BUILT_IN_TOOLS.map(tool => (
+                          <button
+                            key={tool}
+                            type="button"
+                            className={`chip tool-chip ${sa.builtInTools.includes(tool) ? 'active' : ''}`}
+                            onClick={() => toggleSubAgentTool(i, tool)}
+                          >
+                            <span className="tool-icon">{sa.builtInTools.includes(tool) ? '✓' : '+'}</span>
+                            {tool}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="field">
+                      <label>Prompt Snippet</label>
+                      <textarea
+                        rows={2}
+                        placeholder="Extra text injected into the parent's prompt about this tool..."
+                        value={sa.promptSnippet}
+                        onChange={e => updateSubAgent(i, 'promptSnippet', e.target.value)}
+                      />
+                    </div>
+                    <div className="field">
+                      <label>Guidelines</label>
+                      <textarea
+                        rows={3}
+                        placeholder={"One guideline per line, e.g.:\nAlways return structured JSON\nNever modify files directly"}
+                        value={sa.promptGuidelines}
+                        onChange={e => updateSubAgent(i, 'promptGuidelines', e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </details>
+              ))}
+              <button type="button" className="add-btn" onClick={addSubAgent}>
+                + Add Subagent
               </button>
             </div>
           </div>

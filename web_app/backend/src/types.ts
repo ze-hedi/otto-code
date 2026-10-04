@@ -1,3 +1,14 @@
+export interface SerializableSubAgentConfig {
+  name: string;
+  description: string;
+  model: string;
+  systemPrompt: string;
+  builtInTools?: string[];
+  playground?: string;
+  promptSnippet?: string;
+  promptGuidelines?: string[];
+}
+
 export interface SerializableAgentConfig {
   name?: string;
   description?: string;
@@ -10,6 +21,7 @@ export interface SerializableAgentConfig {
   mcpConnectionTimeout?: number;
   toolCallGuardrails?: string[];
   thinkingLevel?: "off" | "low" | "medium" | "high" | "xhigh";
+  subAgents?: Record<string, SerializableSubAgentConfig>;
   compaction?: {
     enabled?: boolean;
     reserveTokens?: number;

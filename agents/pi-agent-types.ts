@@ -32,7 +32,8 @@ export interface ToolInput {
   execute: (
     toolCallId: string,
     params: any,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    onUpdate?: (partialResult: { content: any[]; details?: any }) => void
   ) => Promise<{ content: any[]; details?: any }>;
 }
 

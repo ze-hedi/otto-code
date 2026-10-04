@@ -113,7 +113,7 @@ export class RawPiAgent extends PiAgent {
       lines.push("# Available Volatile Subagents", "");
       lines.push("These are spawned subagents as a tool that don't keep context. You call them once, they do their job and their disappear")
       for (const [key, config] of this._subAgents) {
-        const toolInput = createSubAgentTool(config);
+        const toolInput = createSubAgentTool({ ...config, name: key });
         const toolDef = this._createToolDefinition(toolInput);
         this.toolDefinitions.set(toolInput.name, toolDef);
         this._subAgentToolNames.add(toolInput.name);

@@ -315,6 +315,52 @@
   border-left: 3px solid #ef4444;
 }
 
+/* ── Subagent part ────────────────────────────────────── */
+
+.part-subagent {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  padding: 10px 14px;
+  background: var(--bg);
+}
+
+.part-subagent.done {
+  border-left-color: #22c55e;
+}
+
+.subagent-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.subagent-icon {
+  font-size: 14px;
+}
+
+.subagent-stream {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-left: 6px;
+  max-height: 350px;
+  overflow-y: auto;
+}
+
+.subagent-stream .part-tool {
+  font-size: 12px;
+}
+
+.subagent-stream .assistant-message {
+  font-size: 14px;
+}
+
+.subagent-stream .part-thinking {
+  font-size: 12px;
+}
+
 /* ── Typing indicator ───────────────────────────────── */
 
 .typing-indicator {

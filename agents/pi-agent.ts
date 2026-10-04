@@ -159,9 +159,9 @@ export class PiAgent {
       promptGuidelines: toolInput.promptGuidelines,
       executionMode: toolInput.executionMode,
 
-      async execute(toolCallId, params, signal, _onUpdate, _ctx) {
+      async execute(toolCallId, params, signal, onUpdate, _ctx) {
         try {
-          const result = await toolInput.execute(toolCallId, params, signal);
+          const result = await toolInput.execute(toolCallId, params, signal, onUpdate as any);
           return {
             content: result.content,
             details: result.details ?? {},

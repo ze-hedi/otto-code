@@ -53,6 +53,7 @@ export async function createAgent(config: SerializableAgentConfig): Promise<Agen
     toolCallGuardrails: config.toolCallGuardrails,
     thinkingLevel: config.thinkingLevel,
     compaction: config.compaction,
+    ...(config.subAgents && { subAgents: config.subAgents }),
   };
 
   const agent = new RawPiAgent(rawConfig);
@@ -96,6 +97,7 @@ export async function getOrActivateAgent(agentId: string): Promise<RawPiAgent | 
     toolCallGuardrails: config.toolCallGuardrails,
     thinkingLevel: config.thinkingLevel,
     compaction: config.compaction,
+    ...(config.subAgents && { subAgents: config.subAgents }),
   };
 
   const agent = new RawPiAgent(rawConfig);
