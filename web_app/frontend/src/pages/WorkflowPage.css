@@ -1,0 +1,319 @@
+/* ── Page layout ────────────────────────────────────── */
+
+.app:has(.wf-page) {
+  padding: 0;
+  align-items: stretch;
+}
+
+.wf-page {
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+/* ── Header ─────────────────────────────────────────── */
+
+.wf-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+.wf-header-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.wf-header-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+.wf-header-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.wf-header-btn:hover {
+  color: var(--text);
+  border-color: var(--text-light);
+}
+
+.wf-header-btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+/* ── Body ───────────────────────────────────────────── */
+
+.wf-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* ── Sidebar ────────────────────────────────────────── */
+
+.wf-sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.wf-sidebar-title {
+  padding: 16px 18px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-light);
+}
+
+.wf-sidebar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 8px 16px;
+}
+
+.wf-sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: grab;
+  transition: background 0.12s;
+  user-select: none;
+}
+
+.wf-sidebar-item:hover {
+  background: var(--accent-light);
+}
+
+.wf-sidebar-item:active {
+  cursor: grabbing;
+}
+
+.wf-sidebar-icon {
+  font-size: 20px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.wf-sidebar-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.wf-sidebar-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wf-sidebar-model {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-light);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Canvas ─────────────────────────────────────────── */
+
+.wf-canvas {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle, var(--border) 1px, transparent 1px);
+  background-size: 24px 24px;
+  cursor: grab;
+}
+
+.wf-canvas:active {
+  cursor: grabbing;
+}
+
+.wf-canvas.connect-mode {
+  cursor: crosshair;
+}
+
+.wf-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.wf-svg path {
+  pointer-events: stroke;
+}
+
+.wf-arrow {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  cursor: pointer;
+  transition: stroke 0.15s;
+}
+
+.wf-arrow:hover {
+  stroke: var(--danger);
+  stroke-width: 3;
+}
+
+.wf-viewport {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.wf-empty {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--text-light);
+  font-size: 15px;
+  pointer-events: none;
+}
+
+/* ── Nodes ──────────────────────────────────────────── */
+
+.wf-node {
+  position: absolute;
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  cursor: grab;
+  user-select: none;
+  box-shadow: var(--shadow);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.wf-node:hover {
+  border-color: var(--accent);
+}
+
+.wf-node.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+.wf-node.connect-source {
+  border-color: var(--success);
+  box-shadow: 0 0 0 3px rgba(22, 163, 106, 0.15);
+}
+
+.wf-node:active {
+  cursor: grabbing;
+}
+
+.wf-node-icon {
+  font-size: 22px;
+  flex-shrink: 0;
+}
+
+.wf-node-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wf-node-delete {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-light);
+  font-size: 11px;
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.wf-node:hover .wf-node-delete {
+  display: flex;
+}
+
+.wf-node-delete:hover {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);
+}
+
+/* ── Handles ────────────────────────────────────────── */
+
+.wf-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: var(--surface);
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  z-index: 1;
+}
+
+.wf-handle-left {
+  left: -6px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.wf-handle-right {
+  right: -6px;
+  top: 50%;
+  transform: translateY(-50%);
+}
