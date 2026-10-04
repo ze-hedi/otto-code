@@ -62,6 +62,35 @@ export function getActiveAgent(agentId: string): RawPiAgent | undefined {
   return activeAgents.get(agentId);
 }
 
+/** Get or re-hydrate an agent: if not in memory, recreate from DB doc. */
+export async function getOrActivateAgent(agentId: string): Promise<RawPiAgent | null> {
+  const existing = activeAgents.get(agentId);
+  if (existing) return existing;
+
+  const doc = await getCollection().findOne({ agent_id: agentId });
+  if (!doc) return null;
+
+  const config = doc.config;
+  const rawConfig: RawPiAgentConfig = {
+    name: config.name,
+    model: config.model,
+    apiKey: resolveApiKey(config.model),
+    systemPrompt: config.systemPrompt,
+    playground: config.playground,
+    workingDir: config.workingDir,
+    builtInTools: config.builtInTools,
+    mcpServers: config.mcpServers,
+    mcpConnectionTimeout: config.mcpConnectionTimeout,
+    toolCallGuardrails: config.toolCallGuardrails,
+    thinkingLevel: config.thinkingLevel,
+    compaction: config.compaction,
+  };
+
+  const agent = new RawPiAgent(rawConfig);
+  activeAgents.set(agentId, agent);
+  return agent;
+}
+
 export async function getAgentDoc(agentId: string): Promise<AgentDocument | null> {
   return getCollection().findOne({ agent_id: agentId });
 }

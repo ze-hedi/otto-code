@@ -2,7 +2,7 @@ import { Router } from "express";
 import fs from "fs";
 import path from "path";
 import readline from "readline";
-import { createAgent, deleteAgent, getActiveAgent, getAgentDoc, getAllAgentDocs } from "../services/agent-manager.js";
+import { createAgent, deleteAgent, getActiveAgent, getOrActivateAgent, getAgentDoc, getAllAgentDocs } from "../services/agent-manager.js";
 import { handleEventWithClient } from "../../../../agents/pi-agent-utils.js";
 import type { SerializableAgentConfig } from "../types.js";
 
@@ -53,9 +53,9 @@ router.delete("/:id", async (req, res) => {
 // ── Full system prompt (includes tool snippets) ────────────────────────────
 
 router.get("/:id/system-prompt", async (req, res) => {
-  const agent = getActiveAgent(req.params.id);
+  const agent = await getOrActivateAgent(req.params.id);
   if (!agent) {
-    res.status(404).json({ error: "Agent not found or not active" });
+    res.status(404).json({ error: "Agent not found" });
     return;
   }
   const prompt = (agent as any).fullSystemPrompt ?? (agent as any)._baseSystemPrompt ?? null;
@@ -131,9 +131,9 @@ router.get("/:id/sessions", async (req, res) => {
 // ── Load a session from disk ──────────────────────────────────────────────
 
 router.post("/:id/load-session", async (req, res) => {
-  const agent = getActiveAgent(req.params.id);
+  const agent = await getOrActivateAgent(req.params.id);
   if (!agent) {
-    res.status(404).json({ error: "Agent not found or not active" });
+    res.status(404).json({ error: "Agent not found" });
     return;
   }
 
@@ -162,9 +162,12 @@ router.post("/:id/load-session", async (req, res) => {
   }
 
   try {
-    await agent.loadSession(filePath);
+    console.log(`[load-session] Loading session from: ${filePath}`);
+    const session = await agent.loadSession(filePath);
+    console.log(`[load-session] Session loaded, messages count: ${session.messages.length}`);
     res.json({ loaded: true });
   } catch (err: any) {
+    console.error(`[load-session] Error:`, err);
     res.status(500).json({ error: err?.message ?? "Failed to load session" });
   }
 });
@@ -173,10 +176,10 @@ router.post("/:id/load-session", async (req, res) => {
 
 router.post("/:id/chat", async (req, res) => {
   console.log(`[chat] POST /agents/${req.params.id}/chat`);
-  const agent = getActiveAgent(req.params.id);
+  const agent = await getOrActivateAgent(req.params.id);
   if (!agent) {
     console.log(`[chat] Agent not found: ${req.params.id}`);
-    res.status(404).json({ error: "Agent not found or not active" });
+    res.status(404).json({ error: "Agent not found" });
     return;
   }
 
@@ -292,16 +295,22 @@ function transformMessages(rawMessages: any[]): ChatMsg[] {
 }
 
 router.get("/:id/messages", async (req, res) => {
-  const agent = getActiveAgent(req.params.id);
+  const agent = await getOrActivateAgent(req.params.id);
   if (!agent) {
-    res.status(404).json({ error: "Agent not found or not active" });
+    res.status(404).json({ error: "Agent not found" });
     return;
   }
 
   try {
     const messages = await agent.getMessages();
-    res.json(transformMessages(messages));
-  } catch {
+    const transformed = transformMessages(messages);
+    console.log(`[messages] Raw: ${messages.length}, Transformed: ${transformed.length}`);
+    if (messages.length > 0) {
+      console.log(`[messages] First raw role: ${(messages[0] as any).role}`);
+    }
+    res.json(transformed);
+  } catch (err) {
+    console.error(`[messages] Error:`, err);
     res.json([]);
   }
 });
