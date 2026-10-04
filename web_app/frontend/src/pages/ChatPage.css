@@ -625,6 +625,62 @@
   color: var(--text-muted);
 }
 
+/* ── Subagent details ──────────────────────────────── */
+
+.detail-subagents {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detail-subagent-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.detail-subagent-card summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.detail-subagent-card summary::-webkit-details-marker {
+  display: none;
+}
+
+.detail-subagent-card summary::before {
+  content: '▸';
+  font-size: 10px;
+  transition: transform 0.15s;
+}
+
+.detail-subagent-card[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.detail-subagent-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.detail-subagent-body {
+  padding: 0 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.detail-subagent-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .detail-prompt {
   background: #1a1a2e;
   color: #e2e8f0;

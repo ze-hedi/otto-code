@@ -29,6 +29,14 @@ interface AgentConfig {
   mcpServers?: Record<string, string>
   thinkingLevel?: string
   playground?: string
+  subAgents?: Record<string, {
+    name: string
+    description: string
+    model: string
+    systemPrompt: string
+    builtInTools?: string[]
+    playground?: string
+  }>
 }
 
 /** Process SSE events from a ReadableStream reader, appending to `parts` and calling `updateMessage` on each event. */
@@ -395,6 +403,53 @@ export function ChatPage() {
               <div className="detail-field">
                 <span className="detail-label">Playground</span>
                 <span className="detail-value mono">{agentConfig.playground}</span>
+              </div>
+            )}
+            {agentConfig.subAgents && Object.keys(agentConfig.subAgents).length > 0 && (
+              <div className="detail-field">
+                <span className="detail-label">Volatile Subagents</span>
+                <div className="detail-subagents">
+                  {Object.entries(agentConfig.subAgents).map(([key, sa]) => (
+                    <details key={key} className="detail-subagent-card">
+                      <summary>
+                        <span className="detail-subagent-name">{sa.name || key}</span>
+                        <span className="detail-chip">{sa.model}</span>
+                      </summary>
+                      <div className="detail-subagent-body">
+                        <div className="detail-subagent-row">
+                          <span className="detail-label">Key</span>
+                          <span className="detail-value mono">{key}</span>
+                        </div>
+                        {sa.description && (
+                          <div className="detail-subagent-row">
+                            <span className="detail-label">Description</span>
+                            <span className="detail-value">{sa.description}</span>
+                          </div>
+                        )}
+                        {sa.builtInTools && sa.builtInTools.length > 0 && (
+                          <div className="detail-subagent-row">
+                            <span className="detail-label">Tools</span>
+                            <div className="detail-chips">
+                              {sa.builtInTools.map(t => (
+                                <span key={t} className="detail-chip">{t}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {sa.playground && (
+                          <div className="detail-subagent-row">
+                            <span className="detail-label">Playground</span>
+                            <span className="detail-value mono">{sa.playground}</span>
+                          </div>
+                        )}
+                        <div className="detail-subagent-row">
+                          <span className="detail-label">System Prompt</span>
+                          <pre className="detail-prompt">{sa.systemPrompt}</pre>
+                        </div>
+                      </div>
+                    </details>
+                  ))}
+                </div>
               </div>
             )}
             {agentConfig.systemPrompt && (
