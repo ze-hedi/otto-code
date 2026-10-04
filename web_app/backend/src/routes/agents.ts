@@ -242,6 +242,13 @@ router.post("/:id/chat", async (req, res) => {
     }
   };
 
+  // Wire tool approval SSE event
+  agent.onToolApprovalRequired((toolCallId, toolName, args) => {
+    const payload = { type: 'tool_approval_required', toolCallId, name: toolName, args };
+    send(payload);
+    emitter.emit("event", payload);
+  });
+
   try {
     await new Promise<void>((resolve, reject) => {
       agent.chat(message, (event) => {
@@ -282,6 +289,26 @@ router.post("/:id/stop", async (req, res) => {
   }
 
   res.json({ stopped: true });
+});
+
+// ── Tool approval endpoints ───────────────────────────────────────────────
+
+router.post("/:id/tool-approve", (req, res) => {
+  const agent = getActiveAgent(req.params.id);
+  if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
+  const { toolCallId } = req.body as { toolCallId?: string };
+  if (!toolCallId) { res.status(400).json({ error: "toolCallId is required" }); return; }
+  agent.approveToolCall(toolCallId);
+  res.json({ success: true });
+});
+
+router.post("/:id/tool-reject", (req, res) => {
+  const agent = getActiveAgent(req.params.id);
+  if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
+  const { toolCallId, comment } = req.body as { toolCallId?: string; comment?: string };
+  if (!toolCallId) { res.status(400).json({ error: "toolCallId is required" }); return; }
+  agent.rejectToolCall(toolCallId, comment);
+  res.json({ success: true });
 });
 
 // ── SSE reconnection endpoint ──────────────────────────────────────────────

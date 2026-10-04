@@ -42,6 +42,7 @@ export function CreateAgentForm() {
   const [selectedTools, setSelectedTools] = useState<string[]>(['read', 'bash', 'edit', 'write'])
   const [mcpServers, setMcpServers] = useState<McpEntry[]>([])
   const [subAgents, setSubAgents] = useState<SubAgentEntry[]>([])
+  const [guardrails, setGuardrails] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<{ agent_id: string } | null>(null)
@@ -116,6 +117,7 @@ export function CreateAgentForm() {
       thinkingLevel,
       ...(playground && { playground }),
       builtInTools: selectedTools,
+      ...(guardrails && { toolCallGuardrails: ['bash', 'write', 'edit'] }),
       ...(Object.keys(mcpMap).length > 0 && { mcpServers: mcpMap }),
       ...(subAgents.length > 0 && {
         subAgents: Object.fromEntries(
@@ -269,6 +271,26 @@ export function CreateAgentForm() {
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Tool Guardrails */}
+        <div className="field">
+          <label className="toggle-row" htmlFor="guardrails">
+            <span>Tool Guardrails</span>
+            <button
+              type="button"
+              id="guardrails"
+              className={`toggle-switch ${guardrails ? 'on' : ''}`}
+              onClick={() => setGuardrails(!guardrails)}
+              role="switch"
+              aria-checked={guardrails}
+            >
+              <span className="toggle-knob" />
+            </button>
+          </label>
+          <p className="field-hint">
+            When enabled, every tool call requires your approval before executing.
+          </p>
         </div>
 
         {/* Advanced toggle */}

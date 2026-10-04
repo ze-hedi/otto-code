@@ -13,6 +13,7 @@ type MessagePart =
   | { type: 'text'; content: string }
   | { type: 'tool'; name: string; input: string; result?: string; isError?: boolean; status: 'running' | 'done' }
   | { type: 'subagent'; toolCallId: string; toolName: string; status: 'running' | 'done'; parts: SubAgentPart[]; result?: string; isError?: boolean }
+  | { type: 'tool_approval'; toolCallId: string; toolName: string; args: string; status: 'pending' | 'approved' | 'rejected' }
 
 interface ChatMessage {
   role: 'user' | 'assistant'
@@ -136,6 +137,15 @@ async function processSSEStream(
           }
           updateMessage()
         }
+      } else if (ev.type === 'tool_approval_required') {
+        parts.push({
+          type: 'tool_approval',
+          toolCallId: ev.toolCallId,
+          toolName: ev.name,
+          args: JSON.stringify(ev.args, null, 2),
+          status: 'pending',
+        })
+        updateMessage()
       } else if (ev.type === 'tool_end') {
         // Try subagent part first (by toolCallId), then fall back to regular tool
         let matched = false
@@ -314,6 +324,31 @@ export function ChatPage() {
     }
 
     setBusy(false)
+  }
+
+  async function handleToolApproval(toolCallId: string, approve: boolean, comment?: string) {
+    const endpoint = approve ? 'tool-approve' : 'tool-reject'
+    const body: any = { toolCallId }
+    if (!approve && comment) body.comment = comment
+    try {
+      await fetch(`http://localhost:4000/agents/${agentId}/${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      // Update the approval part status in messages
+      setMessages(prev => prev.map(msg => {
+        if (msg.role !== 'assistant') return msg
+        const updated = msg.parts.map(p =>
+          p.type === 'tool_approval' && p.toolCallId === toolCallId
+            ? { ...p, status: approve ? 'approved' as const : 'rejected' as const }
+            : p
+        )
+        return { ...msg, parts: updated }
+      }))
+    } catch (err) {
+      console.error('[chat] tool approval error:', err)
+    }
   }
 
   async function stop() {
@@ -521,6 +556,42 @@ export function ChatPage() {
                               <summary>Result</summary>
                               <pre className={`tool-pre ${part.isError ? 'tool-error' : ''}`}>{part.result}</pre>
                             </details>
+                          )}
+                        </div>
+                      )
+                    }
+                    if (part.type === 'tool_approval') {
+                      return (
+                        <div key={j} className={`part-approval ${part.status}`}>
+                          <div className="approval-header">
+                            <span className="approval-icon">&#9888;</span>
+                            <span className="tool-name">{part.toolName}</span>
+                            {part.status === 'pending' && <span className="approval-badge pending">Awaiting approval</span>}
+                            {part.status === 'approved' && <span className="approval-badge approved">Approved</span>}
+                            {part.status === 'rejected' && <span className="approval-badge rejected">Rejected</span>}
+                          </div>
+                          <details className="tool-section" open>
+                            <summary>Arguments</summary>
+                            <pre className="tool-pre">{part.args}</pre>
+                          </details>
+                          {part.status === 'pending' && (
+                            <div className="approval-actions">
+                              <button
+                                className="approval-btn approve"
+                                onClick={() => handleToolApproval(part.toolCallId, true)}
+                              >
+                                Approve
+                              </button>
+                              <button
+                                className="approval-btn reject"
+                                onClick={() => {
+                                  const reason = prompt('Reason for rejection (optional):')
+                                  handleToolApproval(part.toolCallId, false, reason || undefined)
+                                }}
+                              >
+                                Reject
+                              </button>
+                            </div>
                           )}
                         </div>
                       )
