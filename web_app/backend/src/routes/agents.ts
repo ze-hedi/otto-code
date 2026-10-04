@@ -260,6 +260,30 @@ router.post("/:id/chat", async (req, res) => {
   }
 });
 
+// ── Stop streaming endpoint ───────────────────────────────────────────────
+
+router.post("/:id/stop", async (req, res) => {
+  const state = getAgentBusyState(req.params.id);
+  if (!state.busy) {
+    res.json({ stopped: false, reason: "not busy" });
+    return;
+  }
+
+  const agent = getActiveAgent(req.params.id);
+  if (!agent) {
+    res.status(404).json({ error: "Agent not found" });
+    return;
+  }
+
+  try {
+    await agent.abort(state.sessionKey ?? undefined);
+  } catch (err: any) {
+    console.error("[stop] abort error:", err);
+  }
+
+  res.json({ stopped: true });
+});
+
 // ── SSE reconnection endpoint ──────────────────────────────────────────────
 
 router.get("/:id/events", (req, res) => {

@@ -427,6 +427,15 @@
   pointer-events: none;
 }
 
+.send-btn.stop-btn {
+  background: #ef4444;
+  opacity: 1;
+}
+
+.send-btn.stop-btn:hover {
+  background: #dc2626;
+}
+
 .input-footer {
   max-width: 85%;
   margin: 6px auto 0;

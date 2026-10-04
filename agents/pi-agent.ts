@@ -790,6 +790,14 @@ export class PiAgent {
     }
   }
 
+  /** Abort the currently running prompt on a session. */
+  async abort(key?: string): Promise<void> {
+    const session = this.getCurrentSession(key);
+    if (session) {
+      await session.abort();
+    }
+  }
+
   /** Get the currently active session (if any) */
   getCurrentSession(key?: string): AgentSession | null {
     return this._sessions.get(key ?? this._activeSessionKey) ?? null;

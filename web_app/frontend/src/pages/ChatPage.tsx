@@ -244,6 +244,16 @@ export function ChatPage() {
     setBusy(false)
   }
 
+  async function stop() {
+    // Abort the client-side fetch
+    abortRef.current?.abort()
+    // Tell the backend to abort the agent
+    try {
+      await fetch(`http://localhost:4000/agents/${agentId}/stop`, { method: 'POST' })
+    } catch {}
+    setBusy(false)
+  }
+
   return (
     <div className="chat-container">
       <div className="chat-header">
@@ -417,16 +427,28 @@ export function ChatPage() {
             rows={1}
             disabled={busy}
           />
-          <button
-            className="send-btn"
-            onClick={send}
-            disabled={!input.trim() || busy}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="12" y1="19" x2="12" y2="5" />
-              <polyline points="5 12 12 5 19 12" />
-            </svg>
-          </button>
+          {busy ? (
+            <button
+              className="send-btn stop-btn"
+              onClick={stop}
+              title="Stop generating"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="4" y="4" width="16" height="16" rx="2" />
+              </svg>
+            </button>
+          ) : (
+            <button
+              className="send-btn"
+              onClick={send}
+              disabled={!input.trim()}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="19" x2="12" y2="5" />
+                <polyline points="5 12 12 5 19 12" />
+              </svg>
+            </button>
+          )}
         </div>
         <div className="input-footer">Agent can make mistakes. Verify important information.</div>
       </div>
