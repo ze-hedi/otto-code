@@ -101,6 +101,14 @@ export function AgentsListPage() {
     navigate(`/chat/${agentId}`)
   }
 
+  const deleteSession = async (e: React.MouseEvent, agentId: string, sessionKey: string) => {
+    e.stopPropagation()
+    const res = await fetch(`http://localhost:4000/agents/${agentId}/sessions/${sessionKey}`, { method: 'DELETE' })
+    if (res.ok) {
+      setSessions(prev => prev.filter(s => s.sessionKey !== sessionKey))
+    }
+  }
+
   const closePopup = () => setPopup(null)
 
   return (
@@ -216,9 +224,18 @@ export function AgentsListPage() {
                     <span className="session-key">{s.sessionKey}</span>
                     <span className="session-size">{formatBytes(s.sizeBytes)}</span>
                   </div>
-                  {s.createdAt && (
-                    <span className="session-time">{timeAgo(s.createdAt)}</span>
-                  )}
+                  <div className="session-row-right">
+                    {s.createdAt && (
+                      <span className="session-time">{timeAgo(s.createdAt)}</span>
+                    )}
+                    <button
+                      className="session-delete-btn"
+                      onClick={(e) => deleteSession(e, popup.agentId, s.sessionKey)}
+                      title="Delete session"
+                    >
+                      &times;
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

@@ -368,7 +368,7 @@ function AgentsPage() {
           </div>
         </div>
       )}
-      <div className="agents-content">
+      <div className={`agents-content${flowStep === 'coding-form' || flowStep === 'memory-form' ? ' agents-content--form' : ''}`}>
         <div className={`agents-header-row${flowStep ? ' agents-header-row--centered' : ''}`}>
           <div>
             <button className="agents-back-btn" onClick={() => navigate('/')}>← Back</button>

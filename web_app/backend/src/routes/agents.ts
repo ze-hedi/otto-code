@@ -134,6 +134,41 @@ router.get("/:id/sessions", async (req, res) => {
   res.json(sessions);
 });
 
+// ── Delete a session file ─────────────────────────────────────────────────
+
+router.delete("/:id/sessions/:sessionKey", async (req, res) => {
+  const doc = await getAgentDoc(req.params.id);
+  if (!doc) {
+    res.status(404).json({ error: "Agent not found" });
+    return;
+  }
+
+  const playground = doc.config.playground;
+  if (!playground) {
+    res.status(400).json({ error: "Agent has no playground configured" });
+    return;
+  }
+
+  const sessionDir = path.join(playground, ".otto-sessions");
+  const safeName = (doc.config.name ?? "agent").replace(/[^a-zA-Z0-9_-]/g, "_");
+  const filename = `${safeName}-${req.params.sessionKey}.jsonl`;
+  const filePath = path.join(sessionDir, filename);
+
+  if (!fs.existsSync(filePath)) {
+    res.status(404).json({ error: "Session file not found" });
+    return;
+  }
+
+  // If this is the active session, reset to "main"
+  const activeKey = getSessionKey(req.params.id);
+  if (activeKey === req.params.sessionKey) {
+    setSessionKey(req.params.id, "main");
+  }
+
+  fs.unlinkSync(filePath);
+  res.json({ ok: true });
+});
+
 // ── Load a session from disk ──────────────────────────────────────────────
 
 router.post("/:id/load-session", async (req, res) => {

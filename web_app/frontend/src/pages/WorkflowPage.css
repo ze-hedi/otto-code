@@ -152,6 +152,23 @@
   text-overflow: ellipsis;
 }
 
+/* ── Sidebar interfaces ────────────────────────────── */
+
+.wf-sidebar-interface {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: grab;
+  transition: background 0.12s;
+  user-select: none;
+}
+
+.wf-sidebar-interface:hover {
+  background: var(--accent-light);
+}
+
 /* ── Canvas ─────────────────────────────────────────── */
 
 .wf-canvas {
@@ -166,10 +183,6 @@
 
 .wf-canvas:active {
   cursor: grabbing;
-}
-
-.wf-canvas.connect-mode {
-  cursor: crosshair;
 }
 
 .wf-svg {
@@ -197,6 +210,11 @@
 .wf-arrow:hover {
   stroke: var(--danger);
   stroke-width: 3;
+}
+
+.wf-arrow-temp {
+  opacity: 0.6;
+  pointer-events: none;
 }
 
 .wf-viewport {
@@ -294,26 +312,83 @@
   border-color: var(--danger);
 }
 
+/* ── Interface nodes (circle) ──────────────────────── */
+
+.wf-iface-node {
+  position: absolute;
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  user-select: none;
+  box-shadow: var(--shadow);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.wf-iface-node:hover {
+  border-color: var(--accent);
+}
+
+.wf-iface-node.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+.wf-iface-node.connect-source {
+  border-color: var(--success);
+  box-shadow: 0 0 0 3px rgba(22, 163, 106, 0.15);
+}
+
+.wf-iface-node:active {
+  cursor: grabbing;
+}
+
+.wf-iface-icon {
+  font-size: 22px;
+}
+
+.wf-iface-node:hover .wf-node-delete {
+  display: flex;
+}
+
 /* ── Handles ────────────────────────────────────────── */
 
 .wf-handle {
   position: absolute;
-  width: 10px;
-  height: 10px;
+  width: 14px;
+  height: 14px;
   background: var(--surface);
   border: 2px solid var(--accent);
   border-radius: 50%;
-  z-index: 1;
+  z-index: 2;
+  cursor: crosshair;
+  visibility: hidden;
+  pointer-events: none;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.wf-node:hover .wf-handle,
+.wf-iface-node:hover .wf-handle {
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.wf-handle:hover {
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .wf-handle-left {
-  left: -6px;
+  left: -8px;
   top: 50%;
   transform: translateY(-50%);
 }
 
 .wf-handle-right {
-  right: -6px;
+  right: -8px;
   top: 50%;
   transform: translateY(-50%);
 }
