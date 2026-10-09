@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { WorkflowChatPanel } from './WorkflowChatPanel';
 import './WorkflowPage.css';
 
 /* ── Types ─────────────────────────────────────────── */
@@ -105,6 +106,8 @@ export function WorkflowPage() {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [errorPopup, setErrorPopup] = useState<string | null>(null);
+  const [compiled, setCompiled] = useState(false);
+  const [chatAgentId, setChatAgentId] = useState<string | null>(null);
 
   // Build AgentsStorage on backend and fetch agent configs for sidebar
   useEffect(() => {
@@ -340,6 +343,10 @@ export function WorkflowPage() {
         setErrorPopup(data.error ?? data.message ?? JSON.stringify(data));
       } else {
         console.log('Compiled workflow:', data);
+        setCompiled(true);
+        // Pick the first agent from the first execution level
+        const firstAgentId = data.compiled?.executionLevels?.[0]?.agents?.[0];
+        if (firstAgentId) setChatAgentId(firstAgentId);
       }
     } catch (err: any) {
       console.error('Failed to compile workflow:', err);
@@ -361,14 +368,15 @@ export function WorkflowPage() {
           </button>
           <button
             className="wf-header-btn"
-            onClick={() => { setNodes([]); setConnections([]); setSelectedNodeId(null); }}
+            onClick={() => { setNodes([]); setConnections([]); setSelectedNodeId(null); setCompiled(false); setChatAgentId(null); }}
           >
             Clear
           </button>
         </div>
       </div>
 
-      <div className="wf-body">
+      <div className={`wf-body ${compiled ? 'wf-body-split' : ''}`}>
+        <div className={`wf-graph-side ${compiled ? 'wf-graph-side-half' : ''}`}>
         {/* Sidebar */}
         <div className="wf-sidebar">
           <div className="wf-sidebar-title">Agents</div>
@@ -482,6 +490,17 @@ export function WorkflowPage() {
             )}
           </div>
         </div>
+        </div>
+
+        {/* Chat panel (right side, shown after compilation) */}
+        {compiled && chatAgentId && (
+          <WorkflowChatPanel
+            agentId={chatAgentId}
+            agentName={agents.find(a => a.id === chatAgentId)?.name ?? chatAgentId}
+            allAgents={nodes.filter(n => n.type === 'agent').map(n => ({ id: n.agentId, name: n.agentName }))}
+            onSelectAgent={setChatAgentId}
+          />
+        )}
       </div>
 
       {/* Error popup */}
