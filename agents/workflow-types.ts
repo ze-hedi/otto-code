@@ -14,7 +14,11 @@ export class AgentsStorage {
     
 
     public getAgentByID(id: string) : RawPiAgentConfig {
-        return this.availableAgents_.get(id) ; 
+        return this.availableAgents_.get(id) ;
+    }
+
+    public getAll(): Map<string, RawPiAgentConfig> {
+        return this.availableAgents_ ;
     }
 }
 

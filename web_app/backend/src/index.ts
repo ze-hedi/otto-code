@@ -14,12 +14,14 @@ import express from "express";
 import cors from "cors";
 import { connectDb } from "./db/mongo.js";
 import agentRoutes from "./routes/agents.js";
+import workflowRoutes from "./routes/workflows.js";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 app.use("/agents", agentRoutes);
+app.use("/workflows", workflowRoutes);
 
 const PORT = process.env.PORT || 4000;
 

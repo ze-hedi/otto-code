@@ -32,14 +32,7 @@ interface Connection {
 
 /* ── Hardcoded agents ──────────────────────────────── */
 
-const AGENTS: AgentItem[] = [
-  { id: 'analyst',   name: 'Analyst',       icon: '\ud83d\udcca', model: 'claude-sonnet-4-5' },
-  { id: 'coder',     name: 'Coder',         icon: '\ud83d\udcbb', model: 'claude-sonnet-4-5' },
-  { id: 'reviewer',  name: 'Code Reviewer', icon: '\ud83d\udd0d', model: 'claude-sonnet-4-5' },
-  { id: 'writer',    name: 'Tech Writer',   icon: '\u270d\ufe0f',  model: 'claude-haiku-4-5' },
-  { id: 'planner',   name: 'Planner',       icon: '\ud83d\udccb', model: 'claude-opus-4-5' },
-  { id: 'tester',    name: 'QA Tester',     icon: '\ud83e\uddea', model: 'claude-haiku-4-5' },
-];
+// Agents are fetched from the backend (see useEffect below)
 
 interface InterfaceItem {
   id: string;
@@ -107,9 +100,26 @@ function generateId() {
 export function WorkflowPage() {
   const navigate = useNavigate();
 
+  const [agents, setAgents] = useState<AgentItem[]>([]);
   const [nodes, setNodes] = useState<WorkflowNode[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [errorPopup, setErrorPopup] = useState<string | null>(null);
+
+  // Build AgentsStorage on backend and fetch agent configs for sidebar
+  useEffect(() => {
+    fetch('http://localhost:4000/workflows/agents', { method: 'POST' })
+      .then(res => res.json())
+      .then((list: any[]) => {
+        setAgents(list.map(a => ({
+          id: a.id,
+          name: a.name,
+          icon: '\u{1F916}',
+          model: a.model,
+        })));
+      })
+      .catch(err => console.error('Failed to fetch agents:', err));
+  }, []);
 
   // Viewport pan & zoom
   const [view, setView] = useState({ x: 0, y: 0, scale: 1 });
@@ -296,7 +306,7 @@ export function WorkflowPage() {
     if (selectedNodeId === id) setSelectedNodeId(null);
   }
 
-  function compileWorkflow() {
+  async function compileWorkflow() {
     const workflowInput = {
       components: nodes.map(n => ({
         id: n.agentId,
@@ -316,6 +326,25 @@ export function WorkflowPage() {
       }),
     };
     console.log('workflowInput', workflowInput);
+
+    try {
+      const res = await fetch('http://localhost:4000/workflows/compile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(workflowInput),
+      });
+      const data = await res.json();
+      console.log('Compile response:', res.status, JSON.stringify(data));
+      if (!res.ok) {
+        console.error('Compile error:', data);
+        setErrorPopup(data.error ?? data.message ?? JSON.stringify(data));
+      } else {
+        console.log('Compiled workflow:', data);
+      }
+    } catch (err: any) {
+      console.error('Failed to compile workflow:', err);
+      setErrorPopup(err?.message ?? 'Network error');
+    }
   }
 
   /* ── Render ──────────────────────────────────────── */
@@ -344,7 +373,7 @@ export function WorkflowPage() {
         <div className="wf-sidebar">
           <div className="wf-sidebar-title">Agents</div>
           <div className="wf-sidebar-list">
-            {AGENTS.map(a => (
+            {agents.map(a => (
               <div
                 key={a.id}
                 className="wf-sidebar-item"
@@ -454,6 +483,19 @@ export function WorkflowPage() {
           </div>
         </div>
       </div>
+
+      {/* Error popup */}
+      {errorPopup && (
+        <div className="wf-error-overlay" onClick={() => setErrorPopup(null)}>
+          <div className="wf-error-popup" onClick={e => e.stopPropagation()}>
+            <div className="wf-error-header">
+              <span>Compilation Error</span>
+              <button className="wf-error-close" onClick={() => setErrorPopup(null)}>✕</button>
+            </div>
+            <div className="wf-error-body">{errorPopup}</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

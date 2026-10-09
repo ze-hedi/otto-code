@@ -392,3 +392,58 @@
   top: 50%;
   transform: translateY(-50%);
 }
+
+/* ── Error popup ──────────────────────────────────── */
+
+.wf-error-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.wf-error-popup {
+  background: var(--surface, #1e1e2e);
+  border: 1px solid #e53e3e;
+  border-radius: 10px;
+  min-width: 360px;
+  max-width: 500px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.wf-error-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(229, 62, 62, 0.3);
+  color: #fc8181;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.wf-error-close {
+  background: none;
+  border: none;
+  color: #fc8181;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.wf-error-close:hover {
+  background: rgba(229, 62, 62, 0.2);
+}
+
+.wf-error-body {
+  padding: 16px;
+  color: #e2e8f0;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
