@@ -505,4 +505,20 @@ router.get("/:id/messages", async (req, res) => {
   }
 });
 
+// GET /agents/:id/stats
+router.get("/:id/stats", async (req, res) => {
+  const agent = getActiveAgent(req.params.id);
+  if (!agent) {
+    res.status(404).json({ error: "Agent not running" });
+    return;
+  }
+  try {
+    const stats = agent.getSessionStats();
+    res.json(stats);
+  } catch (err) {
+    console.error(`[stats] Error:`, err);
+    res.status(503).json({ error: "No active session. Send a message first." });
+  }
+});
+
 export default router;

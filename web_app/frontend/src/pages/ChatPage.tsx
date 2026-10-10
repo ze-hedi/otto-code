@@ -22,6 +22,18 @@ interface ChatMessage {
   parts: MessagePart[]  // used for assistant messages
 }
 
+interface SessionStats {
+  sessionId: string
+  userMessages: number
+  assistantMessages: number
+  toolCalls: number
+  toolResults: number
+  totalMessages: number
+  tokens: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number }
+  cost: number
+  contextUsage?: { used: number; total: number }
+}
+
 interface AgentConfig {
   name?: string
   description?: string
@@ -39,6 +51,12 @@ interface AgentConfig {
     builtInTools?: string[]
     playground?: string
   }>
+}
+
+function fmtNum(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
+  return String(n)
 }
 
 /** Process SSE events from a ReadableStream reader, appending to `parts` and calling `updateMessage` on each event. */
@@ -208,6 +226,9 @@ export function ChatPage() {
   const [busy, setBusy] = useState(false)
   const [agentConfig, setAgentConfig] = useState<AgentConfig | null>(null)
   const [showDetails, setShowDetails] = useState(false)
+  const [showStats, setShowStats] = useState(false)
+  const [stats, setStats] = useState<SessionStats | null>(null)
+  const [statsLoading, setStatsLoading] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
 
@@ -222,6 +243,25 @@ export function ChatPage() {
       .then(doc => { if (doc?.config) setAgentConfig(doc.config) })
       .catch(() => {})
   }, [agentId])
+
+  const fetchStats = async () => {
+    if (!agentId) return
+    setStatsLoading(true)
+    try {
+      const res = await fetch(`http://localhost:4000/agents/${agentId}/stats`)
+      if (res.ok) setStats(await res.json())
+      else setStats(null)
+    } catch {
+      setStats(null)
+    } finally {
+      setStatsLoading(false)
+    }
+  }
+
+  const handleOpenStats = () => {
+    setShowStats(true)
+    fetchStats()
+  }
 
   // On mount: load messages, then check if agent is busy and reconnect to stream
   useEffect(() => {
@@ -436,6 +476,17 @@ export function ChatPage() {
           </div>
           <button
             className="details-btn"
+            onClick={handleOpenStats}
+            title="Session stats"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="20" x2="18" y2="10" />
+              <line x1="12" y1="20" x2="12" y2="4" />
+              <line x1="6" y1="20" x2="6" y2="14" />
+            </svg>
+          </button>
+          <button
+            className="details-btn"
             onClick={() => setShowDetails(!showDetails)}
             title="Agent details"
           >
@@ -445,6 +496,67 @@ export function ChatPage() {
               <line x1="12" y1="8" x2="12.01" y2="8" />
             </svg>
           </button>
+        </div>
+      </div>
+
+      {showStats && <div className="details-backdrop" onClick={() => setShowStats(false)} />}
+      <div className={`details-panel stats-panel ${showStats ? 'open' : ''}`}>
+        <div className="details-panel-header">
+          <h3>Session Stats</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button className="details-close" title="Refresh" onClick={fetchStats}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="23 4 23 10 17 10" />
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+              </svg>
+            </button>
+            <button className="details-close" onClick={() => setShowStats(false)}>&times;</button>
+          </div>
+        </div>
+        <div className="details-body">
+          {statsLoading && <div className="stats-loading">Loading…</div>}
+          {!statsLoading && !stats && <div className="stats-loading">Agent not running or no stats available.</div>}
+          {!statsLoading && stats && (
+            <>
+              <div className="stats-section">
+                <div className="stats-section-title">Tokens</div>
+                <div className="stats-grid">
+                  <div className="stats-cell"><span className="stats-val">{fmtNum(stats.tokens.input)}</span><span className="stats-key">input</span></div>
+                  <div className="stats-cell"><span className="stats-val">{fmtNum(stats.tokens.output)}</span><span className="stats-key">output</span></div>
+                  <div className="stats-cell"><span className="stats-val">{fmtNum(stats.tokens.cacheRead)}</span><span className="stats-key">cache read</span></div>
+                  <div className="stats-cell"><span className="stats-val">{fmtNum(stats.tokens.cacheWrite)}</span><span className="stats-key">cache write</span></div>
+                  <div className="stats-cell stats-cell-wide"><span className="stats-val stats-val-accent">{fmtNum(stats.tokens.total)}</span><span className="stats-key">total</span></div>
+                </div>
+              </div>
+              <div className="stats-section">
+                <div className="stats-section-title">Cost</div>
+                <div className="stats-cost">${stats.cost.toFixed(4)}</div>
+              </div>
+              <div className="stats-section">
+                <div className="stats-section-title">Messages</div>
+                <div className="stats-grid">
+                  <div className="stats-cell"><span className="stats-val">{stats.userMessages}</span><span className="stats-key">user</span></div>
+                  <div className="stats-cell"><span className="stats-val">{stats.assistantMessages}</span><span className="stats-key">assistant</span></div>
+                  <div className="stats-cell"><span className="stats-val">{stats.toolCalls}</span><span className="stats-key">tool calls</span></div>
+                  <div className="stats-cell stats-cell-wide"><span className="stats-val stats-val-accent">{stats.totalMessages}</span><span className="stats-key">total</span></div>
+                </div>
+              </div>
+              {stats.contextUsage && (
+                <div className="stats-section">
+                  <div className="stats-section-title">Context window</div>
+                  <div className="stats-context-bar-wrap">
+                    <div className="stats-context-bar">
+                      <div
+                        className="stats-context-fill"
+                        style={{ width: `${Math.min(100, (stats.contextUsage.used / stats.contextUsage.total) * 100).toFixed(1)}%` }}
+                      />
+                    </div>
+                    <span className="stats-context-label">{fmtNum(stats.contextUsage.used)} / {fmtNum(stats.contextUsage.total)}</span>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </div>
       </div>
 
