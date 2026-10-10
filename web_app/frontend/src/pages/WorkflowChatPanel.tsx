@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import Markdown from 'react-markdown'
 import './ChatPage.css'
 
@@ -23,119 +23,6 @@ interface ChatMessage {
   parts: MessagePart[]
 }
 
-/* ── SSE stream processor ──────────────────────────── */
-
-async function processSSEStream(
-  reader: ReadableStreamDefaultReader<Uint8Array>,
-  parts: MessagePart[],
-  updateMessage: () => void,
-) {
-  const decoder = new TextDecoder()
-  let buf = ''
-  const lastPart = (type: string) =>
-    parts.length > 0 && parts[parts.length - 1].type === type ? parts[parts.length - 1] : null
-
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buf += decoder.decode(value, { stream: true })
-
-    while (buf.includes('\n')) {
-      const idx = buf.indexOf('\n')
-      const line = buf.slice(0, idx)
-      buf = buf.slice(idx + 1)
-      if (!line.startsWith('data: ')) continue
-      let ev: any
-      try { ev = JSON.parse(line.slice(6)) } catch { continue }
-
-      if (ev.type === 'agent_idle') break
-
-      if (ev.type === 'thinking' && ev.text) {
-        const existing = lastPart('thinking') as { type: 'thinking'; content: string } | null
-        if (existing) existing.content += ev.text
-        else parts.push({ type: 'thinking', content: ev.text })
-        updateMessage()
-      } else if (ev.type === 'delta' && ev.text) {
-        const existing = lastPart('text') as { type: 'text'; content: string } | null
-        if (existing) existing.content += ev.text
-        else parts.push({ type: 'text', content: ev.text })
-        updateMessage()
-      } else if (ev.type === 'tool_start') {
-        parts.push({ type: 'tool', name: ev.name, input: JSON.stringify(ev.args, null, 2), status: 'running', toolCallId: ev.toolCallId })
-        updateMessage()
-      } else if (ev.type === 'subagent_event') {
-        const toolIdx = parts.findIndex(p => p.type === 'tool' && (p as any).toolCallId === ev.toolCallId)
-        if (toolIdx !== -1) {
-          const old = parts[toolIdx] as any
-          parts[toolIdx] = { type: 'subagent', toolCallId: ev.toolCallId, toolName: old.name, status: 'running', parts: [] }
-        }
-        const sa = parts.find(p => p.type === 'subagent' && (p as any).toolCallId === ev.toolCallId) as any
-        if (sa) {
-          const subParts: SubAgentPart[] = sa.parts
-          const lastSub = (type: string) =>
-            subParts.length > 0 && subParts[subParts.length - 1].type === type ? subParts[subParts.length - 1] : null
-          if (ev.subType === 'thinking' && ev.text) {
-            const existing = lastSub('thinking') as { type: 'thinking'; content: string } | null
-            if (existing) existing.content += ev.text
-            else subParts.push({ type: 'thinking', content: ev.text })
-          } else if (ev.subType === 'delta' && ev.text) {
-            const existing = lastSub('text') as { type: 'text'; content: string } | null
-            if (existing) existing.content += ev.text
-            else subParts.push({ type: 'text', content: ev.text })
-          } else if (ev.subType === 'tool_start') {
-            subParts.push({ type: 'tool', name: ev.name, input: JSON.stringify(ev.args, null, 2), status: 'running' })
-          } else if (ev.subType === 'tool_end') {
-            for (let i = subParts.length - 1; i >= 0; i--) {
-              const p = subParts[i]
-              if (p.type === 'tool' && p.name === ev.name && p.status === 'running') {
-                const resultStr = typeof ev.result === 'string' ? ev.result : JSON.stringify(ev.result, null, 2)
-                p.result = resultStr.length > 1500 ? resultStr.slice(0, 1500) + '\n... (truncated)' : resultStr
-                p.isError = ev.isError; p.status = 'done'; break
-              }
-            }
-          }
-          updateMessage()
-        }
-      } else if (ev.type === 'tool_approval_required') {
-        parts.push({ type: 'tool_approval', toolCallId: ev.toolCallId, toolName: ev.name, args: JSON.stringify(ev.args, null, 2), status: 'pending' })
-        updateMessage()
-      } else if (ev.type === 'clarification_required') {
-        parts.push({ type: 'clarification', toolCallId: ev.toolCallId, questions: ev.questions, answers: ev.questions.map(() => ''), status: 'pending' })
-        updateMessage()
-      } else if (ev.type === 'tool_end') {
-        if (ev.toolCallId) {
-          for (let i = parts.length - 1; i >= 0; i--) {
-            if (parts[i].type === 'clarification' && (parts[i] as any).toolCallId === ev.toolCallId) { parts.splice(i, 1); break }
-          }
-        }
-        let matched = false
-        if (ev.toolCallId) {
-          const sa = parts.find(p => p.type === 'subagent' && (p as any).toolCallId === ev.toolCallId) as any
-          if (sa) {
-            const resultStr = typeof ev.result === 'string' ? ev.result : JSON.stringify(ev.result, null, 2)
-            sa.result = resultStr.length > 1500 ? resultStr.slice(0, 1500) + '\n... (truncated)' : resultStr
-            sa.isError = ev.isError; sa.status = 'done'; matched = true
-          }
-        }
-        if (!matched) {
-          for (let i = parts.length - 1; i >= 0; i--) {
-            const p = parts[i]
-            if (p.type === 'tool' && p.status === 'running' && (ev.toolCallId ? (p as any).toolCallId === ev.toolCallId : p.name === ev.name)) {
-              const resultStr = typeof ev.result === 'string' ? ev.result : JSON.stringify(ev.result, null, 2)
-              p.result = resultStr.length > 1500 ? resultStr.slice(0, 1500) + '\n... (truncated)' : resultStr
-              p.isError = ev.isError; p.status = 'done'; break
-            }
-          }
-        }
-        updateMessage()
-      } else if (ev.type === 'error') {
-        parts.push({ type: 'text', content: `Error: ${ev.message}` })
-        updateMessage()
-      }
-    }
-  }
-}
-
 /* ── Props ─────────────────────────────────────────── */
 
 interface WorkflowChatPanelProps {
@@ -148,23 +35,23 @@ interface WorkflowChatPanelProps {
 /* ── Component ─────────────────────────────────────── */
 
 export function WorkflowChatPanel({ agentId, agentName, allAgents, onSelectAgent }: WorkflowChatPanelProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  // Per-agent message state: keyed by agentId
+  const [agentMessages, setAgentMessages] = useState<Record<string, ChatMessage[]>>({})
+  // Track which agents are currently streaming
+  const [activeAgents, setActiveAgents] = useState<Set<string>>(new Set())
   const [input, setInput] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [workflowRunning, setWorkflowRunning] = useState(false)
+  const [workflowDone, setWorkflowDone] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  // Per-agent parts refs for streaming updates
+  const agentPartsRef = useRef<Record<string, MessagePart[]>>({})
+
+  const messages = agentMessages[agentId] ?? []
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
-
-  // Reset state when agent changes
-  useEffect(() => {
-    setMessages([])
-    setInput('')
-    setBusy(false)
-    abortRef.current?.abort()
-  }, [agentId])
+  }, [agentMessages, agentId])
 
   useEffect(() => {
     const ta = document.querySelector<HTMLTextAreaElement>('.wf-chat-panel .input-bar textarea')
@@ -174,98 +61,263 @@ export function WorkflowChatPanel({ agentId, agentName, allAgents, onSelectAgent
     }
   }, [input])
 
+  const flushMessages = useCallback(() => {
+    setAgentMessages(prev => {
+      const next = { ...prev }
+      for (const [aid, parts] of Object.entries(agentPartsRef.current)) {
+        const existing = next[aid] ?? []
+        const lastMsg = existing[existing.length - 1]
+        if (lastMsg && lastMsg.role === 'assistant') {
+          next[aid] = [...existing.slice(0, -1), { ...lastMsg, parts: parts.map(p => ({ ...p })) }]
+        }
+      }
+      return next
+    })
+  }, [])
+
+  function applyEvent(ev: any) {
+    const aid: string = ev.agentId
+    if (!aid || aid === '__workflow__') return
+
+    // Ensure this agent has a parts array
+    if (!agentPartsRef.current[aid]) {
+      agentPartsRef.current[aid] = []
+      // Create initial assistant message for this agent
+      setAgentMessages(prev => {
+        const existing = prev[aid] ?? []
+        if (existing.length === 0 || existing[existing.length - 1].role !== 'assistant') {
+          return { ...prev, [aid]: [...existing, { role: 'assistant', content: '', parts: [] }] }
+        }
+        return prev
+      })
+      setActiveAgents(prev => new Set(prev).add(aid))
+    }
+
+    const parts = agentPartsRef.current[aid]
+    const lastPart = (type: string) =>
+      parts.length > 0 && parts[parts.length - 1].type === type ? parts[parts.length - 1] : null
+
+    if (ev.type === 'thinking' && ev.text) {
+      const existing = lastPart('thinking') as { type: 'thinking'; content: string } | null
+      if (existing) existing.content += ev.text
+      else parts.push({ type: 'thinking', content: ev.text })
+    } else if (ev.type === 'delta' && ev.text) {
+      const existing = lastPart('text') as { type: 'text'; content: string } | null
+      if (existing) existing.content += ev.text
+      else parts.push({ type: 'text', content: ev.text })
+    } else if (ev.type === 'tool_start') {
+      parts.push({ type: 'tool', name: ev.name, input: JSON.stringify(ev.args, null, 2), status: 'running', toolCallId: ev.toolCallId })
+    } else if (ev.type === 'subagent_event') {
+      const toolIdx = parts.findIndex(p => p.type === 'tool' && (p as any).toolCallId === ev.toolCallId)
+      if (toolIdx !== -1) {
+        const old = parts[toolIdx] as any
+        parts[toolIdx] = { type: 'subagent', toolCallId: ev.toolCallId, toolName: old.name, status: 'running', parts: [] }
+      }
+      const sa = parts.find(p => p.type === 'subagent' && (p as any).toolCallId === ev.toolCallId) as any
+      if (sa) {
+        const subParts: SubAgentPart[] = sa.parts
+        const lastSub = (type: string) =>
+          subParts.length > 0 && subParts[subParts.length - 1].type === type ? subParts[subParts.length - 1] : null
+        if (ev.subType === 'thinking' && ev.text) {
+          const existing = lastSub('thinking') as { type: 'thinking'; content: string } | null
+          if (existing) existing.content += ev.text
+          else subParts.push({ type: 'thinking', content: ev.text })
+        } else if (ev.subType === 'delta' && ev.text) {
+          const existing = lastSub('text') as { type: 'text'; content: string } | null
+          if (existing) existing.content += ev.text
+          else subParts.push({ type: 'text', content: ev.text })
+        } else if (ev.subType === 'tool_start') {
+          subParts.push({ type: 'tool', name: ev.name, input: JSON.stringify(ev.args, null, 2), status: 'running' })
+        } else if (ev.subType === 'tool_end') {
+          for (let i = subParts.length - 1; i >= 0; i--) {
+            const p = subParts[i]
+            if (p.type === 'tool' && p.name === ev.name && p.status === 'running') {
+              const resultStr = typeof ev.result === 'string' ? ev.result : JSON.stringify(ev.result, null, 2)
+              p.result = resultStr.length > 1500 ? resultStr.slice(0, 1500) + '\n... (truncated)' : resultStr
+              p.isError = ev.isError; p.status = 'done'; break
+            }
+          }
+        }
+      }
+    } else if (ev.type === 'tool_approval_required') {
+      parts.push({ type: 'tool_approval', toolCallId: ev.toolCallId, toolName: ev.name, args: JSON.stringify(ev.args, null, 2), status: 'pending' })
+    } else if (ev.type === 'clarification_required') {
+      parts.push({ type: 'clarification', toolCallId: ev.toolCallId, questions: ev.questions, answers: ev.questions.map(() => ''), status: 'pending' })
+    } else if (ev.type === 'tool_end') {
+      if (ev.toolCallId) {
+        for (let i = parts.length - 1; i >= 0; i--) {
+          if (parts[i].type === 'clarification' && (parts[i] as any).toolCallId === ev.toolCallId) { parts.splice(i, 1); break }
+        }
+      }
+      let matched = false
+      if (ev.toolCallId) {
+        const sa = parts.find(p => p.type === 'subagent' && (p as any).toolCallId === ev.toolCallId) as any
+        if (sa) {
+          const resultStr = typeof ev.result === 'string' ? ev.result : JSON.stringify(ev.result, null, 2)
+          sa.result = resultStr.length > 1500 ? resultStr.slice(0, 1500) + '\n... (truncated)' : resultStr
+          sa.isError = ev.isError; sa.status = 'done'; matched = true
+        }
+      }
+      if (!matched) {
+        for (let i = parts.length - 1; i >= 0; i--) {
+          const p = parts[i]
+          if (p.type === 'tool' && p.status === 'running' && (ev.toolCallId ? (p as any).toolCallId === ev.toolCallId : p.name === ev.name)) {
+            const resultStr = typeof ev.result === 'string' ? ev.result : JSON.stringify(ev.result, null, 2)
+            p.result = resultStr.length > 1500 ? resultStr.slice(0, 1500) + '\n... (truncated)' : resultStr
+            p.isError = ev.isError; p.status = 'done'; break
+          }
+        }
+      }
+    } else if (ev.type === 'agent_idle') {
+      setActiveAgents(prev => {
+        const next = new Set(prev)
+        next.delete(aid)
+        return next
+      })
+    } else if (ev.type === 'error') {
+      parts.push({ type: 'text', content: `Error: ${ev.message}` })
+    }
+
+    flushMessages()
+  }
+
   async function send() {
     const text = input.trim()
-    if (!text || busy) return
+    if (!text || workflowRunning) return
     setInput('')
-    setBusy(true)
+    setWorkflowRunning(true)
+    setWorkflowDone(false)
 
     const controller = new AbortController()
     abortRef.current = controller
 
-    const msgs: ChatMessage[] = [...messages, { role: 'user', content: text, parts: [] }]
-    msgs.push({ role: 'assistant', content: '', parts: [] })
-    const assistantIdx = msgs.length - 1
-    setMessages([...msgs])
+    // Clear per-agent streaming parts for the new run, but keep message history
+    agentPartsRef.current = {}
+    setActiveAgents(new Set())
 
-    const parts: MessagePart[] = []
-    const updateMessage = () => {
-      const snapshot = parts.map(p => ({ ...p }))
-      setMessages(prev => {
-        const next = [...prev]
-        next[assistantIdx] = { role: 'assistant', content: '', parts: snapshot }
-        return next
-      })
-    }
+    // Append user message to the first agent's chat history
+    const firstAgentId = allAgents[0]?.id ?? agentId
+    setAgentMessages(prev => ({
+      ...prev,
+      [firstAgentId]: [...(prev[firstAgentId] ?? []), { role: 'user' as const, content: text, parts: [] }],
+    }))
 
     try {
-      const res = await fetch(`http://localhost:4000/agents/${agentId}/chat`, {
+      const res = await fetch('http://localhost:4000/workflows/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text }),
         signal: controller.signal,
       })
       if (!res.ok) throw new Error(await res.text())
-      await processSSEStream(res.body!.getReader(), parts, updateMessage)
+
+      const reader = res.body!.getReader()
+      const decoder = new TextDecoder()
+      let buf = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += decoder.decode(value, { stream: true })
+
+        while (buf.includes('\n')) {
+          const idx = buf.indexOf('\n')
+          const line = buf.slice(0, idx)
+          buf = buf.slice(idx + 1)
+          if (!line.startsWith('data: ')) continue
+          let ev: any
+          try { ev = JSON.parse(line.slice(6)) } catch { continue }
+
+          if (ev.type === 'workflow_done') {
+            setWorkflowDone(true)
+            break
+          }
+
+          applyEvent(ev)
+        }
+      }
     } catch (err: any) {
       if (err.name !== 'AbortError') {
-        parts.push({ type: 'text', content: `Error: ${err.message}` })
-        updateMessage()
+        // Show error on current agent tab
+        const aid = agentId
+        if (!agentPartsRef.current[aid]) agentPartsRef.current[aid] = []
+        agentPartsRef.current[aid].push({ type: 'text', content: `Error: ${err.message}` })
+        flushMessages()
       }
     }
-    setBusy(false)
+    setWorkflowRunning(false)
+    setActiveAgents(new Set())
   }
 
-  async function handleToolApproval(toolCallId: string, approve: boolean, comment?: string) {
+  async function handleToolApproval(targetAgentId: string, toolCallId: string, approve: boolean, comment?: string) {
     const endpoint = approve ? 'tool-approve' : 'tool-reject'
     const body: any = { toolCallId }
     if (!approve && comment) body.comment = comment
     try {
-      await fetch(`http://localhost:4000/agents/${agentId}/${endpoint}`, {
+      await fetch(`http://localhost:4000/agents/${targetAgentId}/${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
-      setMessages(prev => prev.map(msg => {
-        if (msg.role !== 'assistant') return msg
-        return { ...msg, parts: msg.parts.map(p =>
-          p.type === 'tool_approval' && p.toolCallId === toolCallId
-            ? { ...p, status: approve ? 'approved' as const : 'rejected' as const } : p
-        )}
-      }))
+      setAgentMessages(prev => {
+        const msgs = prev[targetAgentId] ?? []
+        return {
+          ...prev,
+          [targetAgentId]: msgs.map(msg => {
+            if (msg.role !== 'assistant') return msg
+            return { ...msg, parts: msg.parts.map(p =>
+              p.type === 'tool_approval' && p.toolCallId === toolCallId
+                ? { ...p, status: approve ? 'approved' as const : 'rejected' as const } : p
+            )}
+          })
+        }
+      })
     } catch (err) {
       console.error('[wf-chat] tool approval error:', err)
     }
   }
 
-  function updateClarificationAnswer(toolCallId: string, index: number, value: string) {
-    setMessages(prev => prev.map(msg => {
-      if (msg.role !== 'assistant') return msg
-      return { ...msg, parts: msg.parts.map(p =>
-        p.type === 'clarification' && p.toolCallId === toolCallId
-          ? { ...p, answers: p.answers.map((a: string, i: number) => i === index ? value : a) } : p
-      )}
-    }))
+  function updateClarificationAnswer(targetAgentId: string, toolCallId: string, index: number, value: string) {
+    setAgentMessages(prev => {
+      const msgs = prev[targetAgentId] ?? []
+      return {
+        ...prev,
+        [targetAgentId]: msgs.map(msg => {
+          if (msg.role !== 'assistant') return msg
+          return { ...msg, parts: msg.parts.map(p =>
+            p.type === 'clarification' && p.toolCallId === toolCallId
+              ? { ...p, answers: p.answers.map((a: string, i: number) => i === index ? value : a) } : p
+          )}
+        })
+      }
+    })
   }
 
-  async function submitClarification(toolCallId: string) {
-    const part = messages.flatMap(m => m.parts).find(
+  async function submitClarification(targetAgentId: string, toolCallId: string) {
+    const msgs = agentMessages[targetAgentId] ?? []
+    const part = msgs.flatMap(m => m.parts).find(
       p => p.type === 'clarification' && p.toolCallId === toolCallId
     ) as Extract<MessagePart, { type: 'clarification' }> | undefined
     if (!part) return
     try {
-      await fetch(`http://localhost:4000/agents/${agentId}/clarification-answer`, {
+      await fetch(`http://localhost:4000/agents/${targetAgentId}/clarification-answer`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ toolCallId, answers: part.answers }),
       })
-      setMessages(prev => prev.map(msg => {
-        if (msg.role !== 'assistant') return msg
-        return { ...msg, parts: msg.parts.map(p =>
-          p.type === 'clarification' && p.toolCallId === toolCallId
-            ? { ...p, status: 'answered' as const } : p
-        )}
-      }))
+      setAgentMessages(prev => {
+        const msgs = prev[targetAgentId] ?? []
+        return {
+          ...prev,
+          [targetAgentId]: msgs.map(msg => {
+            if (msg.role !== 'assistant') return msg
+            return { ...msg, parts: msg.parts.map(p =>
+              p.type === 'clarification' && p.toolCallId === toolCallId
+                ? { ...p, status: 'answered' as const } : p
+            )}
+          })
+        }
+      })
     } catch (err) {
       console.error('[wf-chat] clarification error:', err)
     }
@@ -273,8 +325,8 @@ export function WorkflowChatPanel({ agentId, agentName, allAgents, onSelectAgent
 
   async function stop() {
     abortRef.current?.abort()
-    try { await fetch(`http://localhost:4000/agents/${agentId}/stop`, { method: 'POST' }) } catch {}
-    setBusy(false)
+    setWorkflowRunning(false)
+    setActiveAgents(new Set())
   }
 
   return (
@@ -289,15 +341,17 @@ export function WorkflowChatPanel({ agentId, agentName, allAgents, onSelectAgent
               onClick={() => onSelectAgent(a.id)}
             >
               {a.name}
+              {activeAgents.has(a.id) && <span className="wf-agent-active-dot" />}
             </button>
           ))}
         </div>
+        {workflowDone && <span className="wf-done-badge">Workflow complete</span>}
       </div>
 
-      {/* Messages */}
+      {/* Messages for selected agent */}
       <div className="messages-area">
-        {messages.length === 0 && !busy && (
-          <div className="empty-state">Send a message to start the conversation</div>
+        {messages.length === 0 && !workflowRunning && (
+          <div className="empty-state">Send a message to start the workflow</div>
         )}
 
         {messages.map((msg, i) => (
@@ -353,10 +407,10 @@ export function WorkflowChatPanel({ agentId, agentName, allAgents, onSelectAgent
                           <details className="tool-section" open><summary>Arguments</summary><pre className="tool-pre">{part.args}</pre></details>
                           {part.status === 'pending' && (
                             <div className="approval-actions">
-                              <button className="approval-btn approve" onClick={() => handleToolApproval(part.toolCallId, true)}>Approve</button>
+                              <button className="approval-btn approve" onClick={() => handleToolApproval(agentId, part.toolCallId, true)}>Approve</button>
                               <button className="approval-btn reject" onClick={() => {
                                 const reason = prompt('Reason for rejection (optional):')
-                                handleToolApproval(part.toolCallId, false, reason || undefined)
+                                handleToolApproval(agentId, part.toolCallId, false, reason || undefined)
                               }}>Reject</button>
                             </div>
                           )}
@@ -378,7 +432,7 @@ export function WorkflowChatPanel({ agentId, agentName, allAgents, onSelectAgent
                                 <label className="clarification-q">{q}</label>
                                 {part.status === 'pending' ? (
                                   <textarea className="clarification-input" rows={2} value={part.answers[qi]}
-                                    onChange={e => updateClarificationAnswer(part.toolCallId, qi, e.target.value)} placeholder="Your answer..." />
+                                    onChange={e => updateClarificationAnswer(agentId, part.toolCallId, qi, e.target.value)} placeholder="Your answer..." />
                                 ) : (
                                   <p className="clarification-a">{part.answers[qi]}</p>
                                 )}
@@ -387,7 +441,7 @@ export function WorkflowChatPanel({ agentId, agentName, allAgents, onSelectAgent
                           </div>
                           {part.status === 'pending' && (
                             <div className="approval-actions">
-                              <button className="approval-btn approve" onClick={() => submitClarification(part.toolCallId)}>Submit Answers</button>
+                              <button className="approval-btn approve" onClick={() => submitClarification(agentId, part.toolCallId)}>Submit Answers</button>
                             </div>
                           )}
                         </div>
@@ -444,12 +498,12 @@ export function WorkflowChatPanel({ agentId, agentName, allAgents, onSelectAgent
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
-            placeholder="Message assistant..."
+            placeholder="Send a message to start the workflow..."
             rows={1}
-            disabled={busy}
+            disabled={workflowRunning}
           />
-          {busy ? (
-            <button className="send-btn stop-btn" onClick={stop} title="Stop generating">
+          {workflowRunning ? (
+            <button className="send-btn stop-btn" onClick={stop} title="Stop workflow">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2" /></svg>
             </button>
           ) : (
@@ -460,7 +514,7 @@ export function WorkflowChatPanel({ agentId, agentName, allAgents, onSelectAgent
             </button>
           )}
         </div>
-        <div className="input-footer">Agent can make mistakes. Verify important information.</div>
+        <div className="input-footer">Workflow agents can make mistakes. Verify important information.</div>
       </div>
     </div>
   )

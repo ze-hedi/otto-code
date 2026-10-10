@@ -4,3 +4,6 @@ upstreams:
   - name: tavily
     prefix: tavily
     url: http://tavily:8000/mcp/
+  - name: project-dashboard
+    prefix: project-dashboard
+    url: http://project-dashboard:3200/mcp/
