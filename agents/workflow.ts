@@ -215,7 +215,15 @@ export class Workflow {
         }
 
         public getAvailableAgents() : RawPiAgent[] {
-            return [...this.agents_.values()]; 
+            return [...this.agents_.values()];
+        }
+
+        public getAgentById(id: string): RawPiAgent | undefined {
+            return this.agents_.get(id);
+        }
+
+        public getInterfaceStorage(): InterfaceStorage {
+            return this.interfaceStorage_;
         }
 
         //Once we made sure that the graph is good we start running it. 

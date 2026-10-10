@@ -97,11 +97,13 @@ ${this.subAgentsOutputNames_.map(([name, desc]) => `- ${name} : ${desc}`).join("
     `; 
 
         this.outputPromptSuffix_ = `
-Keep in mind that you are a part of a wokflow and you will be receiving your task from  : 
-${this.subAgentsInputsNames_.map(([name, desc]) => `- ${name} : ${desc}`).join("\n")} 
-` ; 
+Keep in mind that you are a part of a wokflow and you will be receiving your task from  :
+${this.subAgentsInputsNames_.map(([name, desc]) => `- ${name} : ${desc}`).join("\n")}
+` ;
 
-
+        this.toolForSuccessors_.parameters = Type.Object({
+            result: Type.String({ description: "the result of your work to forward to the next agent" }),
+        })
     }
 
 }
@@ -165,5 +167,10 @@ Rules:
 - Respond only with the route name and a short justification (1 sentence max) — no additional commentary.
 - Do not attempt to answer the user's request yourself; your only output is the routing decision.
 `;
+
+        this.toolForSuccessors_.parameters = Type.Object({
+            route: Type.Union(this.subAgentsOutputNames_.map(a => Type.Literal(a[0], { description: a[1] })), { description: "which agent to route to" }),
+            result: Type.String({ description: "the result/context to pass to the routed agent" }),
+        })
     }
 }
