@@ -1,4 +1,4 @@
-import { AgentsStorage, InterfaceStorage } from "../../../../agents/workflow-types.js";
+import { AgentsStorage, InterfaceStorage, NodeType } from "../../../../agents/workflow-types.js";
 import type { WorkflowSchema } from "../../../../agents/workflow-types.js";
 import type { RawPiAgentConfig } from "../../../../agents/pi-agent-configs.js";
 import type { ToolInput } from "../../../../agents/pi-agent-types.js";
@@ -10,6 +10,8 @@ import {
   RouteInterface,
 } from "../../../../agents/workflow-interface.js";
 import { getAllAgentDocs } from "./agent-manager.js";
+import type { Workflow } from "../../../../agents/workflow.js";
+import type { AgentSessionEvent as AgentEvent } from "@mariozechner/pi-coding-agent";
 
 // ── Hardcoded interface tools (same pattern as workflow-interface-test.ts) ────
 
@@ -210,4 +212,54 @@ export async function buildInterfaceStorage(schema: WorkflowSchema, agentsStorag
   const storage = new InterfaceStorage(interfaceMap);
   console.log("[compile] InterfaceStorage built successfully");
   return storage;
+}
+
+// ── Run a compiled workflow ────────────────────────────────────────────────
+
+export async function runWorkflow(
+  message: string,
+  workflow: Workflow,
+  sendEvent: (agentId: string, event: AgentEvent) => void,
+): Promise<void> {
+  const { levels, predecessors } = workflow.executionQueue;
+  const interfaceStorage = workflow.getInterfaceStorage();
+
+  // Level 0: send user message to all first-level agents concurrently
+  const level0Tasks = levels[0].map((node) => {
+    const agent = workflow.getAgentById(node.id);
+    if (!agent) throw new Error(`No agent built for ${node.id}`);
+    console.log(`[workflow] Starting level-0 agent: ${node.id}`);
+    return agent.chat(message, (event) => sendEvent(node.id, event));
+  });
+  await Promise.all(level0Tasks);
+
+  // Levels 1..N: gather results from predecessor interfaces, then launch
+  for (let i = 1; i < levels.length; i++) {
+    console.log(`[workflow] Starting level ${i}`);
+    const tasks: Promise<void>[] = [];
+
+    for (const node of levels[i]) {
+      const agent = workflow.getAgentById(node.id);
+      if (!agent) throw new Error(`No agent built for ${node.id}`);
+
+      const preds = predecessors.get(node.id) ?? [];
+      const interfacePred = preds.find((n) => n.type === NodeType.interface);
+      if (!interfacePred) continue;
+
+      const results = interfaceStorage.getInterfaceByID(interfacePred.id).getResults();
+      if (results.length === 0) {
+        console.log(`[workflow] Skipping ${node.id} — no results from interface ${interfacePred.id}`);
+        continue;
+      }
+
+      const input = results
+        .map(([agentId, response]) => `[${agentId}]: ${response}`)
+        .join("\n");
+
+      console.log(`[workflow] Launching ${node.id} with ${results.length} result(s)`);
+      tasks.push(agent.chat(input, (event) => sendEvent(node.id, event)));
+    }
+
+    await Promise.all(tasks);
+  }
 }

@@ -2,7 +2,8 @@ import { Router } from "express";
 import { AgentsStorage, InterfaceStorage } from "../../../../agents/workflow-types.js";
 import type { WorkflowSchema } from "../../../../agents/workflow-types.js";
 import { Workflow } from "../../../../agents/workflow.js";
-import { buildInterfaceStorage, buildAgentsStorage, validateInterfaceRules } from "../services/workflow-manager.js";
+import { buildInterfaceStorage, buildAgentsStorage, validateInterfaceRules, runWorkflow } from "../services/workflow-manager.js";
+import { handleEventWithClient } from "../../../../agents/pi-agent-utils.js";
 
 const router = Router();
 
@@ -113,6 +114,52 @@ router.post("/compile", async (req, res) => {
   } catch (err: any) {
     console.error("[compile] error:", err);
     res.status(500).json({ error: err?.message ?? String(err) });
+  }
+});
+
+/**
+ * POST /workflows/run
+ * Body: { message: string }
+ * Runs the compiled workflow, streaming SSE events tagged with agentId.
+ */
+router.post("/run", async (req, res) => {
+  if (!currentWorkflow) {
+    res.status(400).json({ error: "No compiled workflow. Call POST /workflows/compile first." });
+    return;
+  }
+
+  const { message } = req.body;
+  if (!message || typeof message !== "string") {
+    res.status(400).json({ error: "message (string) is required" });
+    return;
+  }
+
+  // SSE setup
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+
+  const send = (payload: object) => {
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
+
+  const sendEvent = (agentId: string, event: any) => {
+    handleEventWithClient(event, (payload) => {
+      send({ ...payload, agentId });
+    });
+  };
+
+  try {
+    console.log(`[workflow/run] Starting workflow with message: "${message.slice(0, 100)}..."`);
+    await runWorkflow(message, currentWorkflow, sendEvent);
+    send({ type: "workflow_done" });
+    console.log("[workflow/run] Workflow completed");
+  } catch (err: any) {
+    console.error("[workflow/run] error:", err);
+    send({ type: "error", message: err?.message ?? String(err) });
+  } finally {
+    res.end();
   }
 });
 
