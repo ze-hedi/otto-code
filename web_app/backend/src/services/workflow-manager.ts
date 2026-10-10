@@ -84,8 +84,8 @@ export const interfaceTools = new Map<string, ToolInput>([
 
 // ── Build AgentsStorage from all agents in DB ────────────────────────────────
 
-export async function buildAgentsStorage(): Promise<AgentsStorage> {
-  const agentDocs = await getAllAgentDocs();
+export async function buildAgentsStorage(playground?: string): Promise<AgentsStorage> {
+  const agentDocs = await getAllAgentDocs(playground);
   const agentMap = new Map<string, RawPiAgentConfig>();
 
   for (const doc of agentDocs) {

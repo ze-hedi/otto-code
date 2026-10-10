@@ -25,8 +25,9 @@ router.post("/", async (req, res) => {
   });
 });
 
-router.get("/", async (_req, res) => {
-  const agents = await getAllAgentDocs();
+router.get("/", async (req, res) => {
+  const playground = req.query.playground as string | undefined;
+  const agents = await getAllAgentDocs(playground);
   res.json(agents);
 });
 

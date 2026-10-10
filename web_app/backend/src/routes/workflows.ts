@@ -29,9 +29,10 @@ export function getWorkflow(): Workflow | null {
  * POST /workflows/agents
  * Builds AgentsStorage from DB, stores it globally, returns agent configs for the sidebar.
  */
-router.post("/agents", async (_req, res) => {
+router.post("/agents", async (req, res) => {
   try {
-    currentAgentsStorage = await buildAgentsStorage();
+    const playground = req.body?.playground as string | undefined;
+    currentAgentsStorage = await buildAgentsStorage(playground);
     console.log("[workflows/agents] AgentsStorage built and saved globally");
 
     const agents: { id: string; name: string; model: string }[] = [];

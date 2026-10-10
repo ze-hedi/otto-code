@@ -165,8 +165,9 @@ export async function getAgentDoc(agentId: string): Promise<AgentDocument | null
   return getCollection().findOne({ agent_id: agentId });
 }
 
-export async function getAllAgentDocs(): Promise<AgentDocument[]> {
-  return getCollection().find().toArray();
+export async function getAllAgentDocs(playground?: string): Promise<AgentDocument[]> {
+  const filter = playground ? { "config.playground": playground } : {};
+  return getCollection().find(filter).toArray();
 }
 
 export async function deleteAgent(agentId: string): Promise<boolean> {

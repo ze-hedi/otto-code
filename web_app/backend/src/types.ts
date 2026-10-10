@@ -38,3 +38,12 @@ export interface AgentDocument {
   created_at: Date;
   updated_at: Date;
 }
+
+export interface ProjectDocument {
+  project_id: string;
+  name: string;
+  path: string;
+  description?: string;
+  created_at: Date;
+  updated_at: Date;
+}

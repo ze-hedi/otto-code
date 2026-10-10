@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { WorkflowChatPanel } from './WorkflowChatPanel';
 import './WorkflowPage.css';
 
@@ -100,6 +100,7 @@ function generateId() {
 
 export function WorkflowPage() {
   const navigate = useNavigate();
+  const { projectId } = useParams<{ projectId: string }>();
 
   const [agents, setAgents] = useState<AgentItem[]>([]);
   const [nodes, setNodes] = useState<WorkflowNode[]>([]);
@@ -108,21 +109,39 @@ export function WorkflowPage() {
   const [errorPopup, setErrorPopup] = useState<string | null>(null);
   const [compiled, setCompiled] = useState(false);
   const [chatAgentId, setChatAgentId] = useState<string | null>(null);
+  const [projectPath, setProjectPath] = useState<string | undefined>(undefined);
 
-  // Build AgentsStorage on backend and fetch agent configs for sidebar
+  // Load project path, then build AgentsStorage filtered by playground
   useEffect(() => {
-    fetch('http://localhost:4000/workflows/agents', { method: 'POST' })
-      .then(res => res.json())
-      .then((list: any[]) => {
-        setAgents(list.map(a => ({
-          id: a.id,
-          name: a.name,
-          icon: '\u{1F916}',
-          model: a.model,
-        })));
+    const load = async () => {
+      let playground: string | undefined;
+      if (projectId) {
+        try {
+          const res = await fetch('http://localhost:4000/projects');
+          const projects: { project_id: string; path: string }[] = res.ok ? await res.json() : [];
+          const found = projects.find(p => p.project_id === projectId);
+          playground = found?.path;
+          setProjectPath(playground);
+        } catch {}
+      }
+      fetch('http://localhost:4000/workflows/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(playground ? { playground } : {}),
       })
-      .catch(err => console.error('Failed to fetch agents:', err));
-  }, []);
+        .then(res => res.json())
+        .then((list: any[]) => {
+          setAgents(list.map(a => ({
+            id: a.id,
+            name: a.name,
+            icon: '\u{1F916}',
+            model: a.model,
+          })));
+        })
+        .catch(err => console.error('Failed to fetch agents:', err));
+    };
+    load();
+  }, [projectId]);
 
   // Viewport pan & zoom
   const [view, setView] = useState({ x: 0, y: 0, scale: 1 });
@@ -360,7 +379,7 @@ export function WorkflowPage() {
     <div className="wf-page">
       {/* Header */}
       <div className="wf-header">
-        <button className="wf-header-btn" onClick={() => navigate('/')}>&#8592; Back</button>
+        <button className="wf-header-btn" onClick={() => navigate(projectId ? `/projects/${projectId}` : '/')}>&#8592; Back</button>
         <span className="wf-header-title">Workflow Builder</span>
         <div className="wf-header-actions">
           <button className="wf-header-btn" onClick={compileWorkflow}>

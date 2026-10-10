@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import './CreateAgentForm.css'
 
 const MODELS = [
@@ -33,6 +33,8 @@ interface SubAgentEntry {
 }
 
 export function CreateAgentForm() {
+  const { projectId } = useParams<{ projectId: string }>()
+  const navigate = useNavigate()
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [model, setModel] = useState(MODELS[0])
@@ -40,6 +42,7 @@ export function CreateAgentForm() {
   const [systemPrompt, setSystemPrompt] = useState('')
   const [thinkingLevel, setThinkingLevel] = useState<string>('off')
   const [playground, setPlayground] = useState('')
+  const [projectPath, setProjectPath] = useState<string | null>(null)
   const [selectedTools, setSelectedTools] = useState<string[]>(['read', 'bash', 'edit', 'write'])
   const [mcpServers, setMcpServers] = useState<McpEntry[]>([])
   const [subAgents, setSubAgents] = useState<SubAgentEntry[]>([])
@@ -49,6 +52,20 @@ export function CreateAgentForm() {
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<{ agent_id: string } | null>(null)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!projectId) return
+    fetch('http://localhost:4000/projects')
+      .then(r => r.ok ? r.json() : [])
+      .then((projects: { project_id: string; path: string }[]) => {
+        const found = projects.find(p => p.project_id === projectId)
+        if (found) {
+          setProjectPath(found.path)
+          setPlayground(found.path)
+        }
+      })
+      .catch(() => {})
+  }, [projectId])
 
   const toggleTool = (tool: string) => {
     setSelectedTools(prev =>
@@ -161,6 +178,9 @@ export function CreateAgentForm() {
       }
       const data = await res.json()
       setResult(data)
+      if (projectId) {
+        navigate(`/projects/${projectId}/chat/${data.agent_id}`)
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to create agent')
     } finally {
@@ -171,7 +191,14 @@ export function CreateAgentForm() {
   return (
     <div className="form-container">
       <div className="form-header">
-        <Link to="/" className="form-back-link">&larr; Back to Agents</Link>
+        <button
+          type="button"
+          className="form-back-link"
+          onClick={() => navigate(projectId ? `/projects/${projectId}/agents` : '/')}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+        >
+          &larr; Back to Agents
+        </button>
         <h1>Create Agent</h1>
         <p className="form-subtitle">Configure a new RawPiAgent instance</p>
       </div>
@@ -242,9 +269,14 @@ export function CreateAgentForm() {
             type="text"
             placeholder="/path/to/repo"
             value={playground}
-            onChange={e => setPlayground(e.target.value)}
+            onChange={e => !projectPath && setPlayground(e.target.value)}
             className="mono"
+            readOnly={!!projectPath}
+            style={projectPath ? { opacity: 0.6, cursor: 'not-allowed' } : undefined}
           />
+          {projectPath && (
+            <p className="field-hint">Locked to the project playground directory.</p>
+          )}
         </div>
 
         {/* Thinking Level */}
@@ -472,12 +504,6 @@ export function CreateAgentForm() {
 
         {/* Result / Error */}
         {error && <div className="message error">{error}</div>}
-        {result && (
-          <div className="message success">
-            Agent created — <code>{result.agent_id}</code>
-            <Link to={`/chat/${result.agent_id}`} className="chat-link">Open Chat</Link>
-          </div>
-        )}
       </form>
     </div>
   )

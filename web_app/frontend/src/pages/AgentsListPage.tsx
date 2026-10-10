@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import './AgentsListPage.css'
 
 interface AgentDoc {
@@ -13,7 +13,14 @@ interface AgentDoc {
     model: string
     builtInTools?: string[]
     thinkingLevel?: string
+    playground?: string
   }
+}
+
+interface ProjectDoc {
+  project_id: string
+  name: string
+  path: string
 }
 
 interface SessionInfo {
@@ -43,7 +50,9 @@ function formatBytes(bytes: number): string {
 }
 
 export function AgentsListPage() {
+  const { projectId } = useParams<{ projectId: string }>()
   const [agents, setAgents] = useState<AgentDoc[]>([])
+  const [project, setProject] = useState<ProjectDoc | null>(null)
   const [loading, setLoading] = useState(true)
   const [popup, setPopup] = useState<{ agentId: string; agentName: string } | null>(null)
   const [sessions, setSessions] = useState<SessionInfo[]>([])
@@ -52,12 +61,25 @@ export function AgentsListPage() {
   const navigate = useNavigate()
 
   useEffect(() => {
-    fetch('http://localhost:4000/agents')
-      .then(r => r.ok ? r.json() : [])
-      .then(data => setAgents(data))
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [])
+    const loadData = async () => {
+      try {
+        // Load project info to get playground path
+        const projectsRes = await fetch('http://localhost:4000/projects')
+        const projects: ProjectDoc[] = projectsRes.ok ? await projectsRes.json() : []
+        const found = projects.find(p => p.project_id === projectId) ?? null
+        setProject(found)
+
+        // Load agents filtered by playground
+        const url = found
+          ? `http://localhost:4000/agents?playground=${encodeURIComponent(found.path)}`
+          : `http://localhost:4000/agents`
+        const agentsRes = await fetch(url)
+        setAgents(agentsRes.ok ? await agentsRes.json() : [])
+      } catch {}
+      setLoading(false)
+    }
+    loadData()
+  }, [projectId])
 
   const handleDelete = async (e: React.MouseEvent, agentId: string) => {
     e.stopPropagation()
@@ -93,12 +115,12 @@ export function AgentsListPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ filename }),
     })
-    navigate(`/chat/${agentId}`)
+    navigate(`/projects/${projectId}/chat/${agentId}`)
   }
 
   const newChatAndNavigate = async (agentId: string) => {
     await fetch(`http://localhost:4000/agents/${agentId}/new-session`, { method: 'POST' })
-    navigate(`/chat/${agentId}`)
+    navigate(`/projects/${projectId}/chat/${agentId}`)
   }
 
   const deleteSession = async (e: React.MouseEvent, agentId: string, sessionKey: string) => {
@@ -115,12 +137,18 @@ export function AgentsListPage() {
     <div className="agents-page">
       <div className="agents-header">
         <div className="agents-header-text">
+          <button className="agents-back-link" onClick={() => navigate(`/projects/${projectId}`)}>
+            &larr; {project?.name ?? 'Project'}
+          </button>
           <h1>Agents</h1>
           <p>Your active and past agent sessions</p>
         </div>
-        <Link to="/create" className="create-btn">
+        <button
+          className="create-btn"
+          onClick={() => navigate(`/projects/${projectId}/create`)}
+        >
           + New Agent
-        </Link>
+        </button>
       </div>
 
       <div className="agents-grid">
@@ -130,7 +158,14 @@ export function AgentsListPage() {
 
         {!loading && agents.length === 0 && (
           <div className="agents-empty">
-            No agents yet. <Link to="/create">Create your first agent</Link> to get started.
+            No agents yet.{' '}
+            <button
+              className="link-btn"
+              onClick={() => navigate(`/projects/${projectId}/create`)}
+            >
+              Create your first agent
+            </button>{' '}
+            to get started.
           </div>
         )}
 
@@ -190,7 +225,7 @@ export function AgentsListPage() {
               {popupBusy && (
                 <div
                   className="popup-busy"
-                  onClick={() => navigate(`/chat/${popup.agentId}`)}
+                  onClick={() => navigate(`/projects/${projectId}/chat/${popup.agentId}`)}
                 >
                   <span className="busy-spinner" />
                   <span>Agent is working...</span>

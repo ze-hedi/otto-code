@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import Markdown from 'react-markdown'
 import './ChatPage.css'
 
@@ -201,7 +201,8 @@ async function processSSEStream(
 }
 
 export function ChatPage() {
-  const { agentId } = useParams<{ agentId: string }>()
+  const { agentId, projectId } = useParams<{ agentId: string; projectId: string }>()
+  const navigate = useNavigate()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
@@ -422,7 +423,13 @@ export function ChatPage() {
     <div className="chat-container">
       <div className="chat-header">
         <div className="header-inner">
-          <Link to="/" className="back-link">← Back</Link>
+          <button
+            className="back-link"
+            onClick={() => navigate(projectId ? `/projects/${projectId}/agents` : '/')}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+          >
+            ← Back
+          </button>
           <div className="chat-title">
             <h2>{agentConfig?.name || 'Chat'}</h2>
             <span className="agent-id">{agentId?.slice(0, 8)}...</span>
