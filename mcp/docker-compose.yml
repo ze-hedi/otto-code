@@ -29,9 +29,13 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-      start_period: 5s
+      start_period: 10s
     depends_on:
       tavily:
+        condition: service_started
+      project-dashboard:
+        condition: service_started
+      github-mcp:
         condition: service_started
     networks:
       mcp-net:
@@ -46,6 +50,25 @@ services:
     networks:
       mcp-net:
         ipv4_address: 172.28.0.20
+    restart: unless-stopped
+
+  project-dashboard:
+    build: ./servers/project-dashboard
+    environment:
+      PYTHONUNBUFFERED: "1"
+    networks:
+      mcp-net:
+        ipv4_address: 172.28.0.21
+    restart: unless-stopped
+
+  github-mcp:
+    build:
+      context: /home/bouchehdahed/github-mcp-server
+    command: ["github-mcp-server", "http", "--port", "8082"]
+    env_file: .env
+    networks:
+      mcp-net:
+        ipv4_address: 172.28.0.30
     restart: unless-stopped
 
 networks:
