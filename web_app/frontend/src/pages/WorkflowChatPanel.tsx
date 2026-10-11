@@ -251,10 +251,10 @@ export function WorkflowChatPanel({ agentId, agentName, allAgents, onSelectAgent
 
   async function handleToolApproval(targetAgentId: string, toolCallId: string, approve: boolean, comment?: string) {
     const endpoint = approve ? 'tool-approve' : 'tool-reject'
-    const body: any = { toolCallId }
+    const body: any = { agentId: targetAgentId, toolCallId }
     if (!approve && comment) body.comment = comment
     try {
-      await fetch(`http://localhost:4000/agents/${targetAgentId}/${endpoint}`, {
+      await fetch(`http://localhost:4000/workflows/${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),

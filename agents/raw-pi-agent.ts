@@ -97,12 +97,21 @@ export class RawPiAgent extends PiAgent {
 
     // MCP tools — connect to all configured servers and inject their tools
     const mcpResults = await this.connectAllMcp();
-    for (const [serverName, toolNames] of mcpResults) {
+    for (const [_serverName, toolNames] of mcpResults) {
       for (const toolName of toolNames) {
         const def = this.toolDefinitions.get(toolName);
         if (def) {
           lines.push(`## ${def.name}`);
           lines.push(def.description);
+          if (def.promptSnippet) {
+            lines.push(def.promptSnippet);
+          }
+          if (def.promptGuidelines?.length) {
+            lines.push("Guidelines:");
+            for (const g of def.promptGuidelines) {
+              lines.push(`- ${g}`);
+            }
+          }
           lines.push("");
         }
       }

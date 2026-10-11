@@ -11,7 +11,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { Type } from "typebox";
-import type { McpBridge, McpToolEntry } from "../mcp-bridge.js";
+import type { McpBridge, McpToolEntry } from "./mcp-bridge.js";
 import {
   AuthStorage,
   createAgentSession,
@@ -256,15 +256,54 @@ export class PiAgent {
 
   // ── MCP Tool Definition ────────────────────────────────────────────────────
 
+  /**
+   * Parse an optional `---pi-agent---` block from an MCP tool description.
+   * The block is stripped from the visible description; its fields are returned separately.
+   *
+   * Format (appended at the end of the docstring):
+   *
+   *   ---pi-agent---
+   *   snippet: <one-line prompt snippet>
+   *   guidelines:
+   *     - <guideline 1>
+   *     - <guideline 2>
+   *   ---
+   */
+  private _parseMcpDescription(raw: string): {
+    description: string;
+    promptSnippet?: string;
+    promptGuidelines?: string[];
+  } {
+    const BLOCK_RE = /\n?---pi-agent---([\s\S]*?)---\s*$/;
+    const match = raw.match(BLOCK_RE);
+    if (!match) return { description: raw.trim() };
+
+    const description = raw.slice(0, match.index).trim();
+    const block = match[1];
+
+    const snippetMatch = block.match(/^[ \t]*snippet:[ \t]*(.+)$/m);
+    const promptSnippet = snippetMatch ? snippetMatch[1].trim() : undefined;
+
+    const guidelinesMatch = block.match(/guidelines:\s*((?:\n[ \t]*-[ \t]*.+)+)/);
+    const promptGuidelines = guidelinesMatch
+      ? guidelinesMatch[1].match(/(?:^|\n)[ \t]*-[ \t]*(.+)/g)!
+          .map((l) => l.replace(/^[\n\r\s]*-\s*/, "").trim())
+      : undefined;
+
+    return { description, promptSnippet, promptGuidelines };
+  }
+
   private _createMcpToolDefinition(mcpTool: McpToolEntry, serverName: string): ToolDefinition {
     // Capture `this` so the execute closure can look up the bridge at call time
     const agent = this;
+    const { description, promptSnippet, promptGuidelines } = this._parseMcpDescription(mcpTool.description ?? "");
     return {
       name: mcpTool.name,
       label: mcpTool.name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
-      description: mcpTool.description,
+      description,
       parameters: Type.Unsafe(mcpTool.inputSchema),
-      promptSnippet: `${mcpTool.name}: ${mcpTool.description}`,
+      promptSnippet: promptSnippet ?? `${mcpTool.name}: ${description}`,
+      promptGuidelines,
       executionMode: "sequential",
 
       async execute(toolCallId, params, signal) {
@@ -572,7 +611,7 @@ export class PiAgent {
     // Store/update the endpoint mapping
     this._mcpServers.set(serverName, url);
 
-    const { createMcpBridge } = await import("../mcp-bridge.js");
+    const { createMcpBridge } = await import("./mcp-bridge.js");
     const bridge = await createMcpBridge(url, this._mcpConnectionTimeout);
     this._mcpBridges.set(serverName, bridge);
 

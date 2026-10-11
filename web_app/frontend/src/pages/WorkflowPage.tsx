@@ -108,6 +108,7 @@ export function WorkflowPage() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [errorPopup, setErrorPopup] = useState<string | null>(null);
   const [compiled, setCompiled] = useState(false);
+  const [showGuardrailsModal, setShowGuardrailsModal] = useState(false);
   const [chatAgentId, setChatAgentId] = useState<string | null>(null);
   const [projectPath, setProjectPath] = useState<string | undefined>(undefined);
 
@@ -328,7 +329,8 @@ export function WorkflowPage() {
     if (selectedNodeId === id) setSelectedNodeId(null);
   }
 
-  async function compileWorkflow() {
+  async function compileWorkflow(guardrailsOnInterfaces: boolean) {
+    setShowGuardrailsModal(false);
     const workflowInput = {
       components: nodes.map(n => ({
         id: n.agentId,
@@ -346,6 +348,7 @@ export function WorkflowPage() {
           toSide: c.toSide,
         };
       }),
+      guardrailsOnInterfaces,
     };
     console.log('workflowInput', workflowInput);
 
@@ -382,7 +385,7 @@ export function WorkflowPage() {
         <button className="wf-header-btn" onClick={() => navigate(projectId ? `/projects/${projectId}` : '/')}>&#8592; Back</button>
         <span className="wf-header-title">Workflow Builder</span>
         <div className="wf-header-actions">
-          <button className="wf-header-btn" onClick={compileWorkflow}>
+          <button className="wf-header-btn" onClick={() => setShowGuardrailsModal(true)}>
             Compile
           </button>
           <button
@@ -521,6 +524,29 @@ export function WorkflowPage() {
           />
         )}
       </div>
+
+      {/* Guardrails compile modal */}
+      {showGuardrailsModal && (
+        <div className="wf-error-overlay" onClick={() => setShowGuardrailsModal(false)}>
+          <div className="wf-error-popup" onClick={e => e.stopPropagation()}>
+            <div className="wf-error-header">
+              <span>Compile Workflow</span>
+              <button className="wf-error-close" onClick={() => setShowGuardrailsModal(false)}>✕</button>
+            </div>
+            <div className="wf-error-body">
+              <p>Enable human-in-the-loop guardrails on interface transitions?</p>
+              <p style={{ fontSize: '0.85em', color: '#888', marginTop: 6 }}>
+                When enabled, the agent will pause and wait for your approval before
+                passing control to the next node in the workflow.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', padding: '0 16px 16px' }}>
+              <button className="wf-header-btn" onClick={() => compileWorkflow(false)}>No</button>
+              <button className="wf-header-btn" onClick={() => compileWorkflow(true)}>Yes</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Error popup */}
       {errorPopup && (

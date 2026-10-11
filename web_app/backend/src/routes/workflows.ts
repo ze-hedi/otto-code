@@ -64,7 +64,7 @@ router.post("/compile", async (req, res) => {
       return;
     }
 
-    const schema: WorkflowSchema = req.body;
+    const { guardrailsOnInterfaces, ...schema } = req.body as WorkflowSchema & { guardrailsOnInterfaces?: boolean };
 
     if (!schema.components || !schema.connections) {
       res.status(400).json({ error: "components and connections are required" });
@@ -72,6 +72,7 @@ router.post("/compile", async (req, res) => {
     }
 
     console.log("[compile] Received workflow schema:", JSON.stringify(schema, null, 2));
+    console.log("[compile] guardrailsOnInterfaces:", guardrailsOnInterfaces ?? false);
 
     const validationErrors = validateInterfaceRules(schema);
     if (validationErrors.length > 0) {
@@ -85,7 +86,7 @@ router.post("/compile", async (req, res) => {
 
     // Build the Workflow object and its execution queue
     currentWorkflow = new Workflow(schema, currentAgentsStorage, currentInterfaceStorage);
-    currentWorkflow.buildExecutionQueue();
+    currentWorkflow.buildExecutionQueue(guardrailsOnInterfaces ?? false);
     console.log("[compile] Workflow built and execution queue ready");
 
     const executionQueue = currentWorkflow.executionQueue;
@@ -141,8 +142,17 @@ router.post("/run", async (req, res) => {
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders();
 
+  let closed = false;
+  res.on("close", () => {
+    closed = true;
+    console.log("[workflow/run] client disconnected — aborting all active agents");
+    for (const agent of currentWorkflow!.getAvailableAgents()) {
+      agent.abort().catch(() => {});
+    }
+  });
+
   const send = (payload: object) => {
-    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    if (!closed) res.write(`data: ${JSON.stringify(payload)}\n\n`);
   };
 
   const sendEvent = (agentId: string, event: any) => {
@@ -150,6 +160,19 @@ router.post("/run", async (req, res) => {
       send({ ...payload, agentId });
     });
   };
+
+  // Wire tool approval callbacks so the frontend can approve/reject interface tool calls
+  for (const level of currentWorkflow.executionQueue.levels) {
+    for (const node of level) {
+      const agent = currentWorkflow.getAgentById(node.id);
+      if (agent) {
+        const nodeId = node.id;
+        agent.onToolApprovalRequired((toolCallId, toolName, args) => {
+          send({ type: "tool_approval_required", agentId: nodeId, toolCallId, name: toolName, args });
+        });
+      }
+    }
+  }
 
   try {
     console.log(`[workflow/run] Starting workflow with message: "${message.slice(0, 100)}..."`);
@@ -162,6 +185,54 @@ router.post("/run", async (req, res) => {
   } finally {
     res.end();
   }
+});
+
+/**
+ * POST /workflows/tool-approve
+ * Body: { agentId: string, toolCallId: string }
+ * Approves a pending interface tool call on a workflow agent.
+ */
+router.post("/tool-approve", (req, res) => {
+  if (!currentWorkflow) {
+    res.status(400).json({ error: "No compiled workflow" });
+    return;
+  }
+  const { agentId, toolCallId } = req.body as { agentId?: string; toolCallId?: string };
+  if (!agentId || !toolCallId) {
+    res.status(400).json({ error: "agentId and toolCallId are required" });
+    return;
+  }
+  const agent = currentWorkflow.getAgentById(agentId);
+  if (!agent) {
+    res.status(404).json({ error: `No workflow agent found with id "${agentId}"` });
+    return;
+  }
+  agent.approveToolCall(toolCallId);
+  res.json({ success: true });
+});
+
+/**
+ * POST /workflows/tool-reject
+ * Body: { agentId: string, toolCallId: string, comment?: string }
+ * Rejects a pending interface tool call on a workflow agent.
+ */
+router.post("/tool-reject", (req, res) => {
+  if (!currentWorkflow) {
+    res.status(400).json({ error: "No compiled workflow" });
+    return;
+  }
+  const { agentId, toolCallId, comment } = req.body as { agentId?: string; toolCallId?: string; comment?: string };
+  if (!agentId || !toolCallId) {
+    res.status(400).json({ error: "agentId and toolCallId are required" });
+    return;
+  }
+  const agent = currentWorkflow.getAgentById(agentId);
+  if (!agent) {
+    res.status(404).json({ error: `No workflow agent found with id "${agentId}"` });
+    return;
+  }
+  agent.rejectToolCall(toolCallId, comment);
+  res.json({ success: true });
 });
 
 export default router;

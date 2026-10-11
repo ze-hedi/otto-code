@@ -3,7 +3,7 @@ import { Type } from "@sinclair/typebox";
 import { createInterface } from "readline";
 import { RawPiAgent } from "./raw-pi-agent.js";
 import { Meeting } from "./meeting.js";
-import { createMcpBridge, type McpBridge } from "../mcp-bridge.js";
+import { createMcpBridge, type McpBridge } from "./mcp-bridge.js";
 import type { RawPiAgentConfig } from "./pi-agent-configs.js";
 import type { EventCallback, ToolInput } from "./pi-agent-types.js";
 

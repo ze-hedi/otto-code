@@ -45,18 +45,18 @@ export class Workflow {
 
     public get executionQueue(): ExecutionQueueResult { return this.ExecutionQueue_ ; }
 
-    //this ethod will allow building the underlying agent objects 
-    public buildWorfklowAgents(): void 
+    //this ethod will allow building the underlying agent objects
+    public buildWorfklowAgents(guardrailsOnInterfaces: boolean = false): void
     {
         for (const node of this.components_) {
             if (node.type === NodeType.agent) {
                 console.log(`agent to build : ${node.id}`)
-                let links : AgentInterface[] = []; 
-                let successors = this.ExecutionQueue_.successors.get(node.id) ; 
-                let predecessors = this.ExecutionQueue_.predecessors.get(node.id) ; 
+                let links : AgentInterface[] = [];
+                let successors = this.ExecutionQueue_.successors.get(node.id) ;
+                let predecessors = this.ExecutionQueue_.predecessors.get(node.id) ;
                 console.log(`node causing issue : ${node.id}`)
-                let agentConfig = this.agentsStorage_?.getAgentByID(node.id) ; 
-                let promptSuffix : string ; 
+                let agentConfig = this.agentsStorage_?.getAgentByID(node.id) ;
+                let promptSuffix : string ;
                 if (successors)
                     for (const succ of successors) {
                         if (succ.type === NodeType.interface) {
@@ -74,24 +74,27 @@ export class Workflow {
                             links.push(link) ;
                         }
                     }
-                if (predecessors) 
+                if (predecessors)
                     for (const pred of predecessors) {
                           if (pred.type === NodeType.interface) {
                             const link = this.interfaceStorage_?.getInterfaceByID(pred.id) ;
-                            const promptSuffix = link.getOutputPromptSuffix() ; 
-                            if (promptSuffix) 
-                                agentConfig.systemPrompt += "\n" + promptSuffix  ; 
-                            
+                            const promptSuffix = link.getOutputPromptSuffix() ;
+                            if (promptSuffix)
+                                agentConfig.systemPrompt += "\n" + promptSuffix  ;
+
                         }
 
                 }
-                    
-                
+
+
                     if (agentConfig) {
-                        agentConfig.interfaceTools = links ; 
-                        const agent = new RawPiAgent(agentConfig) ; 
-                        console.log(`built ${node.id} agent successfuly !! `) ; 
-                        this.agents_.set(node.id,agent) ; 
+                        agentConfig.interfaceTools = links ;
+                        if (guardrailsOnInterfaces && links.length > 0) {
+                            agentConfig.toolCallGuardrails = links.map(l => l.getTool().name) ;
+                        }
+                        const agent = new RawPiAgent(agentConfig) ;
+                        console.log(`built ${node.id} agent successfuly !! `) ;
+                        this.agents_.set(node.id,agent) ;
                     }
             }
         }
@@ -109,6 +112,7 @@ export class Workflow {
     // }
     //This method will be called to build the execution queue based on the Kahn Algorithm
     public buildExecutionQueue(
+        guardrailsOnInterfaces: boolean = false,
         nodes: WorkflowNode[] = this.components_,
         connections: WorkflowEdge[] = this.connections_,
     ) {
@@ -189,8 +193,8 @@ export class Workflow {
             }
 
         }
-            console.log("~~~~~~~~~~~~ started bbuilding the underlying agent ")  ; 
-            this.buildWorfklowAgents() ; 
+            console.log("~~~~~~~~~~~~ started bbuilding the underlying agent ")  ;
+            this.buildWorfklowAgents(guardrailsOnInterfaces) ;
          
         }
         
