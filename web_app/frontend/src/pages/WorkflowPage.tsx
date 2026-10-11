@@ -112,7 +112,27 @@ export function WorkflowPage() {
   const [chatAgentId, setChatAgentId] = useState<string | null>(null);
   const [projectPath, setProjectPath] = useState<string | undefined>(undefined);
 
-  // Load project path, then build AgentsStorage filtered by playground
+  // Workflow persistence state
+  const [workflowId, setWorkflowId] = useState<string | null>(null);
+  const [workflowName, setWorkflowName] = useState<string>('');
+  const [showWorkflowModal, setShowWorkflowModal] = useState(false);
+  const [workflowModalTab, setWorkflowModalTab] = useState<'new' | 'load'>('load');
+  const [savedWorkflows, setSavedWorkflows] = useState<{ workflow_id: string; name: string; description?: string; updated_at: string }[]>([]);
+  const [newWfName, setNewWfName] = useState('');
+  const [newWfDesc, setNewWfDesc] = useState('');
+
+  const localStorageKey = `otto-active-workflow-${projectId ?? 'default'}`;
+
+  // Persist active workflowId to localStorage whenever it changes
+  useEffect(() => {
+    if (workflowId) {
+      localStorage.setItem(localStorageKey, workflowId);
+    } else {
+      localStorage.removeItem(localStorageKey);
+    }
+  }, [workflowId]);
+
+  // Load project path, build AgentsStorage, then restore active workflow if any
   useEffect(() => {
     const load = async () => {
       let playground: string | undefined;
@@ -125,21 +145,66 @@ export function WorkflowPage() {
           setProjectPath(playground);
         } catch {}
       }
-      fetch('http://localhost:4000/workflows/agents', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(playground ? { playground } : {}),
-      })
-        .then(res => res.json())
-        .then((list: any[]) => {
-          setAgents(list.map(a => ({
-            id: a.id,
-            name: a.name,
-            icon: '\u{1F916}',
-            model: a.model,
-          })));
-        })
-        .catch(err => console.error('Failed to fetch agents:', err));
+
+      let loadedAgents: AgentItem[] = [];
+      try {
+        const res = await fetch('http://localhost:4000/workflows/agents', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(playground ? { playground } : {}),
+        });
+        const list: any[] = res.ok ? await res.json() : [];
+        loadedAgents = list.map(a => ({
+          id: a.id,
+          name: a.name,
+          icon: '\u{1F916}',
+          model: a.model,
+        }));
+        setAgents(loadedAgents);
+      } catch (err) {
+        console.error('Failed to fetch agents:', err);
+      }
+
+      // Restore active workflow from localStorage
+      const savedId = localStorage.getItem(localStorageKey);
+      if (savedId) {
+        try {
+          const res = await fetch(`http://localhost:4000/workflow-store/${savedId}`);
+          if (res.ok) {
+            const wf = await res.json();
+            // loadWorkflow needs agents in state — pass them directly
+            const components: { id: string; type: string; x: number; y: number }[] = wf.schema?.components ?? [];
+            const conns: { from: string; fromSide: string; to: string; toSide: string }[] = wf.schema?.connections ?? [];
+
+            const restoredNodes: WorkflowNode[] = components.map(c => {
+              if (c.type === 'interface') {
+                const iface = INTERFACES.find(i => i.id === c.id);
+                return { id: generateId(), type: 'interface' as const, x: c.x, y: c.y, agentId: c.id, agentName: iface?.name ?? c.id, agentIcon: iface?.icon ?? '⬡' };
+              }
+              const agentItem = loadedAgents.find(a => a.id === c.id);
+              return { id: generateId(), type: 'agent' as const, x: c.x, y: c.y, agentId: c.id, agentName: agentItem?.name ?? c.id, agentIcon: agentItem?.icon ?? '\u{1F916}' };
+            });
+
+            const agentIdToNodeId = new Map(restoredNodes.map(n => [n.agentId, n.id]));
+            const restoredConns: Connection[] = conns.map(c => ({
+              from: agentIdToNodeId.get(c.from) ?? c.from,
+              fromSide: c.fromSide as HandleSide,
+              to: agentIdToNodeId.get(c.to) ?? c.to,
+              toSide: c.toSide as HandleSide,
+            }));
+
+            setNodes(restoredNodes);
+            setConnections(restoredConns);
+            setWorkflowId(wf.workflow_id);
+            setWorkflowName(wf.name);
+            setTimeout(() => setShowGuardrailsModal(true), 50);
+          } else {
+            localStorage.removeItem(localStorageKey);
+          }
+        } catch {
+          localStorage.removeItem(localStorageKey);
+        }
+      }
     };
     load();
   }, [projectId]);
@@ -329,9 +394,110 @@ export function WorkflowPage() {
     if (selectedNodeId === id) setSelectedNodeId(null);
   }
 
-  async function compileWorkflow(guardrailsOnInterfaces: boolean) {
-    setShowGuardrailsModal(false);
-    const workflowInput = {
+  async function fetchSavedWorkflows() {
+    try {
+      const url = projectPath
+        ? `http://localhost:4000/workflow-store?playground=${encodeURIComponent(projectPath)}`
+        : 'http://localhost:4000/workflow-store';
+      const res = await fetch(url);
+      if (res.ok) setSavedWorkflows(await res.json());
+    } catch {}
+  }
+
+  async function createNewWorkflow() {
+    if (!newWfName.trim()) return;
+    const schema = buildSchema();
+    try {
+      const res = await fetch('http://localhost:4000/workflow-store', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newWfName.trim(),
+          description: newWfDesc.trim() || undefined,
+          playground: projectPath,
+          schema,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setWorkflowId(data.workflow_id);
+        setWorkflowName(newWfName.trim());
+        setNewWfName('');
+        setNewWfDesc('');
+        setShowWorkflowModal(false);
+      } else {
+        setErrorPopup(data.error ?? 'Failed to save workflow');
+      }
+    } catch (err: any) {
+      setErrorPopup(err?.message ?? 'Network error');
+    }
+  }
+
+  async function loadWorkflow(wf: { workflow_id: string; name: string; schema?: any }) {
+    let schema = wf.schema;
+    if (!schema) {
+      try {
+        const res = await fetch(`http://localhost:4000/workflow-store/${wf.workflow_id}`);
+        const full = await res.json();
+        schema = full.schema;
+      } catch (err: any) {
+        setErrorPopup(err?.message ?? 'Failed to load workflow');
+        return;
+      }
+    }
+    // Restore canvas from saved schema
+    const components: { id: string; type: string; x: number; y: number }[] = schema.components ?? [];
+    const conns: { from: string; fromSide: string; to: string; toSide: string }[] = schema.connections ?? [];
+
+    const restoredNodes: WorkflowNode[] = components.map(c => {
+      if (c.type === 'interface') {
+        const iface = INTERFACES.find(i => i.id === c.id);
+        return {
+          id: generateId(),
+          type: 'interface' as const,
+          x: c.x,
+          y: c.y,
+          agentId: c.id,
+          agentName: iface?.name ?? c.id,
+          agentIcon: iface?.icon ?? '⬡',
+        };
+      } else {
+        const agentItem = agents.find(a => a.id === c.id);
+        return {
+          id: generateId(),
+          type: 'agent' as const,
+          x: c.x,
+          y: c.y,
+          agentId: c.id,
+          agentName: agentItem?.name ?? c.id,
+          agentIcon: agentItem?.icon ?? '\u{1F916}',
+        };
+      }
+    });
+
+    // Map agentId back to node canvas id for connections
+    const agentIdToNodeId = new Map(restoredNodes.map(n => [n.agentId, n.id]));
+    const restoredConns: Connection[] = conns.map(c => ({
+      from: agentIdToNodeId.get(c.from) ?? c.from,
+      fromSide: c.fromSide as HandleSide,
+      to: agentIdToNodeId.get(c.to) ?? c.to,
+      toSide: c.toSide as HandleSide,
+    }));
+
+    setNodes(restoredNodes);
+    setConnections(restoredConns);
+    setWorkflowId(wf.workflow_id);
+    setWorkflowName(wf.name);
+    setCompiled(false);
+    setChatAgentId(null);
+    setShowWorkflowModal(false);
+
+    // Auto-compile: show guardrails modal next tick after state settles
+    setTimeout(() => setShowGuardrailsModal(true), 50);
+  }
+
+  function buildSchema() {
+    return {
       components: nodes.map(n => ({
         id: n.agentId,
         type: n.type,
@@ -348,7 +514,16 @@ export function WorkflowPage() {
           toSide: c.toSide,
         };
       }),
+    };
+  }
+
+  async function compileWorkflow(guardrailsOnInterfaces: boolean) {
+    setShowGuardrailsModal(false);
+    const schema = buildSchema();
+    const workflowInput = {
+      ...schema,
       guardrailsOnInterfaces,
+      ...(workflowId ? { workflowId } : {}),
     };
     console.log('workflowInput', workflowInput);
 
@@ -369,6 +544,14 @@ export function WorkflowPage() {
         // Pick the first agent from the first execution level
         const firstAgentId = data.compiled?.executionLevels?.[0]?.agents?.[0];
         if (firstAgentId) setChatAgentId(firstAgentId);
+        // Sync schema back to store if workflow is already saved
+        if (workflowId) {
+          fetch(`http://localhost:4000/workflow-store/${workflowId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ schema: buildSchema() }),
+          }).catch(() => {});
+        }
       }
     } catch (err: any) {
       console.error('Failed to compile workflow:', err);
@@ -383,14 +566,19 @@ export function WorkflowPage() {
       {/* Header */}
       <div className="wf-header">
         <button className="wf-header-btn" onClick={() => navigate(projectId ? `/projects/${projectId}` : '/')}>&#8592; Back</button>
-        <span className="wf-header-title">Workflow Builder</span>
+        <span className="wf-header-title">
+          Workflow Builder{workflowName ? ` — ${workflowName}` : ''}
+        </span>
         <div className="wf-header-actions">
+          <button className="wf-header-btn" onClick={() => { fetchSavedWorkflows(); setShowWorkflowModal(true); }}>
+            Workflows
+          </button>
           <button className="wf-header-btn" onClick={() => setShowGuardrailsModal(true)}>
             Compile
           </button>
           <button
             className="wf-header-btn"
-            onClick={() => { setNodes([]); setConnections([]); setSelectedNodeId(null); setCompiled(false); setChatAgentId(null); }}
+            onClick={() => { setNodes([]); setConnections([]); setSelectedNodeId(null); setCompiled(false); setChatAgentId(null); setWorkflowId(null); setWorkflowName(''); }}
           >
             Clear
           </button>
@@ -524,6 +712,83 @@ export function WorkflowPage() {
           />
         )}
       </div>
+
+      {/* Workflow selector / create modal */}
+      {showWorkflowModal && (
+        <div className="wf-error-overlay" onClick={() => setShowWorkflowModal(false)}>
+          <div className="wf-error-popup" style={{ width: 420 }} onClick={e => e.stopPropagation()}>
+            <div className="wf-error-header">
+              <span>Workflows</span>
+              <button className="wf-error-close" onClick={() => setShowWorkflowModal(false)}>✕</button>
+            </div>
+            {/* Tabs */}
+            <div style={{ display: 'flex', borderBottom: '1px solid #333', padding: '0 16px' }}>
+              {(['load', 'new'] as const).map(tab => (
+                <button
+                  key={tab}
+                  onClick={() => setWorkflowModalTab(tab)}
+                  style={{
+                    background: 'none', border: 'none', color: workflowModalTab === tab ? 'var(--accent)' : '#888',
+                    borderBottom: workflowModalTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
+                    padding: '8px 14px', cursor: 'pointer', fontSize: '0.9em',
+                  }}
+                >
+                  {tab === 'load' ? 'Load' : 'New'}
+                </button>
+              ))}
+            </div>
+            {workflowModalTab === 'load' ? (
+              <div style={{ padding: '12px 16px', maxHeight: 320, overflowY: 'auto' }}>
+                {savedWorkflows.length === 0 ? (
+                  <p style={{ color: '#888', fontSize: '0.85em' }}>No saved workflows{projectPath ? ' for this project' : ''}.</p>
+                ) : savedWorkflows.map(wf => (
+                  <div
+                    key={wf.workflow_id}
+                    style={{
+                      padding: '10px 12px', marginBottom: 8, borderRadius: 6,
+                      background: '#1a1a1a', cursor: 'pointer', border: '1px solid #333',
+                    }}
+                    onClick={() => loadWorkflow(wf as any)}
+                  >
+                    <div style={{ fontWeight: 600, fontSize: '0.9em' }}>{wf.name}</div>
+                    {wf.description && <div style={{ fontSize: '0.78em', color: '#888', marginTop: 2 }}>{wf.description}</div>}
+                    <div style={{ fontSize: '0.72em', color: '#555', marginTop: 4 }}>
+                      {new Date(wf.updated_at).toLocaleString()}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ padding: '16px' }}>
+                <div style={{ marginBottom: 10 }}>
+                  <label style={{ fontSize: '0.82em', color: '#888', display: 'block', marginBottom: 4 }}>Name *</label>
+                  <input
+                    value={newWfName}
+                    onChange={e => setNewWfName(e.target.value)}
+                    placeholder="My workflow"
+                    style={{ width: '100%', background: '#1a1a1a', border: '1px solid #444', borderRadius: 4, color: '#eee', padding: '6px 8px', fontSize: '0.9em', boxSizing: 'border-box' }}
+                  />
+                </div>
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ fontSize: '0.82em', color: '#888', display: 'block', marginBottom: 4 }}>Description</label>
+                  <textarea
+                    value={newWfDesc}
+                    onChange={e => setNewWfDesc(e.target.value)}
+                    placeholder="Optional description"
+                    rows={3}
+                    style={{ width: '100%', background: '#1a1a1a', border: '1px solid #444', borderRadius: 4, color: '#eee', padding: '6px 8px', fontSize: '0.9em', resize: 'vertical', boxSizing: 'border-box' }}
+                  />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <button className="wf-header-btn" onClick={createNewWorkflow} disabled={!newWfName.trim()}>
+                    Create
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Guardrails compile modal */}
       {showGuardrailsModal && (

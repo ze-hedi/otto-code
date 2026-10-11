@@ -376,7 +376,9 @@ export class PiAgent {
   /** Build a disk-persisted session under `<playground>/.otto-sessions/` and store it under `key`. */
   private async _createSession(key?: string): Promise<AgentSession> {
     const sessionKey = key ?? this._activeSessionKey;
-    const sessionDir = path.join(this.config.playground, ".otto-sessions");
+    const sessionDir = this.config.workflowId
+      ? path.join(this.config.playground, ".otto-sessions", `workflow-${this.config.workflowId}`)
+      : path.join(this.config.playground, ".otto-sessions");
     fs.mkdirSync(sessionDir, { recursive: true });
 
     const safeName = (this._name ?? "agent").replace(/[^a-zA-Z0-9_-]/g, "_");

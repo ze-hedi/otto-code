@@ -39,6 +39,19 @@ export interface AgentDocument {
   updated_at: Date;
 }
 
+export interface WorkflowDocument {
+  workflow_id: string;
+  name: string;
+  description?: string;
+  playground?: string;
+  schema: {
+    components: { id: string; type: string; x: number; y: number }[];
+    connections: { from: string; fromSide: string; to: string; toSide: string }[];
+  };
+  created_at: Date;
+  updated_at: Date;
+}
+
 export interface ProjectDocument {
   project_id: string;
   name: string;

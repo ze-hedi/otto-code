@@ -15,6 +15,7 @@ import cors from "cors";
 import { connectDb } from "./db/mongo.js";
 import agentRoutes from "./routes/agents.js";
 import workflowRoutes from "./routes/workflows.js";
+import workflowStoreRoutes from "./routes/workflow-store.js";
 import projectRoutes from "./routes/projects.js";
 import dashboardRoutes from "./routes/dashboards.js";
 
@@ -24,6 +25,7 @@ app.use(express.json());
 
 app.use("/agents", agentRoutes);
 app.use("/workflows", workflowRoutes);
+app.use("/workflow-store", workflowStoreRoutes);
 app.use("/projects", projectRoutes);
 app.use("/dashboards", dashboardRoutes);
 

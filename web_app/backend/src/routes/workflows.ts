@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import { Router } from "express";
 import { AgentsStorage, InterfaceStorage } from "../../../../agents/workflow-types.js";
 import type { WorkflowSchema } from "../../../../agents/workflow-types.js";
@@ -64,7 +66,7 @@ router.post("/compile", async (req, res) => {
       return;
     }
 
-    const { guardrailsOnInterfaces, ...schema } = req.body as WorkflowSchema & { guardrailsOnInterfaces?: boolean };
+    const { guardrailsOnInterfaces, workflowId, ...schema } = req.body as WorkflowSchema & { guardrailsOnInterfaces?: boolean; workflowId?: string };
 
     if (!schema.components || !schema.connections) {
       res.status(400).json({ error: "components and connections are required" });
@@ -84,9 +86,22 @@ router.post("/compile", async (req, res) => {
     currentInterfaceStorage = await buildInterfaceStorage(schema, currentAgentsStorage);
     console.log("[compile] InterfaceStorage saved globally");
 
+    // Wipe previous session files so agents start fresh on every compile
+    if (workflowId) {
+      const firstConfig = [...currentAgentsStorage.getAll().values()].find(c => c.playground);
+      const playground = firstConfig?.playground;
+      if (playground) {
+        const sessionDir = path.join(playground, ".otto-sessions", `workflow-${workflowId}`);
+        if (fs.existsSync(sessionDir)) {
+          fs.rmSync(sessionDir, { recursive: true, force: true });
+          console.log(`[compile] Wiped session folder: ${sessionDir}`);
+        }
+      }
+    }
+
     // Build the Workflow object and its execution queue
     currentWorkflow = new Workflow(schema, currentAgentsStorage, currentInterfaceStorage);
-    currentWorkflow.buildExecutionQueue(guardrailsOnInterfaces ?? false);
+    currentWorkflow.buildExecutionQueue(guardrailsOnInterfaces ?? false, workflowId);
     console.log("[compile] Workflow built and execution queue ready");
 
     const executionQueue = currentWorkflow.executionQueue;
