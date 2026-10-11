@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import Markdown from 'react-markdown'
 import './ChatPage.css'
+import { SessionStatsPanel } from '../components/SessionStatsPanel'
 
 /* ── Types ─────────────────────────────────────────── */
 
@@ -42,6 +43,7 @@ export function WorkflowChatPanel({ agentId, agentName, allAgents, onSelectAgent
   const [input, setInput] = useState('')
   const [workflowRunning, setWorkflowRunning] = useState(false)
   const [workflowDone, setWorkflowDone] = useState(false)
+  const [showStats, setShowStats] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   // Per-agent parts refs for streaming updates
@@ -346,7 +348,15 @@ export function WorkflowChatPanel({ agentId, agentName, allAgents, onSelectAgent
           ))}
         </div>
         {workflowDone && <span className="wf-done-badge">Workflow complete</span>}
+        <button className="details-btn" onClick={() => setShowStats(true)} title="Session stats">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="18" y1="20" x2="18" y2="10" />
+            <line x1="12" y1="20" x2="12" y2="4" />
+            <line x1="6" y1="20" x2="6" y2="14" />
+          </svg>
+        </button>
       </div>
+      <SessionStatsPanel agentId={agentId} show={showStats} onClose={() => setShowStats(false)} />
 
       {/* Messages for selected agent */}
       <div className="messages-area">
