@@ -1,4 +1,5 @@
 import type { AgentInterface } from "./workflow-interface";
+import type { FileLockRegistry } from "./file-lock";
 import type {
   SkillInput,
   ToolInput,
@@ -27,6 +28,8 @@ export interface PiAgentConfig {
   tools?: ToolInput[];
   /** interfaces tools: when we are on graph mode  */
   interfaceTools?: AgentInterface[]; 
+  /** Set by Workflow only: shared registry preventing concurrent edits of the same file */
+  fileLock?: FileLockRegistry;
   /** Tool names that require user approval before executing (default: [] = no guardrails) */
   toolCallGuardrails?: string[];
   /**
