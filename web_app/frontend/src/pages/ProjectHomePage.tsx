@@ -61,7 +61,7 @@ export function ProjectHomePage() {
 
         <button
           className="project-home-card"
-          onClick={() => navigate(`/projects/${projectId}/workflow`)}
+          onClick={() => navigate(`/projects/${projectId}/workflows`)}
         >
           <div className="project-home-card-icon">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">

@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import { Router } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { saveWorkflow, getWorkflow, getAllWorkflows, updateWorkflow, deleteWorkflow } from "../db/mongo.js";
@@ -93,10 +95,28 @@ router.put("/:id", async (req, res) => {
 
 /**
  * DELETE /workflow-store/:id
+ * Removes the workflow document and the agent sessions it created
+ * (<playground>/.otto-sessions/workflow-<id>/).
  */
 router.delete("/:id", async (req, res) => {
   try {
-    await deleteWorkflow(req.params.id);
+    const id = req.params.id;
+    const doc = await getWorkflow(id);
+    if (!doc) {
+      res.status(404).json({ error: "Workflow not found" });
+      return;
+    }
+
+    if (doc.playground) {
+      const sessionsRoot = path.resolve(doc.playground, ".otto-sessions");
+      const sessionDir = path.resolve(sessionsRoot, `workflow-${doc.workflow_id}`);
+      if (path.dirname(sessionDir) === sessionsRoot && fs.existsSync(sessionDir)) {
+        fs.rmSync(sessionDir, { recursive: true, force: true });
+        console.log(`[workflow-store DELETE] Removed sessions: ${sessionDir}`);
+      }
+    }
+
+    await deleteWorkflow(id);
     res.json({ ok: true });
   } catch (err: any) {
     console.error("[workflow-store DELETE /:id]", err);

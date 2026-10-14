@@ -1,0 +1,193 @@
+.wfl-page {
+  width: 100%;
+  max-width: 900px;
+  padding: 40px 24px;
+}
+
+.wfl-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 32px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.wfl-header-text h1 {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.5px;
+}
+
+.wfl-header-text p {
+  color: var(--text-muted);
+  font-size: 14px;
+  margin-top: 4px;
+}
+
+.wfl-back-link {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 8px;
+  cursor: pointer;
+  padding: 0;
+  font-family: var(--font);
+  transition: color 0.15s;
+}
+
+.wfl-back-link:hover { color: var(--accent); }
+
+.wfl-primary-btn,
+.wfl-secondary-btn,
+.wfl-danger-btn {
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: opacity 0.15s, border-color 0.15s;
+}
+
+.wfl-primary-btn { background: var(--accent); border-color: var(--accent); color: #fff; }
+.wfl-secondary-btn { background: var(--surface); color: var(--text); }
+.wfl-danger-btn { background: #c0392b; border-color: #c0392b; color: #fff; }
+.wfl-primary-btn:disabled,
+.wfl-secondary-btn:disabled,
+.wfl-danger-btn:disabled { opacity: 0.5; cursor: default; }
+
+.wfl-error {
+  background: rgba(192, 57, 43, 0.12);
+  border: 1px solid #c0392b;
+  color: #e74c3c;
+  border-radius: var(--radius-lg);
+  padding: 10px 14px;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+.wfl-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.wfl-empty {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
+  font-size: 14px;
+  text-align: center;
+  padding: 40px 0;
+}
+
+.wfl-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+}
+
+.wfl-card:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.wfl-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wfl-card-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.wfl-card-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.wfl-card-footer {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.wfl-delete-btn {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  font-family: var(--font);
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.wfl-delete-btn:hover { color: #e74c3c; border-color: #e74c3c; }
+
+.wfl-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.wfl-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 22px;
+  width: 420px;
+  max-width: calc(100vw - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wfl-modal h2 { font-size: 17px; color: var(--text); margin-bottom: 4px; }
+.wfl-modal p { font-size: 14px; color: var(--text-muted); line-height: 1.5; }
+.wfl-modal label { font-size: 12px; color: var(--text-muted); }
+
+.wfl-modal input,
+.wfl-modal textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 8px 10px;
+  font-family: var(--font);
+  font-size: 14px;
+  resize: vertical;
+}
+
+.wfl-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+@media (max-width: 640px) {
+  .wfl-grid { grid-template-columns: 1fr; }
+}
