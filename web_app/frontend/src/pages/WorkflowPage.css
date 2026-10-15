@@ -451,6 +451,12 @@
   font-size: 22px;
 }
 
+/* Jev is the LLM node: accent ring so it stands out from the plain interface nodes */
+.wf-jev-node {
+  border-color: var(--accent);
+  background: var(--accent-light);
+}
+
 .wf-iface-node:hover .wf-node-delete {
   display: flex;
 }

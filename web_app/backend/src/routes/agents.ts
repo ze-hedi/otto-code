@@ -5,6 +5,23 @@ import readline from "readline";
 import { createAgent, deleteAgent, getActiveAgent, getOrActivateAgent, getAgentDoc, getAllAgentDocs, getSessionKey, setSessionKey, markBusy, markIdle, getAgentBusyState, getAgentEmitter, setClarificationCallback, resolveClarification } from "../services/agent-manager.js";
 import { handleEventWithClient } from "../../../../agents/pi-agent-utils.js";
 import type { SerializableAgentConfig } from "../types.js";
+import { SleepMode } from "../../../../memory_layer/sleep-mode.js";
+
+function buildSleepMode() {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) throw new Error("DEEPSEEK_API_KEY not set");
+  return new SleepMode({
+    apiKey,
+    llmProvider: "deepseek",
+    llmModel: "deepseek-chat",
+    embedProvider: "ollama",
+    embedModel: process.env.EMBED_MODEL ?? "all-minilm",
+    embedDims: 384,
+    qdrantUrl: process.env.QDRANT_URL ?? "http://localhost:6333",
+    collectionName: "agent-memories",
+    historyDbPath: path.join(process.cwd(), "memory.db"),
+  });
+}
 
 const router = Router();
 

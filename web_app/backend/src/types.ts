@@ -1,3 +1,5 @@
+import type { JevConfig } from "../../../agents/jev-agent-configs.js";
+
 export interface SerializableSubAgentConfig {
   name: string;
   description: string;
@@ -48,6 +50,14 @@ export interface WorkflowDocument {
     components: { id: string; type: string; x: number; y: number }[];
     connections: { from: string; fromSide: string; to: string; toSide: string }[];
   };
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface JevDocument {
+  jev_id: string;
+  /** What the form saved. Same shape as JevConfig, so it can go straight into `new JevAgent(config)`. */
+  config: JevConfig;
   created_at: Date;
   updated_at: Date;
 }

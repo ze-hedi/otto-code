@@ -1,11 +1,15 @@
 import fs from "fs";
 import path from "path";
 import { Router } from "express";
+import { v4 as uuidv4 } from "uuid";
 import { AgentsStorage, InterfaceStorage } from "../../../../agents/workflow-types.js";
 import type { WorkflowSchema } from "../../../../agents/workflow-types.js";
 import { Workflow } from "../../../../agents/workflow.js";
+import type { JevConfig } from "../../../../agents/jev-agent-configs.js";
 import { buildInterfaceStorage, buildAgentsStorage, validateInterfaceRules, runWorkflow } from "../services/workflow-manager.js";
 import { handleEventWithClient } from "../../../../agents/pi-agent-utils.js";
+import { saveJev, getJev, getAllJevs, updateJev, deleteJev } from "../db/mongo.js";
+import type { JevDocument } from "../types.js";
 
 const router = Router();
 
@@ -248,6 +252,115 @@ router.post("/tool-reject", (req, res) => {
   }
   agent.rejectToolCall(toolCallId, comment);
   res.json({ success: true });
+});
+
+// ── Jev (OpenRouter decision node) ───────────────────────────────────────────
+
+/** Keeps only what the Jev form sets: the key and the instructions. */
+function parseJevConfig(body: unknown): JevConfig {
+  const { apiKey, instructions } = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+  const config: JevConfig = {};
+  if (typeof apiKey === "string" && apiKey) config.apiKey = apiKey;
+  if (typeof instructions === "string" && instructions) config.instructions = instructions;
+  return config;
+}
+
+/** What the API returns. The key is write-only: it is stored, never sent back. */
+function jevView({ config: { apiKey, ...config }, ...rest }: JevDocument) {
+  return { ...rest, config, hasApiKey: !!apiKey };
+}
+
+/**
+ * POST /workflows/jev
+ * Body: { apiKey?, instructions? }.
+ * Stores a new Jev in the "jevs" collection. Returns it with its generated jev_id.
+ */
+router.post("/jev", async (req, res) => {
+  try {
+    const doc: JevDocument = {
+      jev_id: uuidv4(),
+      config: parseJevConfig(req.body),
+      created_at: new Date(),
+      updated_at: new Date(),
+    };
+    await saveJev(doc);
+    console.log(`[workflows/jev] created ${doc.jev_id}`);
+    res.status(201).json(jevView(doc));
+  } catch (err: any) {
+    console.error("[workflows/jev POST]", err);
+    res.status(500).json({ error: err?.message ?? String(err) });
+  }
+});
+
+/**
+ * GET /workflows/jev
+ * Lists all Jevs, most recently updated first.
+ */
+router.get("/jev", async (_req, res) => {
+  try {
+    res.json((await getAllJevs()).map(jevView));
+  } catch (err: any) {
+    console.error("[workflows/jev GET /]", err);
+    res.status(500).json({ error: err?.message ?? String(err) });
+  }
+});
+
+/**
+ * GET /workflows/jev/:id
+ * Returns a single Jev by ID.
+ */
+router.get("/jev/:id", async (req, res) => {
+  try {
+    const doc = await getJev(req.params.id);
+    if (!doc) {
+      res.status(404).json({ error: "Jev not found" });
+      return;
+    }
+    res.json(jevView(doc));
+  } catch (err: any) {
+    console.error("[workflows/jev GET /:id]", err);
+    res.status(500).json({ error: err?.message ?? String(err) });
+  }
+});
+
+/**
+ * PUT /workflows/jev/:id
+ * Body: { apiKey?, instructions? }. Replaces the stored config.
+ * An empty or missing apiKey keeps the stored one (the key is never sent back to the form).
+ */
+router.put("/jev/:id", async (req, res) => {
+  try {
+    const existing = await getJev(req.params.id);
+    if (!existing) {
+      res.status(404).json({ error: "Jev not found" });
+      return;
+    }
+    const config = parseJevConfig(req.body);
+    if (!config.apiKey && existing.config.apiKey) config.apiKey = existing.config.apiKey;
+
+    await updateJev(req.params.id, config);
+    res.json(jevView({ ...existing, config, updated_at: new Date() }));
+  } catch (err: any) {
+    console.error("[workflows/jev PUT /:id]", err);
+    res.status(500).json({ error: err?.message ?? String(err) });
+  }
+});
+
+/**
+ * DELETE /workflows/jev/:id
+ * Removes the Jev.
+ */
+router.delete("/jev/:id", async (req, res) => {
+  try {
+    if (!(await deleteJev(req.params.id))) {
+      res.status(404).json({ error: "Jev not found" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error("[workflows/jev DELETE /:id]", err);
+    res.status(500).json({ error: err?.message ?? String(err) });
+  }
 });
 
 export default router;

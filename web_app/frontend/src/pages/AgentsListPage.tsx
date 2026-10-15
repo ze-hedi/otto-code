@@ -31,6 +31,14 @@ interface SessionInfo {
   sizeBytes: number
 }
 
+interface MemoryItem {
+  id: string
+  memory: string
+  createdAt?: string
+  score?: number
+  metadata?: Record<string, any>
+}
+
 function timeAgo(date: string): string {
   const seconds = Math.floor((Date.now() - new Date(date).getTime()) / 1000)
   if (seconds < 60) return 'just now'
@@ -58,6 +66,11 @@ export function AgentsListPage() {
   const [sessions, setSessions] = useState<SessionInfo[]>([])
   const [sessionsLoading, setSessionsLoading] = useState(false)
   const [popupBusy, setPopupBusy] = useState(false)
+  const [memoriesPanel, setMemoriesPanel] = useState<{ sessionKey: string; sessionId: string | null } | null>(null)
+  const [memories, setMemories] = useState<MemoryItem[]>([])
+  const [memoriesLoading, setMemoriesLoading] = useState(false)
+  const [distilling, setDistilling] = useState<string | null>(null) // sessionKey being distilled
+  const [distillError, setDistillError] = useState<{ sessionKey: string; message: string } | null>(null)
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -131,7 +144,47 @@ export function AgentsListPage() {
     }
   }
 
-  const closePopup = () => setPopup(null)
+  const openMemories = async (agentId: string, sessionKey: string, sessionId: string | null) => {
+    setMemoriesPanel({ sessionKey, sessionId })
+    setMemories([])
+    setMemoriesLoading(true)
+    try {
+      const url = sessionId
+        ? `http://localhost:4000/memory/agents/${agentId}/memories?runId=${encodeURIComponent(sessionId)}`
+        : `http://localhost:4000/memory/agents/${agentId}/memories`
+      const res = await fetch(url)
+      if (res.ok) setMemories(await res.json())
+    } catch {}
+    setMemoriesLoading(false)
+  }
+
+  const distillSession = async (agentId: string, sessionKey: string) => {
+    setDistilling(sessionKey)
+    setDistillError(null)
+    try {
+      const res = await fetch(`http://localhost:4000/memory/agents/${agentId}/sessions/${sessionKey}/distill`, { method: 'POST' })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        setDistillError({ sessionKey, message: body.error ?? `Server error ${res.status}` })
+      } else {
+        // success — refresh memories panel if open
+        if (memoriesPanel?.sessionKey === sessionKey) {
+          const s = sessions.find(s => s.sessionKey === sessionKey)
+          await openMemories(agentId, sessionKey, s?.sessionId ?? null)
+        }
+      }
+    } catch (err: any) {
+      setDistillError({ sessionKey, message: err?.message ?? 'Network error — backend unreachable' })
+    }
+    setDistilling(null)
+  }
+
+  const closeMemoriesPanel = () => setMemoriesPanel(null)
+
+  const closePopup = () => {
+    setPopup(null)
+    setMemoriesPanel(null)
+  }
 
   return (
     <div className="agents-page">
@@ -250,27 +303,66 @@ export function AgentsListPage() {
               )}
 
               {sessions.map(s => (
-                <div
-                  key={s.filename}
-                  className="session-row"
-                  onClick={() => loadSessionAndNavigate(popup.agentId, s.filename)}
-                >
-                  <div className="session-row-main">
-                    <span className="session-key">{s.sessionKey}</span>
-                    <span className="session-size">{formatBytes(s.sizeBytes)}</span>
+                <div key={s.filename} className="session-block">
+                  <div className="session-row" onClick={() => loadSessionAndNavigate(popup.agentId, s.filename)}>
+                    <div className="session-row-main">
+                      <span className="session-key">{s.sessionKey}</span>
+                      <span className="session-size">{formatBytes(s.sizeBytes)}</span>
+                    </div>
+                    <div className="session-row-right">
+                      {s.createdAt && <span className="session-time">{timeAgo(s.createdAt)}</span>}
+                      <button
+                        className="session-delete-btn"
+                        onClick={(e) => deleteSession(e, popup.agentId, s.sessionKey)}
+                        title="Delete session"
+                      >
+                        &times;
+                      </button>
+                    </div>
                   </div>
-                  <div className="session-row-right">
-                    {s.createdAt && (
-                      <span className="session-time">{timeAgo(s.createdAt)}</span>
+
+                  <div className="session-memory-bar">
+                    <button
+                      className="memory-distill-btn"
+                      disabled={distilling === s.sessionKey}
+                      onClick={() => distillSession(popup.agentId, s.sessionKey)}
+                      title="Run sleep mode — extract memories from this session"
+                    >
+                      {distilling === s.sessionKey
+                        ? <><span className="busy-spinner" style={{ width: 10, height: 10, borderWidth: 1.5 }} /> Distilling…</>
+                        : <>&#10024; Distill</>
+                      }
+                    </button>
+                    {distillError?.sessionKey === s.sessionKey && (
+                      <span className="distill-error" title={distillError.message}>
+                        ⚠ {distillError.message}
+                      </span>
                     )}
                     <button
-                      className="session-delete-btn"
-                      onClick={(e) => deleteSession(e, popup.agentId, s.sessionKey)}
-                      title="Delete session"
+                      className={`memory-view-btn ${memoriesPanel?.sessionKey === s.sessionKey ? 'open' : ''}`}
+                      onClick={() => memoriesPanel?.sessionKey === s.sessionKey
+                        ? closeMemoriesPanel()
+                        : openMemories(popup.agentId, s.sessionKey, s.sessionId)
+                      }
                     >
-                      &times;
+                      {memoriesPanel?.sessionKey === s.sessionKey ? 'Hide memories' : 'View memories'}
                     </button>
                   </div>
+
+                  {memoriesPanel?.sessionKey === s.sessionKey && (
+                    <div className="memories-panel">
+                      {memoriesLoading && <div className="memories-empty">Loading…</div>}
+                      {!memoriesLoading && memories.length === 0 && (
+                        <div className="memories-empty">No memories yet — click Distill to extract.</div>
+                      )}
+                      {memories.map(m => (
+                        <div key={m.id} className="memory-item">
+                          <span className="memory-text">{m.memory}</span>
+                          {m.createdAt && <span className="memory-date">{timeAgo(m.createdAt)}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

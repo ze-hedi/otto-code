@@ -649,6 +649,48 @@ export class PiAgent {
     return results;
   }
 
+  /**
+   * Connect to a single MCP gateway that aggregates multiple upstream servers.
+   * The gateway prefixes tool names with the upstream server name (e.g. "tavily_search").
+   * Connects once, discovers all tools, then queries /healthz to group them by upstream.
+   *
+   * @param gatewayUrl - Full MCP endpoint URL (e.g. "http://localhost:8080/mcp/")
+   * @returns Map of upstream-name → array of full prefixed tool names
+   */
+  async connectGateway(gatewayUrl: string): Promise<Map<string, string[]>> {
+    const tools = await this.connectMcp("mcp-gateway", gatewayUrl);
+
+    // Query healthz to discover registered upstream prefixes
+    const healthzUrl = new URL("/healthz", gatewayUrl.replace(/\/mcp\/?$/, "")).toString();
+    let upstreams: string[] = [];
+    try {
+      const res = await fetch(healthzUrl);
+      if (res.ok) {
+        const body = await res.json() as { upstreams?: string[] };
+        upstreams = body.upstreams ?? [];
+      }
+    } catch {
+      // healthz unreachable — fall back to flat list
+    }
+
+    const byServer = new Map<string, string[]>();
+    for (const name of upstreams) byServer.set(name, []);
+    byServer.set("_ungrouped", []);
+
+    for (const tool of tools) {
+      const sep = tool.indexOf("_");
+      const prefix = sep !== -1 ? tool.slice(0, sep) : "";
+      if (byServer.has(prefix)) {
+        byServer.get(prefix)!.push(tool);
+      } else {
+        byServer.get("_ungrouped")!.push(tool);
+      }
+    }
+
+    if (byServer.get("_ungrouped")!.length === 0) byServer.delete("_ungrouped");
+    return byServer;
+  }
+
   /** Internal helper: tear down one server's bridge and unregister its tools. */
   private async _disconnectServer(serverName: string): Promise<void> {
     const bridge = this._mcpBridges.get(serverName);

@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { WorkflowChatPanel } from './WorkflowChatPanel';
+import { JevModal } from '../components/JevModal';
 import './WorkflowPage.css';
 
 /* ── Types ─────────────────────────────────────────── */
@@ -16,7 +17,7 @@ interface AgentItem {
 
 interface WorkflowNode {
   id: string;
-  type: 'agent' | 'interface';
+  type: 'agent' | 'interface' | 'jev';
   x: number;
   y: number;
   agentId: string;
@@ -49,6 +50,10 @@ const INTERFACES: InterfaceItem[] = [
   { id: 'route',       name: 'Route',       linkType: 'One → One*', icon: '🔂' },
 ];
 
+// Jev: TypeSafe's decision model (through OpenRouter). It reads the context and picks one downstream option.
+// Drawn like an interface node; clicking it opens its form.
+const JEV: InterfaceItem = { id: 'jev', name: 'Jev', linkType: 'LLM decision', icon: '🧭' };
+
 /* ── Constants ─────────────────────────────────────── */
 
 const NODE_W = 180;
@@ -58,8 +63,8 @@ const IFACE_SIZE = 56;
 /* ── Bezier path util ──────────────────────────────── */
 
 function getHandlePos(node: WorkflowNode, side: HandleSide) {
-  const w = node.type === 'interface' ? IFACE_SIZE : NODE_W;
-  const h = node.type === 'interface' ? IFACE_SIZE : NODE_H;
+  const w = node.type === 'agent' ? NODE_W : IFACE_SIZE;
+  const h = node.type === 'agent' ? NODE_H : IFACE_SIZE;
   const cx = node.x + w / 2;
   const cy = node.y + h / 2;
   switch (side) {
@@ -110,6 +115,7 @@ export function WorkflowPage() {
   const [compiled, setCompiled] = useState(false);
   const [showGuardrailsModal, setShowGuardrailsModal] = useState(false);
   const [chatAgentId, setChatAgentId] = useState<string | null>(null);
+  const [jevNodeId, setJevNodeId] = useState<string | null>(null); // node whose Jev form is open
 
   const [workflowName, setWorkflowName] = useState<string>('');
 
@@ -158,6 +164,9 @@ export function WorkflowPage() {
           const conns: { from: string; fromSide: string; to: string; toSide: string }[] = wf.schema?.connections ?? [];
 
           const restoredNodes: WorkflowNode[] = components.map(c => {
+            if (c.type === 'jev') {
+              return { id: generateId(), type: 'jev' as const, x: c.x, y: c.y, agentId: c.id, agentName: JEV.name, agentIcon: JEV.icon };
+            }
             if (c.type === 'interface') {
               const iface = INTERFACES.find(i => i.id === c.id);
               return { id: generateId(), type: 'interface' as const, x: c.x, y: c.y, agentId: c.id, agentName: iface?.name ?? c.id, agentIcon: iface?.icon ?? '⬡' };
@@ -203,6 +212,8 @@ export function WorkflowPage() {
   const nodesRef = useRef(nodes);
   useEffect(() => { nodesRef.current = nodes; }, [nodes]);
   const linkingRef = useRef<{ fromNodeId: string; fromSide: HandleSide } | null>(null);
+  // Where the mouse went down on a node, to tell a click from a drag
+  const clickStart = useRef<{ x: number; y: number } | null>(null);
 
   /* ── Sidebar drag ────────────────────────────────── */
 
@@ -218,12 +229,12 @@ export function WorkflowPage() {
     const data = JSON.parse(raw);
     const rect = e.currentTarget.getBoundingClientRect();
 
-    if (data.type === 'interface') {
+    if (data.type === 'interface' || data.type === 'jev') {
       const x = (e.clientX - rect.left - view.x) / view.scale - IFACE_SIZE / 2;
       const y = (e.clientY - rect.top - view.y) / view.scale - IFACE_SIZE / 2;
       setNodes(prev => [...prev, {
         id: generateId(),
-        type: 'interface',
+        type: data.type,
         x, y,
         agentId: data.id,
         agentName: data.name,
@@ -295,6 +306,7 @@ export function WorkflowPage() {
   function onHandleMouseDown(e: React.MouseEvent, nodeId: string, side: HandleSide) {
     e.stopPropagation();
     e.preventDefault();
+    clickStart.current = null;
 
     const linking = { fromNodeId: nodeId, fromSide: side };
     linkingRef.current = linking;
@@ -358,12 +370,25 @@ export function WorkflowPage() {
   function onNodeMouseDown(e: React.MouseEvent, node: WorkflowNode) {
     e.stopPropagation();
     setSelectedNodeId(node.id);
+    clickStart.current = { x: e.clientX, y: e.clientY };
     const canvas = canvasRef.current;
     if (!canvas) return;
     const canvasRect = canvas.getBoundingClientRect();
     const mx = (e.clientX - canvasRect.left - view.x) / view.scale;
     const my = (e.clientY - canvasRect.top - view.y) / view.scale;
     dragging.current = { nodeId: node.id, offsetX: mx - node.x, offsetY: my - node.y };
+  }
+
+  function onJevClick(e: React.MouseEvent, node: WorkflowNode) {
+    const start = clickStart.current;
+    clickStart.current = null;
+    if (!start || Math.hypot(e.clientX - start.x, e.clientY - start.y) > 4) return;
+    setJevNodeId(node.id);
+  }
+
+  // Once the form creates the Jev, the node takes its id (a dropped, not-yet-created Jev still has agentId 'jev')
+  function onJevCreated(nodeId: string, jevId: string) {
+    setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, agentId: jevId } : n));
   }
 
   function deleteNode(id: string) {
@@ -395,6 +420,11 @@ export function WorkflowPage() {
 
   async function compileWorkflow(guardrailsOnInterfaces: boolean) {
     setShowGuardrailsModal(false);
+    // DECISION: the backend doesn't know Jev yet; fail clearly instead of compiling a different graph.
+    if (nodes.some(n => n.type === 'jev')) {
+      setErrorPopup("Jev nodes aren't supported by the backend yet. Remove them to compile.");
+      return;
+    }
     const schema = buildSchema();
     const workflowInput = {
       ...schema,
@@ -436,6 +466,8 @@ export function WorkflowPage() {
   }
 
   /* ── Render ──────────────────────────────────────── */
+
+  const jevNode = nodes.find(n => n.id === jevNodeId);
 
   return (
     <div className="wf-page">
@@ -500,6 +532,24 @@ export function WorkflowPage() {
               </div>
             ))}
           </div>
+
+          <div className="wf-sidebar-title">LLM</div>
+          <div className="wf-sidebar-list">
+            <div
+              className="wf-sidebar-interface"
+              draggable
+              onDragStart={e => {
+                e.dataTransfer.setData('application/json', JSON.stringify({ ...JEV, type: 'jev' }));
+                e.dataTransfer.effectAllowed = 'copy';
+              }}
+            >
+              <span className="wf-sidebar-icon">{JEV.icon}</span>
+              <div className="wf-sidebar-info">
+                <span className="wf-sidebar-name">{JEV.name}</span>
+                <span className="wf-sidebar-model">{JEV.linkType}</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Canvas */}
@@ -541,12 +591,14 @@ export function WorkflowPage() {
 
           {/* Nodes */}
           <div className="wf-viewport" style={{ transform: `translate(${view.x}px,${view.y}px) scale(${view.scale})`, transformOrigin: '0 0' }}>
-            {nodes.map(node => node.type === 'interface' ? (
+            {nodes.map(node => node.type !== 'agent' ? (
               <div
                 key={node.id}
-                className={`wf-iface-node ${selectedNodeId === node.id ? 'selected' : ''}`}
+                className={`wf-iface-node ${node.type === 'jev' ? 'wf-jev-node' : ''} ${selectedNodeId === node.id ? 'selected' : ''}`}
                 style={{ left: node.x, top: node.y, width: IFACE_SIZE, height: IFACE_SIZE }}
+                title={node.type === 'jev' ? 'Click to configure this Jev' : undefined}
                 onMouseDown={e => onNodeMouseDown(e, node)}
+                onClick={node.type === 'jev' ? e => onJevClick(e, node) : undefined}
               >
                 <button className="wf-node-delete" onClick={e => { e.stopPropagation(); deleteNode(node.id); }}>x</button>
                 <span className="wf-iface-icon">{node.agentIcon}</span>
@@ -585,6 +637,15 @@ export function WorkflowPage() {
           />
         )}
       </div>
+
+      {jevNode && (
+        <JevModal
+          key={jevNode.id}
+          jevId={jevNode.agentId !== JEV.id ? jevNode.agentId : undefined}
+          onClose={() => setJevNodeId(null)}
+          onSaved={jevId => onJevCreated(jevNode.id, jevId)}
+        />
+      )}
 
       {/* Guardrails compile modal */}
       {showGuardrailsModal && (
