@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { WorkflowChatPanel } from './WorkflowChatPanel';
+import { AgentFormContent } from '../components/AgentFormContent';
 import './WorkflowPage.css';
 
 /* ── Types ─────────────────────────────────────────── */
@@ -112,6 +113,8 @@ export function WorkflowPage() {
   const [chatAgentId, setChatAgentId] = useState<string | null>(null);
 
   const [workflowName, setWorkflowName] = useState<string>('');
+  const [projectPath, setProjectPath] = useState<string | undefined>(undefined);
+  const [showCreateAgentModal, setShowCreateAgentModal] = useState(false);
 
   // Load project path, build AgentsStorage, then restore active workflow if any
   useEffect(() => {
@@ -123,6 +126,7 @@ export function WorkflowPage() {
           const projects: { project_id: string; path: string }[] = res.ok ? await res.json() : [];
           const found = projects.find(p => p.project_id === projectId);
           playground = found?.path;
+          setProjectPath(playground);
         } catch {}
       }
 
@@ -480,6 +484,13 @@ export function WorkflowPage() {
             ))}
           </div>
 
+          <button
+            className="wf-create-agent-btn"
+            onClick={() => setShowCreateAgentModal(true)}
+          >
+            + Create Agent
+          </button>
+
           <div className="wf-sidebar-title">Interfaces</div>
           <div className="wf-sidebar-list">
             {INTERFACES.map(iface => (
@@ -604,6 +615,28 @@ export function WorkflowPage() {
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', padding: '0 16px 16px' }}>
               <button className="wf-header-btn" onClick={() => compileWorkflow(false)}>No</button>
               <button className="wf-header-btn" onClick={() => compileWorkflow(true)}>Yes</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Agent modal */}
+      {showCreateAgentModal && (
+        <div className="wf-error-overlay" onClick={() => setShowCreateAgentModal(false)}>
+          <div className="wf-create-agent-popup" onClick={e => e.stopPropagation()}>
+            <div className="wf-error-header">
+              <span>Create Agent</span>
+              <button className="wf-error-close" onClick={() => setShowCreateAgentModal(false)}>✕</button>
+            </div>
+            <div className="wf-create-agent-body">
+              <AgentFormContent
+                lockedPlayground={projectPath}
+                onSuccess={(agentId, agentName, agentModel) => {
+                  setAgents(prev => [...prev, { id: agentId, name: agentName, icon: '\u{1F916}', model: agentModel }]);
+                  setShowCreateAgentModal(false);
+                }}
+                onCancel={() => setShowCreateAgentModal(false)}
+              />
             </div>
           </div>
         </div>
