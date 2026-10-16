@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { WorkflowChatPanel } from './WorkflowChatPanel';
+import { AgentFormContent } from '../components/AgentFormContent';
 import './WorkflowPage.css';
 
 /* ── Types ─────────────────────────────────────────── */
@@ -116,6 +117,7 @@ export function WorkflowPage() {
   const [workflowId, setWorkflowId] = useState<string | null>(null);
   const [workflowName, setWorkflowName] = useState<string>('');
   const [showWorkflowModal, setShowWorkflowModal] = useState(false);
+  const [showCreateAgentModal, setShowCreateAgentModal] = useState(false);
   const [workflowModalTab, setWorkflowModalTab] = useState<'new' | 'load'>('load');
   const [savedWorkflows, setSavedWorkflows] = useState<{ workflow_id: string; name: string; description?: string; updated_at: string }[]>([]);
   const [newWfName, setNewWfName] = useState('');
@@ -607,6 +609,13 @@ export function WorkflowPage() {
             ))}
           </div>
 
+          <button
+            className="wf-create-agent-btn"
+            onClick={() => setShowCreateAgentModal(true)}
+          >
+            + Create Agent
+          </button>
+
           <div className="wf-sidebar-title">Interfaces</div>
           <div className="wf-sidebar-list">
             {INTERFACES.map(iface => (
@@ -808,6 +817,28 @@ export function WorkflowPage() {
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', padding: '0 16px 16px' }}>
               <button className="wf-header-btn" onClick={() => compileWorkflow(false)}>No</button>
               <button className="wf-header-btn" onClick={() => compileWorkflow(true)}>Yes</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Agent modal */}
+      {showCreateAgentModal && (
+        <div className="wf-error-overlay" onClick={() => setShowCreateAgentModal(false)}>
+          <div className="wf-create-agent-popup" onClick={e => e.stopPropagation()}>
+            <div className="wf-error-header">
+              <span>Create Agent</span>
+              <button className="wf-error-close" onClick={() => setShowCreateAgentModal(false)}>✕</button>
+            </div>
+            <div className="wf-create-agent-body">
+              <AgentFormContent
+                lockedPlayground={projectPath}
+                onSuccess={(agentId, agentName, agentModel) => {
+                  setAgents(prev => [...prev, { id: agentId, name: agentName, icon: '\u{1F916}', model: agentModel }]);
+                  setShowCreateAgentModal(false);
+                }}
+                onCancel={() => setShowCreateAgentModal(false)}
+              />
             </div>
           </div>
         </div>
