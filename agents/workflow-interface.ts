@@ -28,6 +28,10 @@ export class AgentInterface {
     public getResults(): [string, string][] {
         return this.predResults ;
     }
+    //results are kept on the interface, so every run starts by clearing them
+    public reset(): void {
+        this.predResults = [] ;
+    }
     public getTool() : ToolInput {
         return this.toolForSuccessors_ ;
     }

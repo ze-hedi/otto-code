@@ -55,8 +55,9 @@ export class Workflow {
                 let successors = this.ExecutionQueue_.successors.get(node.id) ;
                 let predecessors = this.ExecutionQueue_.predecessors.get(node.id) ;
                 console.log(`node causing issue : ${node.id}`)
-                let agentConfig = this.agentsStorage_?.getAgentByID(node.id) ;
-                let promptSuffix : string ;
+                //work on a copy: the stored config must not accumulate prompt suffixes across compiles
+                const storedConfig = this.agentsStorage_?.getAgentByID(node.id) ;
+                let agentConfig = storedConfig && { ...storedConfig } ;
                 if (successors)
                     for (const succ of successors) {
                         if (succ.type === NodeType.interface) {

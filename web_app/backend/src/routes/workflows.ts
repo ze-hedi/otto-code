@@ -6,7 +6,7 @@ import { AgentsStorage, InterfaceStorage } from "../../../../agents/workflow-typ
 import type { WorkflowSchema } from "../../../../agents/workflow-types.js";
 import { Workflow } from "../../../../agents/workflow.js";
 import type { JevConfig } from "../../../../agents/jev-agent-configs.js";
-import { buildInterfaceStorage, buildAgentsStorage, validateInterfaceRules, runWorkflow } from "../services/workflow-manager.js";
+import { buildInterfaceStorage, buildAgentsStorage, validateInterfaceRules, runWorkflow, CompileError } from "../services/workflow-manager.js";
 import { handleEventWithClient } from "../../../../agents/pi-agent-utils.js";
 import { saveJev, getJev, getAllJevs, updateJev, deleteJev } from "../db/mongo.js";
 import type { JevDocument } from "../types.js";
@@ -87,7 +87,7 @@ router.post("/compile", async (req, res) => {
       return;
     }
 
-    currentInterfaceStorage = await buildInterfaceStorage(schema, currentAgentsStorage);
+    currentInterfaceStorage = await buildInterfaceStorage(schema, currentAgentsStorage, workflowId);
     console.log("[compile] InterfaceStorage saved globally");
 
     // Wipe previous session files so agents start fresh on every compile
@@ -114,7 +114,7 @@ router.post("/compile", async (req, res) => {
     );
     console.log("[compile] Execution levels:", JSON.stringify(levelsSummary, null, 2));
 
-    const interfaceNodes = schema.components.filter(c => c.type === "interface");
+    const interfaceNodes = schema.components.filter(c => c.type === "interface" || c.type === "jev");
     const agentNodes = schema.components.filter(c => c.type === "agent");
 
     const result = {
@@ -134,7 +134,7 @@ router.post("/compile", async (req, res) => {
     res.json({ ok: true, compiled: result });
   } catch (err: any) {
     console.error("[compile] error:", err);
-    res.status(500).json({ error: err?.message ?? String(err) });
+    res.status(err instanceof CompileError ? 400 : 500).json({ error: err?.message ?? String(err) });
   }
 });
 
@@ -195,7 +195,7 @@ router.post("/run", async (req, res) => {
 
   try {
     console.log(`[workflow/run] Starting workflow with message: "${message.slice(0, 100)}..."`);
-    await runWorkflow(message, currentWorkflow, sendEvent);
+    await runWorkflow(message, currentWorkflow, sendEvent, send);
     send({ type: "workflow_done" });
     console.log("[workflow/run] Workflow completed");
   } catch (err: any) {
@@ -256,12 +256,19 @@ router.post("/tool-reject", (req, res) => {
 
 // ── Jev (OpenRouter decision node) ───────────────────────────────────────────
 
-/** Keeps only what the Jev form sets: the key and the instructions. */
+/** Keeps only what the Jev form sets: key, question, type and choices. */
 function parseJevConfig(body: unknown): JevConfig {
-  const { apiKey, instructions } = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+  const { apiKey, instructions, type, choices } = (body && typeof body === "object" ? body : {}) as Record<string, any>;
   const config: JevConfig = {};
   if (typeof apiKey === "string" && apiKey) config.apiKey = apiKey;
   if (typeof instructions === "string" && instructions) config.instructions = instructions;
+  if (type === "choice" || type === "noul") config.type = type;
+  if (Array.isArray(choices)) {
+    const kept = choices
+      .filter(c => c && typeof c.id === "string" && c.id.trim())
+      .map(c => ({ id: c.id.trim(), description: String(c.description ?? ""), agent: String(c.agent ?? "") }));
+    if (kept.length > 0) config.choices = kept;
+  }
   return config;
 }
 
@@ -272,7 +279,7 @@ function jevView({ config: { apiKey, ...config }, ...rest }: JevDocument) {
 
 /**
  * POST /workflows/jev
- * Body: { apiKey?, instructions? }.
+ * Body: { apiKey?, instructions?, type?, choices? }.
  * Stores a new Jev in the "jevs" collection. Returns it with its generated jev_id.
  */
 router.post("/jev", async (req, res) => {
@@ -325,7 +332,7 @@ router.get("/jev/:id", async (req, res) => {
 
 /**
  * PUT /workflows/jev/:id
- * Body: { apiKey?, instructions? }. Replaces the stored config.
+ * Body: { apiKey?, instructions?, type?, choices? }. Replaces the stored config.
  * An empty or missing apiKey keeps the stored one (the key is never sent back to the form).
  */
 router.put("/jev/:id", async (req, res) => {

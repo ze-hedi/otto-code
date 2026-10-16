@@ -34,6 +34,10 @@ export class InterfaceStorage {
     public getInterfaceByID(id:string) : AgentInterface {
         return this.availablesInterfaces_.get(id) ;   
     }
+
+    public getAll() : AgentInterface[] {
+        return [...this.availablesInterfaces_.values()] ;
+    }
 }
 
 

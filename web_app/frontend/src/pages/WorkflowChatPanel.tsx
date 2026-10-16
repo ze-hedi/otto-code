@@ -78,7 +78,8 @@ export function WorkflowChatPanel({ agentId, agentName, allAgents, onSelectAgent
   }, [])
 
   function applyEvent(ev: any) {
-    const aid: string = ev.agentId
+    // Jev's decision is shown at the top of the tab of the agent it chose
+    const aid: string = ev.type === 'jev_decision' ? ev.agent : ev.agentId
     if (!aid || aid === '__workflow__') return
 
     // Ensure this agent has a parts array
@@ -176,6 +177,9 @@ export function WorkflowChatPanel({ agentId, agentName, allAgents, onSelectAgent
         next.delete(aid)
         return next
       })
+    } else if (ev.type === 'jev_decision') {
+      const pct = ev.confidence != null ? ` (${Math.round(ev.confidence * 100)}% confident)` : ''
+      parts.push({ type: 'text', content: `🧭 Jev chose "${ev.choice}", which runs this agent${pct}\n\n` })
     } else if (ev.type === 'error') {
       parts.push({ type: 'text', content: `Error: ${ev.message}` })
     }

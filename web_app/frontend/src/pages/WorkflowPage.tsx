@@ -420,9 +420,9 @@ export function WorkflowPage() {
 
   async function compileWorkflow(guardrailsOnInterfaces: boolean) {
     setShowGuardrailsModal(false);
-    // DECISION: the backend doesn't know Jev yet; fail clearly instead of compiling a different graph.
-    if (nodes.some(n => n.type === 'jev')) {
-      setErrorPopup("Jev nodes aren't supported by the backend yet. Remove them to compile.");
+    // A dropped Jev only gets its own id once its form has created it
+    if (nodes.some(n => n.type === 'jev' && n.agentId === JEV.id)) {
+      setErrorPopup('Create every Jev before compiling: click the Jev node, then press Create.');
       return;
     }
     const schema = buildSchema();
@@ -642,6 +642,11 @@ export function WorkflowPage() {
         <JevModal
           key={jevNode.id}
           jevId={jevNode.agentId !== JEV.id ? jevNode.agentId : undefined}
+          outputs={connections
+            .filter(c => c.from === jevNode.id)
+            .map(c => nodes.find(n => n.id === c.to))
+            .filter((n): n is WorkflowNode => n?.type === 'agent')
+            .map(n => ({ id: n.agentId, name: n.agentName }))}
           onClose={() => setJevNodeId(null)}
           onSaved={jevId => onJevCreated(jevNode.id, jevId)}
         />

@@ -65,6 +65,8 @@ export type RawPiAgentConfig = Omit<PiAgentConfig, "systemPromptSuffix"> & {
   /** Fully replace Pi's default system prompt. The SDK still appends project
    *  context, skills, date, and cwd after it. */
   systemPrompt?: string;
+  /** What this agent is for. Routers such as Jev read it to choose between agents. */
+  description?: string;
   /** When set, session JSONL files are written to .otto-sessions/workflow-<workflowId>/ */
   workflowId?: string;
 }& {};
