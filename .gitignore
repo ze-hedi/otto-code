@@ -8,3 +8,6 @@ build/
 .env.swp
 .otto-sessions/
 database/
+
+# local MongoDB data files (can contain secrets such as API keys)
+web_app/storage/
