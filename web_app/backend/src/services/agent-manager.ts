@@ -4,7 +4,7 @@ import { RawPiAgent } from "../../../../agents/raw-pi-agent.js";
 import { getDb } from "../db/mongo.js";
 import type { AgentDocument, SerializableAgentConfig } from "../types.js";
 import { toRawAgentConfig } from "./agent-config.js";
-import { isKubernetesMode } from "../runtime/config.js";
+import { assertInProcessAllowed, isKubernetesMode } from "../runtime/config.js";
 import { markIdle } from "./agent-state.js";
 
 // Session keys, busy state and clarification plumbing live in their own modules so the
@@ -50,6 +50,7 @@ export function getActiveAgent(agentId: string): RawPiAgent | undefined {
 export async function getOrActivateAgent(agentId: string): Promise<RawPiAgent | null> {
   const existing = activeAgents.get(agentId);
   if (existing) return existing;
+  assertInProcessAllowed("instantiate an agent");
 
   const doc = await getCollection().findOne({ agent_id: agentId });
   if (!doc) return null;

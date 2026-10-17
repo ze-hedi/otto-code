@@ -8,6 +8,7 @@ import { buildInterfaceStorage, buildAgentsStorage, validateInterfaceRules } fro
 import { streamWorkflowRun } from "../services/workflow-stream.js";
 import { getWorkflow as getWorkflowDoc } from "../db/mongo.js";
 import { resolveWorkflowSession } from "../services/workflow-session.js";
+import { assertInProcessAllowed } from "../runtime/config.js";
 
 const router = Router();
 
@@ -63,6 +64,7 @@ router.post("/agents", async (req, res) => {
  */
 router.post("/compile", async (req, res) => {
   try {
+    assertInProcessAllowed("compile a workflow");
     const { guardrailsOnInterfaces, workflowId, sessionMode, sessionId: requestedSessionId, playground: reqPlayground, ...schema } = req.body as WorkflowSchema & {
       guardrailsOnInterfaces?: boolean;
       workflowId?: string;
@@ -197,6 +199,7 @@ router.get("/:workflowId/sessions", async (req, res) => {
  * Runs the compiled workflow, streaming SSE events tagged with agentId.
  */
 router.post("/run", async (req, res) => {
+  assertInProcessAllowed("run a workflow");
   if (!currentWorkflow) {
     res.status(400).json({ error: "No compiled workflow. Call POST /workflows/compile first." });
     return;

@@ -1,8 +1,22 @@
 export type RuntimeKind = "agent" | "workflow";
 
-/** "local" keeps agents in the backend process (default); "kubernetes" gives each its own pod. */
+/**
+ * Agents and workflows are sandboxed in pods unless OTTO_RUNTIME=local is set explicitly.
+ * Anything else is a configuration error: failing closed beats silently running unsandboxed.
+ */
 export function isKubernetesMode(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.OTTO_RUNTIME === "kubernetes";
+  const mode = env.OTTO_RUNTIME || "kubernetes";
+  if (mode !== "kubernetes" && mode !== "local") {
+    throw new Error(`OTTO_RUNTIME must be "kubernetes" (default) or "local", got "${mode}"`);
+  }
+  return mode === "kubernetes";
+}
+
+/** Guard for code paths that would run an agent inside the backend process. */
+export function assertInProcessAllowed(what: string, env: NodeJS.ProcessEnv = process.env): void {
+  if (isKubernetesMode(env)) {
+    throw new Error(`Refusing to ${what} in the backend process: agents must run in their sandbox pod (OTTO_RUNTIME=local disables this)`);
+  }
 }
 
 export interface RuntimeConfig {

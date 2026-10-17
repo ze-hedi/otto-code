@@ -68,3 +68,17 @@ test("host alias is forwarded to the pod when configured", () => {
   const env = Object.fromEntries(pod.spec.containers[0].env.map((e: any) => [e.name, e.value]));
   assert.equal(env.OTTO_HOST_ALIAS, "host.minikube.internal");
 });
+
+import { assertInProcessAllowed, isKubernetesMode } from "../src/runtime/config.js";
+
+test("sandboxing is the default; local mode must be asked for explicitly", () => {
+  assert.equal(isKubernetesMode({}), true);
+  assert.equal(isKubernetesMode({ OTTO_RUNTIME: "kubernetes" }), true);
+  assert.equal(isKubernetesMode({ OTTO_RUNTIME: "local" }), false);
+  assert.throws(() => isKubernetesMode({ OTTO_RUNTIME: "locl" }), /must be/);
+});
+
+test("in-process execution is refused unless OTTO_RUNTIME=local", () => {
+  assert.throws(() => assertInProcessAllowed("run an agent", {}), /Refusing/);
+  assert.doesNotThrow(() => assertInProcessAllowed("run an agent", { OTTO_RUNTIME: "local" }));
+});

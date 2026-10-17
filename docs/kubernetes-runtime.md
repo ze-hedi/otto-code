@@ -1,7 +1,10 @@
 # Running agents and workflows in Kubernetes
 
-By default the web app's backend runs every agent in its own process. With `OTTO_RUNTIME=kubernetes`
-the backend becomes a **control plane**: choosing an agent or a workflow starts a pod for it, mounts
+The backend is a **control plane**: agents and workflows are sandboxed in pods by default, and nothing
+runs inside the backend process. (`OTTO_RUNTIME=local` is an explicit, loudly-warned opt-out for development
+without a cluster; any other value is a startup error.)
+
+Choosing an agent or a workflow choosing an agent or a workflow starts a pod for it, mounts
 the project's playground into that pod, and the backend proxies the usual HTTP/SSE traffic to it.
 The frontend and its API are unchanged.
 
@@ -63,7 +66,7 @@ kubectl apply -f web_app/k8s/networkpolicy.yaml              # optional, needs a
 
 # 3. backend (on your machine: talks to the cluster through your kubeconfig + port-forward)
 cd web_app/backend && npm install
-OTTO_RUNTIME=kubernetes OTTO_RUNNER_TOKEN=<same token> npm run dev
+OTTO_RUNNER_TOKEN=<same token> npm run dev
 ```
 
 `hostPath` mounts refer to the **node's** filesystem. On Docker Desktop that is your machine; for kind add
@@ -74,7 +77,7 @@ OTTO_RUNTIME=kubernetes OTTO_RUNNER_TOKEN=<same token> npm run dev
 
 | Variable | Default | |
 |---|---|---|
-| `OTTO_RUNTIME` | `local` | `kubernetes` to enable |
+| `OTTO_RUNTIME` | `kubernetes` | `local` runs agents in the backend process, unsandboxed (dev only) |
 | `OTTO_K8S_NAMESPACE` | `otto` | |
 | `OTTO_K8S_IMAGE` / `_IMAGE_PULL_POLICY` / `_IMAGE_PULL_SECRETS` | `otto-runner:latest` / `IfNotPresent` / – | |
 | `OTTO_K8S_STORAGE` | `hostPath` | or `pvc` (needs `OTTO_K8S_PVC` and `OTTO_K8S_PLAYGROUND_ROOT`) |
@@ -90,6 +93,8 @@ OTTO_RUNTIME=kubernetes OTTO_RUNNER_TOKEN=<same token> npm run dev
 
 ## Known limits
 
+- Fail-closed: if a code path ever tried to build an agent or workflow inside the backend, it throws
+  (`assertInProcessAllowed`) instead of running unsandboxed.
 - Agents must have a playground (it is what gets mounted); the API answers 400 otherwise.
 - `localhost` in an agent's `mcpServers` means the pod itself; set `OTTO_K8S_HOST_ALIAS` or use in-cluster URLs.
 - The workflow endpoints keep the existing "one current workflow" model: `/workflows/run` targets the last compiled

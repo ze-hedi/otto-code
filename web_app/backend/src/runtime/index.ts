@@ -17,7 +17,10 @@ export function getRuntimeManager(): RuntimeManager {
 
 /** Adopts pods from a previous backend run, starts the idle reaper and hooks shutdown. */
 export async function startRuntime(): Promise<void> {
-  if (!isKubernetesMode()) return;
+  if (!isKubernetesMode()) {
+    console.warn("[runtime] OTTO_RUNTIME=local: agents and workflows run INSIDE the backend process, with no sandbox");
+    return;
+  }
   const mgr = getRuntimeManager();
   await mgr.reconcile().catch((err) => console.warn("[runtime] reconcile failed:", err?.message ?? err));
   mgr.startReaper();
