@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { WorkflowChatPanel } from './WorkflowChatPanel';
 import { AgentFormContent } from '../components/AgentFormContent';
+import type { AgentFormData } from '../components/AgentFormContent';
 import './WorkflowPage.css';
 
 /* ── Types ─────────────────────────────────────────── */
@@ -115,6 +116,7 @@ export function WorkflowPage() {
   const [workflowName, setWorkflowName] = useState<string>('');
   const [projectPath, setProjectPath] = useState<string | undefined>(undefined);
   const [showCreateAgentModal, setShowCreateAgentModal] = useState(false);
+  const [viewAgentData, setViewAgentData] = useState<{ name: string; data: AgentFormData } | null>(null);
 
   // Session chosen on the workflows list page: a session uuid or "new"
   const [searchParams] = useSearchParams();
@@ -217,8 +219,9 @@ export function WorkflowPage() {
   const isPanning = useRef(false);
   const panStart = useRef({ x: 0, y: 0 });
 
-  // Node dragging
+  // Node dragging + click detection
   const dragging = useRef<{ nodeId: string; offsetX: number; offsetY: number } | null>(null);
+  const mouseDownPos = useRef<{ x: number; y: number; nodeId: string; agentId: string; agentName: string; type: string } | null>(null);
 
   // Connection dragging (handle drag-to-connect)
   const svgRef = useRef<SVGSVGElement>(null);
@@ -381,12 +384,30 @@ export function WorkflowPage() {
   function onNodeMouseDown(e: React.MouseEvent, node: WorkflowNode) {
     e.stopPropagation();
     setSelectedNodeId(node.id);
+    mouseDownPos.current = { x: e.clientX, y: e.clientY, nodeId: node.id, agentId: node.agentId, agentName: node.agentName, type: node.type };
     const canvas = canvasRef.current;
     if (!canvas) return;
     const canvasRect = canvas.getBoundingClientRect();
     const mx = (e.clientX - canvasRect.left - view.x) / view.scale;
     const my = (e.clientY - canvasRect.top - view.y) / view.scale;
     dragging.current = { nodeId: node.id, offsetX: mx - node.x, offsetY: my - node.y };
+  }
+
+  async function onNodeMouseUp(e: React.MouseEvent) {
+    const start = mouseDownPos.current;
+    mouseDownPos.current = null;
+    if (!start || start.type !== 'agent') return;
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    if (Math.abs(dx) < 5 && Math.abs(dy) < 5) {
+      // Click detected — fetch agent config and show popup
+      try {
+        const res = await fetch(`http://localhost:4000/agents/${start.agentId}`);
+        if (!res.ok) return;
+        const doc = await res.json();
+        setViewAgentData({ name: start.agentName, data: doc.config as AgentFormData });
+      } catch {}
+    }
   }
 
   function deleteNode(id: string) {
@@ -598,8 +619,9 @@ export function WorkflowPage() {
               <div
                 key={node.id}
                 className={`wf-node ${selectedNodeId === node.id ? 'selected' : ''}`}
-                style={{ left: node.x, top: node.y, width: NODE_W, height: NODE_H }}
+                style={{ left: node.x, top: node.y, width: NODE_W, height: NODE_H, cursor: 'pointer' }}
                 onMouseDown={e => onNodeMouseDown(e, node)}
+                onMouseUp={onNodeMouseUp}
               >
                 <button className="wf-node-delete" onClick={e => { e.stopPropagation(); deleteNode(node.id); }}>x</button>
                 <span className="wf-node-icon">{node.agentIcon}</span>
@@ -666,6 +688,25 @@ export function WorkflowPage() {
                   setShowCreateAgentModal(false);
                 }}
                 onCancel={() => setShowCreateAgentModal(false)}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Agent detail popup (read-only) */}
+      {viewAgentData && (
+        <div className="wf-error-overlay" onClick={() => setViewAgentData(null)}>
+          <div className="wf-create-agent-popup" onClick={e => e.stopPropagation()}>
+            <div className="wf-error-header">
+              <span>{viewAgentData.name}</span>
+              <button className="wf-error-close" onClick={() => setViewAgentData(null)}>✕</button>
+            </div>
+            <div className="wf-create-agent-body">
+              <AgentFormContent
+                readOnly
+                initialData={viewAgentData.data}
+                onSuccess={() => {}}
               />
             </div>
           </div>

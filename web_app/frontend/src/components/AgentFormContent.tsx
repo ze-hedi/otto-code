@@ -31,30 +31,69 @@ interface SubAgentEntry {
   promptGuidelines: string
 }
 
+export interface AgentFormData {
+  name?: string
+  description?: string
+  model?: string
+  systemPrompt?: string
+  thinkingLevel?: string
+  playground?: string
+  builtInTools?: string[]
+  mcpServers?: Record<string, string>
+  toolCallGuardrails?: string[]
+  clarificationTool?: boolean
+  subAgents?: Record<string, {
+    name: string
+    description?: string
+    model: string
+    systemPrompt: string
+    builtInTools?: string[]
+    playground?: string
+    promptSnippet?: string
+    promptGuidelines?: string[]
+  }>
+}
+
 interface AgentFormContentProps {
   lockedPlayground?: string
   onSuccess: (agentId: string, agentName: string, agentModel: string) => void
   onCancel?: () => void
+  readOnly?: boolean
+  initialData?: AgentFormData
 }
 
-export function AgentFormContent({ lockedPlayground, onSuccess, onCancel }: AgentFormContentProps) {
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
-  const [model, setModel] = useState(MODELS[0])
-  const [customModel, setCustomModel] = useState('')
-  const [systemPrompt, setSystemPrompt] = useState('')
-  const [thinkingLevel, setThinkingLevel] = useState<string>('off')
-  const [playground, setPlayground] = useState(lockedPlayground ?? '')
+export function AgentFormContent({ lockedPlayground, onSuccess, onCancel, readOnly, initialData }: AgentFormContentProps) {
+  const [name, setName] = useState(initialData?.name ?? '')
+  const [description, setDescription] = useState(initialData?.description ?? '')
+  const initModel = initialData?.model && MODELS.includes(initialData.model) ? initialData.model : initialData?.model ? '__custom__' : MODELS[0]
+  const [model, setModel] = useState(initModel)
+  const [customModel, setCustomModel] = useState(initModel === '__custom__' ? (initialData?.model ?? '') : '')
+  const [systemPrompt, setSystemPrompt] = useState(initialData?.systemPrompt ?? '')
+  const [thinkingLevel, setThinkingLevel] = useState<string>(initialData?.thinkingLevel ?? 'off')
+  const [playground, setPlayground] = useState(lockedPlayground ?? initialData?.playground ?? '')
 
   useEffect(() => {
     if (lockedPlayground) setPlayground(lockedPlayground)
   }, [lockedPlayground])
-  const [selectedTools, setSelectedTools] = useState<string[]>(['read', 'bash', 'edit', 'write'])
-  const [mcpServers, setMcpServers] = useState<McpEntry[]>([])
-  const [subAgents, setSubAgents] = useState<SubAgentEntry[]>([])
-  const [extraTools, setExtraTools] = useState<string[]>([])
-  const [guardrails, setGuardrails] = useState(false)
-  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [selectedTools, setSelectedTools] = useState<string[]>(initialData?.builtInTools ?? ['read', 'bash', 'edit', 'write'])
+  const [mcpServers, setMcpServers] = useState<McpEntry[]>(
+    initialData?.mcpServers
+      ? Object.entries(initialData.mcpServers).map(([name, url]) => ({ name, url }))
+      : []
+  )
+  const [subAgents, setSubAgents] = useState<SubAgentEntry[]>(
+    initialData?.subAgents
+      ? Object.entries(initialData.subAgents).map(([key, sa]) => ({
+          key, name: sa.name, description: sa.description ?? '', model: sa.model,
+          systemPrompt: sa.systemPrompt, builtInTools: sa.builtInTools ?? [],
+          playground: sa.playground ?? '', promptSnippet: sa.promptSnippet ?? '',
+          promptGuidelines: sa.promptGuidelines?.join('\n') ?? '',
+        }))
+      : []
+  )
+  const [extraTools, setExtraTools] = useState<string[]>(initialData?.clarificationTool ? ['clarify'] : [])
+  const [guardrails, setGuardrails] = useState(!!(initialData?.toolCallGuardrails?.length))
+  const [showAdvanced, setShowAdvanced] = useState(readOnly ? (mcpServers.length > 0 || subAgents.length > 0) : false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
@@ -165,6 +204,9 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel }: Agen
     }
   }
 
+  const ro = !!readOnly
+  const disabledStyle = ro ? { opacity: 0.7, cursor: 'default' } as const : undefined
+
   return (
     <form onSubmit={handleSubmit}>
       {/* Name */}
@@ -176,6 +218,8 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel }: Agen
           placeholder="e.g. code-reviewer, researcher..."
           value={name}
           onChange={e => setName(e.target.value)}
+          readOnly={ro}
+          style={disabledStyle}
         />
       </div>
 
@@ -188,17 +232,23 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel }: Agen
           placeholder="What does this agent do..."
           value={description}
           onChange={e => setDescription(e.target.value)}
+          readOnly={ro}
+          style={disabledStyle}
         />
       </div>
 
       {/* Model */}
       <div className="field">
         <label htmlFor="af-model">Model <span className="required">*</span></label>
-        <select id="af-model" value={model} onChange={e => setModel(e.target.value)}>
-          {MODELS.map(m => <option key={m} value={m}>{m}</option>)}
-          <option value="__custom__">Custom...</option>
-        </select>
-        {model === '__custom__' && (
+        {ro ? (
+          <input type="text" value={model === '__custom__' ? customModel : model} readOnly style={disabledStyle} />
+        ) : (
+          <select id="af-model" value={model} onChange={e => setModel(e.target.value)}>
+            {MODELS.map(m => <option key={m} value={m}>{m}</option>)}
+            <option value="__custom__">Custom...</option>
+          </select>
+        )}
+        {!ro && model === '__custom__' && (
           <input
             className="mt-8"
             type="text"
@@ -219,6 +269,8 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel }: Agen
           placeholder="Full system prompt for the agent..."
           value={systemPrompt}
           onChange={e => setSystemPrompt(e.target.value)}
+          readOnly={ro}
+          style={disabledStyle}
         />
       </div>
 
@@ -230,12 +282,12 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel }: Agen
           type="text"
           placeholder="/path/to/repo"
           value={playground}
-          onChange={e => !lockedPlayground && setPlayground(e.target.value)}
+          onChange={e => !lockedPlayground && !ro && setPlayground(e.target.value)}
           className="mono"
-          readOnly={!!lockedPlayground}
-          style={lockedPlayground ? { opacity: 0.6, cursor: 'not-allowed' } : undefined}
+          readOnly={!!lockedPlayground || ro}
+          style={lockedPlayground || ro ? { opacity: 0.6, cursor: 'not-allowed' } : undefined}
         />
-        {lockedPlayground && (
+        {lockedPlayground && !ro && (
           <p className="field-hint">Locked to the project playground directory.</p>
         )}
       </div>
@@ -249,7 +301,8 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel }: Agen
               key={level}
               type="button"
               className={`chip ${thinkingLevel === level ? 'active' : ''}`}
-              onClick={() => setThinkingLevel(level)}
+              onClick={() => !ro && setThinkingLevel(level)}
+              style={ro ? { pointerEvents: 'none' } : undefined}
             >
               {level}
             </button>
@@ -266,7 +319,8 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel }: Agen
               key={tool}
               type="button"
               className={`chip tool-chip ${selectedTools.includes(tool) ? 'active' : ''}`}
-              onClick={() => toggleTool(tool)}
+              onClick={() => !ro && toggleTool(tool)}
+              style={ro ? { pointerEvents: 'none' } : undefined}
             >
               <span className="tool-icon">{selectedTools.includes(tool) ? '✓' : '+'}</span>
               {tool}
@@ -277,7 +331,8 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel }: Agen
               key={tool}
               type="button"
               className={`chip tool-chip ${extraTools.includes(tool) ? 'active' : ''}`}
-              onClick={() => toggleExtraTool(tool)}
+              onClick={() => !ro && toggleExtraTool(tool)}
+              style={ro ? { pointerEvents: 'none' } : undefined}
             >
               <span className="tool-icon">{extraTools.includes(tool) ? '✓' : '+'}</span>
               {tool}
@@ -294,16 +349,19 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel }: Agen
             type="button"
             id="af-guardrails"
             className={`toggle-switch ${guardrails ? 'on' : ''}`}
-            onClick={() => setGuardrails(!guardrails)}
+            onClick={() => !ro && setGuardrails(!guardrails)}
             role="switch"
             aria-checked={guardrails}
+            style={ro ? { pointerEvents: 'none' } : undefined}
           >
             <span className="toggle-knob" />
           </button>
         </label>
-        <p className="field-hint">
-          When enabled, every tool call requires your approval before executing.
-        </p>
+        {!ro && (
+          <p className="field-hint">
+            When enabled, every tool call requires your approval before executing.
+          </p>
+        )}
       </div>
 
       {/* Advanced toggle */}
@@ -328,6 +386,8 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel }: Agen
                   placeholder="Server name"
                   value={entry.name}
                   onChange={e => updateMcp(i, 'name', e.target.value)}
+                  readOnly={ro}
+                  style={disabledStyle}
                 />
                 <input
                   type="text"
@@ -335,11 +395,13 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel }: Agen
                   value={entry.url}
                   onChange={e => updateMcp(i, 'url', e.target.value)}
                   className="mono"
+                  readOnly={ro}
+                  style={disabledStyle}
                 />
-                <button type="button" className="remove-btn" onClick={() => removeMcp(i)}>&times;</button>
+                {!ro && <button type="button" className="remove-btn" onClick={() => removeMcp(i)}>&times;</button>}
               </div>
             ))}
-            <button type="button" className="add-btn" onClick={addMcpServer}>+ Add MCP Server</button>
+            {!ro && <button type="button" className="add-btn" onClick={addMcpServer}>+ Add MCP Server</button>}
           </div>
 
           {/* Volatile Subagents */}
@@ -347,10 +409,10 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel }: Agen
             <label>Volatile Subagents</label>
             <p className="field-hint">Stateless agents spawned as tools — fresh instance per call, no memory between invocations.</p>
             {subAgents.map((sa, i) => (
-              <details key={i} className="subagent-card" open={!sa.key}>
+              <details key={i} className="subagent-card" open={ro || !sa.key}>
                 <summary className="subagent-summary">
                   <span>{sa.name || sa.key || `Subagent ${i + 1}`}</span>
-                  <button type="button" className="remove-btn" onClick={e => { e.preventDefault(); removeSubAgent(i) }}>&times;</button>
+                  {!ro && <button type="button" className="remove-btn" onClick={e => { e.preventDefault(); removeSubAgent(i) }}>&times;</button>}
                 </summary>
                 <div className="subagent-fields">
                   <div className="field-row">
@@ -362,6 +424,8 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel }: Agen
                         value={sa.key}
                         onChange={e => updateSubAgent(i, 'key', e.target.value.replace(/[^a-zA-Z0-9_]/g, '_'))}
                         className="mono"
+                        readOnly={ro}
+                        style={disabledStyle}
                       />
                     </div>
                     <div className="field">
@@ -371,6 +435,8 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel }: Agen
                         placeholder="e.g. Code Explorer"
                         value={sa.name}
                         onChange={e => updateSubAgent(i, 'name', e.target.value)}
+                        readOnly={ro}
+                        style={disabledStyle}
                       />
                     </div>
                   </div>
@@ -381,13 +447,19 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel }: Agen
                       placeholder="What this subagent does..."
                       value={sa.description}
                       onChange={e => updateSubAgent(i, 'description', e.target.value)}
+                      readOnly={ro}
+                      style={disabledStyle}
                     />
                   </div>
                   <div className="field">
                     <label>Model <span className="required">*</span></label>
-                    <select value={sa.model} onChange={e => updateSubAgent(i, 'model', e.target.value)}>
-                      {MODELS.map(m => <option key={m} value={m}>{m}</option>)}
-                    </select>
+                    {ro ? (
+                      <input type="text" value={sa.model} readOnly style={disabledStyle} />
+                    ) : (
+                      <select value={sa.model} onChange={e => updateSubAgent(i, 'model', e.target.value)}>
+                        {MODELS.map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                    )}
                   </div>
                   <div className="field">
                     <label>System Prompt <span className="required">*</span></label>
@@ -396,6 +468,8 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel }: Agen
                       placeholder="Instructions for this subagent..."
                       value={sa.systemPrompt}
                       onChange={e => updateSubAgent(i, 'systemPrompt', e.target.value)}
+                      readOnly={ro}
+                      style={disabledStyle}
                     />
                   </div>
                   <div className="field">
@@ -406,6 +480,8 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel }: Agen
                       value={sa.playground}
                       onChange={e => updateSubAgent(i, 'playground', e.target.value)}
                       className="mono"
+                      readOnly={ro}
+                      style={disabledStyle}
                     />
                   </div>
                   <div className="field">
@@ -416,7 +492,8 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel }: Agen
                           key={tool}
                           type="button"
                           className={`chip tool-chip ${sa.builtInTools.includes(tool) ? 'active' : ''}`}
-                          onClick={() => toggleSubAgentTool(i, tool)}
+                          onClick={() => !ro && toggleSubAgentTool(i, tool)}
+                          style={ro ? { pointerEvents: 'none' } : undefined}
                         >
                           <span className="tool-icon">{sa.builtInTools.includes(tool) ? '✓' : '+'}</span>
                           {tool}
@@ -431,6 +508,8 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel }: Agen
                       placeholder="Extra text injected into the parent's prompt about this tool..."
                       value={sa.promptSnippet}
                       onChange={e => updateSubAgent(i, 'promptSnippet', e.target.value)}
+                      readOnly={ro}
+                      style={disabledStyle}
                     />
                   </div>
                   <div className="field">
@@ -440,28 +519,32 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel }: Agen
                       placeholder={"One guideline per line, e.g.:\nAlways return structured JSON\nNever modify files directly"}
                       value={sa.promptGuidelines}
                       onChange={e => updateSubAgent(i, 'promptGuidelines', e.target.value)}
+                      readOnly={ro}
+                      style={disabledStyle}
                     />
                   </div>
                 </div>
               </details>
             ))}
-            <button type="button" className="add-btn" onClick={addSubAgent}>+ Add Subagent</button>
+            {!ro && <button type="button" className="add-btn" onClick={addSubAgent}>+ Add Subagent</button>}
           </div>
         </div>
       )}
 
       {error && <div className="message error">{error}</div>}
 
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-        {onCancel && (
-          <button type="button" className="wf-header-btn" onClick={onCancel}>
-            Cancel
+      {!ro && (
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+          {onCancel && (
+            <button type="button" className="wf-header-btn" onClick={onCancel}>
+              Cancel
+            </button>
+          )}
+          <button type="submit" className="submit-btn" disabled={submitting}>
+            {submitting ? 'Creating...' : 'Create Agent'}
           </button>
-        )}
-        <button type="submit" className="submit-btn" disabled={submitting}>
-          {submitting ? 'Creating...' : 'Create Agent'}
-        </button>
-      </div>
+        </div>
+      )}
     </form>
   )
 }
