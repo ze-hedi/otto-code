@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "Otto",
+    "slug": "otto-mobile",
+    "version": "0.1.0",
+    "scheme": "otto",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "plugins": [
+      "expo-router",
+      ["expo-build-properties", { "android": { "usesCleartextTraffic": true } }]
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.otto.mobile",
+      "infoPlist": { "NSAppTransportSecurity": { "NSAllowsArbitraryLoads": true } }
+    },
+    "android": { "package": "com.otto.mobile" },
+    "experiments": { "typedRoutes": true }
+  }
+}
