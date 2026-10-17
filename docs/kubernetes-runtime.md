@@ -4,7 +4,7 @@ The backend is a **control plane**: agents and workflows are sandboxed in pods b
 runs inside the backend process. (`OTTO_RUNTIME=local` is an explicit, loudly-warned opt-out for development
 without a cluster; any other value is a startup error.)
 
-Choosing an agent or a workflow choosing an agent or a workflow starts a pod for it, mounts
+Choosing an agent or a workflow starts a pod for it, mounts
 the project's playground into that pod, and the backend proxies the usual HTTP/SSE traffic to it.
 The frontend and its API are unchanged.
 
