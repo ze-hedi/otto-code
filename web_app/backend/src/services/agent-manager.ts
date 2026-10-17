@@ -1,84 +1,20 @@
 import { v4 as uuidv4 } from "uuid";
-import { EventEmitter } from "events";
 import { Collection } from "mongodb";
-import { Type } from "@sinclair/typebox";
 import { RawPiAgent } from "../../../../agents/raw-pi-agent.js";
-import type { RawPiAgentConfig, ToolInput } from "../../../../agents/pi-agent-configs.js";
 import { getDb } from "../db/mongo.js";
 import type { AgentDocument, SerializableAgentConfig } from "../types.js";
+import { toRawAgentConfig } from "./agent-config.js";
+import { isKubernetesMode } from "../runtime/config.js";
+import { markIdle } from "./agent-state.js";
+
+// Session keys, busy state and clarification plumbing live in their own modules so the
+// container runner can share them without pulling in MongoDB.
+export {
+  getSessionKey, setSessionKey, markBusy, markIdle, getAgentBusyState, getAgentEmitter,
+} from "./agent-state.js";
+export { setClarificationCallback, resolveClarification } from "./clarification.js";
 
 const activeAgents = new Map<string, RawPiAgent>();
-const sessionKeys = new Map<string, string>();
-const busyAgents = new Map<string, string>();        // agentId → sessionKey while streaming
-const agentEmitters = new Map<string, EventEmitter>(); // per-agent event bus
-
-// ── Clarification tool plumbing ───────────────────────────────────────────────
-
-type ClarificationCallback = (toolCallId: string, questions: string[]) => void;
-const clarificationCallbacks = new Map<string, ClarificationCallback>();
-const pendingClarifications = new Map<string, (answers: string[]) => void>();
-
-export function setClarificationCallback(agentId: string, cb: ClarificationCallback): void {
-  clarificationCallbacks.set(agentId, cb);
-}
-
-export function resolveClarification(toolCallId: string, answers: string[]): boolean {
-  const resolve = pendingClarifications.get(toolCallId);
-  if (!resolve) return false;
-  pendingClarifications.delete(toolCallId);
-  resolve(answers);
-  return true;
-}
-
-function makeClarificationTool(agentId: string): ToolInput {
-  return {
-    name: "clarification_tool",
-    label: "clarification tool",
-    description: "a tool that should be called to ask for clarification from the user",
-    parameters: Type.Object({
-      questions: Type.Array(Type.String({ description: "a question that helps you gather clarifications about what to do" }))
-    }, { description: "a set of questions that will help get more context for an optimal response" }),
-    promptSnippet: "clarification tool that helps you get more context from the user through questions",
-    promptGuidelines: ["call this tool when you need more details to help you orient your response to the optimal response"],
-    executionMode: "sequential",
-    execute: async (toolCallId, params, signal) => {
-      const questions: string[] = params.questions;
-      const answers = await new Promise<string[]>((resolve, reject) => {
-        if (signal?.aborted) { reject(new Error("aborted")); return; }
-        pendingClarifications.set(toolCallId, resolve);
-        const cb = clarificationCallbacks.get(agentId);
-        cb?.(toolCallId, questions);
-        signal?.addEventListener("abort", () => {
-          pendingClarifications.delete(toolCallId);
-          reject(new Error("aborted"));
-        }, { once: true });
-      });
-      const result = questions.map((q, i) => `Q: ${q}\nA: ${answers[i] ?? ""}`).join("\n\n");
-      return { content: [{ type: "text", text: result }] };
-    },
-  };
-}
-
-export function getSessionKey(agentId: string): string {
-  return sessionKeys.get(agentId) ?? "main";
-}
-
-export function setSessionKey(agentId: string, key: string): void {
-  sessionKeys.set(agentId, key);
-}
-
-const API_KEY_ENV: Record<string, string> = {
-  deepseek: "DEEPSEEK_API_KEY",
-  anthropic: "ANTHROPIC_API_KEY",
-  openai: "OPENAI_API_KEY",
-  google: "GOOGLE_API_KEY",
-};
-
-function resolveApiKey(model: string): string | undefined {
-  const provider = model.split("/")[0];
-  const envVar = API_KEY_ENV[provider];
-  return envVar ? process.env[envVar] : undefined;
-}
 
 function getCollection(): Collection<AgentDocument> {
   return getDb().collection<AgentDocument>("agents");
@@ -88,28 +24,11 @@ export async function createAgent(config: SerializableAgentConfig): Promise<Agen
   const agentId = uuidv4();
   const now = new Date();
 
-  const rawConfig: RawPiAgentConfig = {
-    name: config.name,
-    model: config.model,
-    apiKey: resolveApiKey(config.model),
-    systemPrompt: config.systemPrompt,
-    playground: config.playground,
-    workingDir: config.workingDir,
-    builtInTools: config.builtInTools,
-    mcpServers: config.mcpServers,
-    mcpConnectionTimeout: config.mcpConnectionTimeout,
-    toolCallGuardrails: config.toolCallGuardrails,
-    thinkingLevel: config.thinkingLevel,
-    compaction: config.compaction,
-    ...(config.subAgents && { subAgents: config.subAgents }),
-  };
-
-  if (config.clarificationTool) {
-    rawConfig.tools = [...(rawConfig.tools ?? []), makeClarificationTool(agentId)];
+  // In kubernetes mode the agent only comes to life inside its own container,
+  // so the backend process stores the config and nothing else.
+  if (!isKubernetesMode()) {
+    activeAgents.set(agentId, new RawPiAgent(toRawAgentConfig(agentId, config)));
   }
-
-  const agent = new RawPiAgent(rawConfig);
-  activeAgents.set(agentId, agent);
 
   const doc: AgentDocument = {
     agent_id: agentId,
@@ -135,28 +54,7 @@ export async function getOrActivateAgent(agentId: string): Promise<RawPiAgent | 
   const doc = await getCollection().findOne({ agent_id: agentId });
   if (!doc) return null;
 
-  const config = doc.config;
-  const rawConfig: RawPiAgentConfig = {
-    name: config.name,
-    model: config.model,
-    apiKey: resolveApiKey(config.model),
-    systemPrompt: config.systemPrompt,
-    playground: config.playground,
-    workingDir: config.workingDir,
-    builtInTools: config.builtInTools,
-    mcpServers: config.mcpServers,
-    mcpConnectionTimeout: config.mcpConnectionTimeout,
-    toolCallGuardrails: config.toolCallGuardrails,
-    thinkingLevel: config.thinkingLevel,
-    compaction: config.compaction,
-    ...(config.subAgents && { subAgents: config.subAgents }),
-  };
-
-  if (config.clarificationTool) {
-    rawConfig.tools = [...(rawConfig.tools ?? []), makeClarificationTool(agentId)];
-  }
-
-  const agent = new RawPiAgent(rawConfig);
+  const agent = new RawPiAgent(toRawAgentConfig(agentId, doc.config));
   activeAgents.set(agentId, agent);
   return agent;
 }
@@ -179,32 +77,4 @@ export async function deleteAgent(agentId: string): Promise<boolean> {
   markIdle(agentId);
   const result = await getCollection().deleteOne({ agent_id: agentId });
   return result.deletedCount > 0;
-}
-
-// ── Busy state & event bus ──────────────────────────────────────────────────
-
-export function markBusy(agentId: string, sessionKey: string): EventEmitter {
-  busyAgents.set(agentId, sessionKey);
-  const emitter = new EventEmitter();
-  agentEmitters.set(agentId, emitter);
-  return emitter;
-}
-
-export function markIdle(agentId: string): void {
-  busyAgents.delete(agentId);
-  const emitter = agentEmitters.get(agentId);
-  if (emitter) {
-    emitter.emit("done");
-    emitter.removeAllListeners();
-    agentEmitters.delete(agentId);
-  }
-}
-
-export function getAgentBusyState(agentId: string): { busy: boolean; sessionKey: string | null } {
-  const sk = busyAgents.get(agentId);
-  return { busy: !!sk, sessionKey: sk ?? null };
-}
-
-export function getAgentEmitter(agentId: string): EventEmitter | undefined {
-  return agentEmitters.get(agentId);
 }

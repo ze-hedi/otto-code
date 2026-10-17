@@ -1,0 +1,13 @@
+**/node_modules
+.git
+**/.otto-sessions
+**/*.jsonl
+web_app/frontend
+web_app/storage
+slack-clone
+tui
+mcp
+memory_layer
+tests
+docs
+examples

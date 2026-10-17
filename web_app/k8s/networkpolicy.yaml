@@ -1,0 +1,36 @@
+# Optional but recommended: agents run arbitrary shell commands.
+# - ingress: only the backend may talk to a runner
+# - egress: DNS + public internet (LLM APIs, package registries); no cluster-internal ranges and no
+#   cloud metadata endpoint. If your agents use MCP servers on the host or in-cluster, add them here.
+# Needs a CNI that enforces NetworkPolicy (Calico, Cilium, ...). Note that `kubectl port-forward`
+# traffic (OTTO_K8S_ACCESS=port-forward) is not filtered by ingress rules.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: otto-runner
+  namespace: otto
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: otto-runner
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: otto-backend
+      ports:
+        - port: 8080
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { port: 53, protocol: UDP }
+        - { port: 53, protocol: TCP }
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16]

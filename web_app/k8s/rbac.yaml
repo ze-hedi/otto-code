@@ -1,0 +1,36 @@
+# What the backend needs to manage runner pods. Bind it to the identity the backend uses:
+# the ServiceAccount below when the backend runs in-cluster, or your own user/kubeconfig identity
+# when it runs on your machine (OTTO_K8S_ACCESS=port-forward).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: otto-backend
+  namespace: otto
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: otto-runtime-manager
+  namespace: otto
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  # only needed when the backend runs outside the cluster
+  - apiGroups: [""]
+    resources: ["pods/portforward"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: otto-runtime-manager
+  namespace: otto
+subjects:
+  - kind: ServiceAccount
+    name: otto-backend
+    namespace: otto
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: otto-runtime-manager

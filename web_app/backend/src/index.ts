@@ -18,10 +18,24 @@ import workflowRoutes from "./routes/workflows.js";
 import workflowStoreRoutes from "./routes/workflow-store.js";
 import projectRoutes from "./routes/projects.js";
 import dashboardRoutes from "./routes/dashboards.js";
+import { getRuntimeManager, isKubernetesMode, startRuntime } from "./runtime/index.js";
+import { createAgentRuntimeRouter } from "./runtime/agent-routes.js";
+import { createWorkflowRuntimeRouter, createWorkflowStoreRuntimeRouter } from "./runtime/workflow-routes.js";
+import { createRuntimeAdminRouter } from "./runtime/routes.js";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// OTTO_RUNTIME=kubernetes: these run ahead of the regular routers and forward everything that
+// touches a live agent/workflow to its pod. Everything else falls through unchanged.
+if (isKubernetesMode()) {
+  const runtimes = getRuntimeManager();
+  app.use("/runtimes", createRuntimeAdminRouter(runtimes));
+  app.use("/agents", createAgentRuntimeRouter(runtimes));
+  app.use("/workflows", createWorkflowRuntimeRouter(runtimes));
+  app.use("/workflow-store", createWorkflowStoreRuntimeRouter(runtimes));
+}
 
 app.use("/agents", agentRoutes);
 app.use("/workflows", workflowRoutes);
@@ -33,6 +47,7 @@ const PORT = process.env.PORT || 4000;
 
 async function main() {
   await connectDb();
+  await startRuntime();
   app.listen(PORT, () => {
     console.log(`Backend listening on http://localhost:${PORT}`);
   });
