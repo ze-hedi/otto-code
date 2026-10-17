@@ -2,8 +2,8 @@ import { Router } from "express";
 import fs from "fs";
 import path from "path";
 import readline from "readline";
-import { createAgent, deleteAgent, getActiveAgent, getOrActivateAgent, getAgentDoc, getAllAgentDocs, getSessionKey, setSessionKey, markBusy, markIdle, getAgentBusyState, getAgentEmitter, setClarificationCallback, resolveClarification } from "../services/agent-manager.js";
-import { handleEventWithClient } from "../../../../agents/pi-agent-utils.js";
+import { createAgent, deleteAgent, getActiveAgent, getOrActivateAgent, getAgentDoc, getAllAgentDocs, getSessionKey, setSessionKey, getAgentBusyState, resolveClarification } from "../services/agent-manager.js";
+import { streamChat, streamReconnect, transformMessages } from "../services/chat-stream.js";
 import type { SerializableAgentConfig } from "../types.js";
 
 const router = Router();
@@ -257,57 +257,7 @@ router.post("/:id/chat", async (req, res) => {
     return;
   }
 
-  const sessionKey = getSessionKey(req.params.id);
-  const emitter = markBusy(req.params.id, sessionKey);
-
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-  res.setHeader("X-Accel-Buffering", "no");
-  res.flushHeaders();
-
-  let closed = false;
-  res.on("close", () => { closed = true; console.log("[chat] client disconnected"); });
-
-  const send = (payload: object) => {
-    if (!closed) {
-      console.log("[chat] SSE send:", JSON.stringify(payload).slice(0, 200));
-      res.write(`data: ${JSON.stringify(payload)}\n\n`);
-      (res.socket as any)?.flush?.();
-      (res as any).flush?.();
-    }
-  };
-
-  // Wire tool approval SSE event
-  agent.onToolApprovalRequired((toolCallId, toolName, args) => {
-    const payload = { type: 'tool_approval_required', toolCallId, name: toolName, args };
-    send(payload);
-    emitter.emit("event", payload);
-  });
-
-  // Wire clarification tool SSE event
-  setClarificationCallback(req.params.id, (toolCallId, questions) => {
-    const payload = { type: 'clarification_required', toolCallId, questions };
-    send(payload);
-    emitter.emit("event", payload);
-  });
-
-  try {
-    await new Promise<void>((resolve, reject) => {
-      agent.chat(message, (event) => {
-        handleEventWithClient(event, send);
-        // Broadcast to event bus so reconnecting clients receive events
-        handleEventWithClient(event, (payload) => emitter.emit("event", payload));
-        if (event.type === "agent_end") resolve();
-      }, sessionKey).catch(reject);
-    });
-  } catch (err: any) {
-    console.error("[chat] error:", err);
-    send({ type: "error", message: err?.message ?? String(err) });
-  } finally {
-    markIdle(req.params.id);
-    res.end();
-  }
+  await streamChat(req.params.id, agent, message, res);
 });
 
 // ── Stop streaming endpoint ───────────────────────────────────────────────
@@ -369,119 +319,10 @@ router.post("/:id/clarification-answer", (req, res) => {
 // ── SSE reconnection endpoint ──────────────────────────────────────────────
 
 router.get("/:id/events", (req, res) => {
-  const state = getAgentBusyState(req.params.id);
-  if (!state.busy) {
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Connection", "keep-alive");
-    res.flushHeaders();
-    res.write(`data: ${JSON.stringify({ type: "agent_idle" })}\n\n`);
-    res.end();
-    return;
-  }
-
-  const emitter = getAgentEmitter(req.params.id);
-  if (!emitter) {
-    res.setHeader("Content-Type", "text/event-stream");
-    res.flushHeaders();
-    res.write(`data: ${JSON.stringify({ type: "agent_idle" })}\n\n`);
-    res.end();
-    return;
-  }
-
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-  res.setHeader("X-Accel-Buffering", "no");
-  res.flushHeaders();
-
-  const onEvent = (payload: object) => {
-    res.write(`data: ${JSON.stringify(payload)}\n\n`);
-    (res.socket as any)?.flush?.();
-    (res as any).flush?.();
-  };
-
-  const onDone = () => {
-    res.write(`data: ${JSON.stringify({ type: "agent_idle" })}\n\n`);
-    res.end();
-  };
-
-  emitter.on("event", onEvent);
-  emitter.once("done", onDone);
-
-  res.on("close", () => {
-    emitter.off("event", onEvent);
-    emitter.off("done", onDone);
-  });
+  streamReconnect(req.params.id, res);
 });
 
 // ── Message history endpoint ────────────────────────────────────────────────
-
-interface ChatPart {
-  type: "thinking" | "text" | "tool";
-  content?: string;
-  name?: string;
-  input?: string;
-  result?: string;
-  isError?: boolean;
-  status?: "running" | "done";
-}
-
-interface ChatMsg {
-  role: "user" | "assistant";
-  content: string;
-  parts: ChatPart[];
-}
-
-function transformMessages(rawMessages: any[]): ChatMsg[] {
-  const out: ChatMsg[] = [];
-
-  // Collect tool results keyed by toolCallId for look-ahead attachment
-  const toolResults = new Map<string, { content: string; isError: boolean }>();
-  for (const msg of rawMessages) {
-    if (msg.role === "toolResult") {
-      const text = Array.isArray(msg.content)
-        ? msg.content.map((c: any) => c.text ?? "").join("\n")
-        : String(msg.content ?? "");
-      const trimmed = text.length > 1500 ? text.slice(0, 1500) + "\n... (truncated)" : text;
-      toolResults.set(msg.toolCallId, { content: trimmed, isError: !!msg.isError });
-    }
-  }
-
-  for (const msg of rawMessages) {
-    if (msg.role === "user") {
-      const text = typeof msg.content === "string"
-        ? msg.content
-        : Array.isArray(msg.content)
-          ? msg.content.map((c: any) => c.text ?? "").join("\n")
-          : "";
-      out.push({ role: "user", content: text, parts: [] });
-    } else if (msg.role === "assistant") {
-      const parts: ChatPart[] = [];
-      for (const block of msg.content ?? []) {
-        if (block.type === "thinking") {
-          parts.push({ type: "thinking", content: block.thinking });
-        } else if (block.type === "text") {
-          parts.push({ type: "text", content: block.text });
-        } else if (block.type === "toolCall") {
-          const tr = toolResults.get(block.id);
-          parts.push({
-            type: "tool",
-            name: block.name,
-            input: JSON.stringify(block.arguments, null, 2),
-            result: tr?.content,
-            isError: tr?.isError,
-            status: "done",
-          });
-        }
-      }
-      out.push({ role: "assistant", content: "", parts });
-    }
-    // skip toolResult, bashExecution, compactionSummary, etc.
-  }
-
-  return out;
-}
 
 router.get("/:id/messages", async (req, res) => {
   const agent = await getOrActivateAgent(req.params.id);

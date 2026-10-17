@@ -8,3 +8,4 @@ build/
 .env.swp
 .otto-sessions/
 database/
+web_app/k8s/secret.yaml

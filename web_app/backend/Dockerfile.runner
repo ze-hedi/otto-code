@@ -1,0 +1,36 @@
+# Image for the per-agent / per-workflow pods started by the backend (OTTO_RUNTIME=kubernetes).
+# Build from the repo root, because the runner shares ../agents with the backend:
+#   docker build -f web_app/backend/Dockerfile.runner -t otto-runner:latest .
+#
+# This image is the sandbox the agents' bash tool runs in. Add any toolchains your agents need
+# (python, build-essential, ...) here.
+FROM node:22-slim
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git ripgrep ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Agent SDK dependencies (root package). The root package.json has an `overrides` entry that
+# conflicts with a direct dependency (npm EOVERRIDE), so it is dropped for the image build.
+COPY package.json package-lock.json ./
+RUN npm pkg delete overrides \
+ && npm install --omit=dev --no-audit --no-fund
+
+# Runner dependencies (express, uuid) and the TypeScript runner.
+COPY web_app/backend/package.json web_app/backend/
+RUN cd web_app/backend \
+ && npm install --omit=dev --no-audit --no-fund \
+ && npm install --no-save --no-audit --no-fund tsx
+
+COPY agents agents
+COPY web_app/backend/src web_app/backend/src
+
+ENV NODE_ENV=production PORT=8080 OTTO_PLAYGROUND=/workspace
+EXPOSE 8080
+
+# Run as the unprivileged user; the pod's securityContext pins the actual uid/gid.
+USER node
+WORKDIR /workspace
+CMD ["/app/web_app/backend/node_modules/.bin/tsx", "/app/web_app/backend/src/runner/server.ts"]

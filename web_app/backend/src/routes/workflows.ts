@@ -1,13 +1,14 @@
 import fs from "fs";
 import path from "path";
 import { Router } from "express";
-import { v4 as uuidv4 } from "uuid";
 import { AgentsStorage, InterfaceStorage } from "../../../../agents/workflow-types.js";
 import type { WorkflowSchema } from "../../../../agents/workflow-types.js";
 import { Workflow } from "../../../../agents/workflow.js";
-import { buildInterfaceStorage, buildAgentsStorage, validateInterfaceRules, runWorkflow } from "../services/workflow-manager.js";
-import { handleEventWithClient } from "../../../../agents/pi-agent-utils.js";
-import { getWorkflow as getWorkflowDoc, updateWorkflow } from "../db/mongo.js";
+import { buildInterfaceStorage, buildAgentsStorage, validateInterfaceRules } from "../services/workflow-manager.js";
+import { streamWorkflowRun } from "../services/workflow-stream.js";
+import { getWorkflow as getWorkflowDoc } from "../db/mongo.js";
+import { resolveWorkflowSession } from "../services/workflow-session.js";
+import { assertInProcessAllowed } from "../runtime/config.js";
 
 const router = Router();
 
@@ -61,30 +62,9 @@ router.post("/agents", async (req, res) => {
  * Body: WorkflowSchema (components + connections)
  * Builds InterfaceStorage using the existing AgentsStorage, stores it globally.
  */
-/**
- * Extracts the structural fingerprint of a workflow schema for comparison.
- * Only agent IDs and connections matter — positions are ignored.
- */
-function extractStructuralSchema(schema: WorkflowSchema) {
-  const agentIds = schema.components
-    .filter(c => c.type === "agent")
-    .map(c => c.id)
-    .sort();
-  const connections = schema.connections
-    .map(c => ({ from: c.from, to: c.to }))
-    .sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
-  return { agentIds, connections };
-}
-
-function structurallyEqual(
-  a: { agentIds: string[]; connections: { from: string; to: string }[] },
-  b: { agentIds: string[]; connections: { from: string; to: string }[] },
-): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
-}
-
 router.post("/compile", async (req, res) => {
   try {
+    assertInProcessAllowed("compile a workflow");
     const { guardrailsOnInterfaces, workflowId, sessionMode, sessionId: requestedSessionId, playground: reqPlayground, ...schema } = req.body as WorkflowSchema & {
       guardrailsOnInterfaces?: boolean;
       workflowId?: string;
@@ -120,46 +100,13 @@ router.post("/compile", async (req, res) => {
     }
 
     // ── Session management ──────────────────────────────────────────────────
-    const currentStructure = extractStructuralSchema(schema);
-    let workflowSessionId: string | undefined;
-
-    if (workflowId) {
-      const workflowDoc = await getWorkflowDoc(workflowId);
-      const previousStructure = workflowDoc?.lastCompiledSchema;
-
-      if (!previousStructure) {
-        // First compile ever — create new session
-        workflowSessionId = uuidv4();
-        console.log("[compile] First compile — new session:", workflowSessionId);
-      } else if (!structurallyEqual(previousStructure, currentStructure)) {
-        // Structure changed — wipe old sessions, create new session
-        const playground = [...currentAgentsStorage.getAll().values()].find(c => c.playground)?.playground;
-        if (playground) {
-          const workflowDir = path.join(playground, ".otto-sessions", `workflow-${workflowId}`);
-          if (fs.existsSync(workflowDir)) {
-            fs.rmSync(workflowDir, { recursive: true, force: true });
-            console.log(`[compile] Structure changed — wiped sessions: ${workflowDir}`);
-          }
-        }
-        workflowSessionId = uuidv4();
-        console.log("[compile] Structure changed — new session:", workflowSessionId);
-      } else if (sessionMode === "new") {
-        // Same structure, user explicitly wants a new session
-        workflowSessionId = uuidv4();
-        console.log("[compile] Same structure, user chose new session:", workflowSessionId);
-      } else {
-        // Same structure, continue existing session (use explicit ID if provided, else active)
-        workflowSessionId = requestedSessionId ?? workflowDoc?.activeSessionId;
-        console.log("[compile] Same structure, continuing session:", workflowSessionId);
-      }
-
-      // Persist the compiled schema and active session
-      await updateWorkflow(workflowId, {
-        lastCompiledSchema: currentStructure,
-        activeSessionId: workflowSessionId,
-        compiled: true,
-      });
-    }
+    const workflowSessionId = await resolveWorkflowSession({
+      workflowId,
+      schema,
+      sessionMode,
+      requestedSessionId,
+      playground: [...currentAgentsStorage.getAll().values()].find(c => c.playground)?.playground,
+    });
 
     // ── Build workflow ──────────────────────────────────────────────────────
     currentInterfaceStorage = await buildInterfaceStorage(schema, currentAgentsStorage);
@@ -252,6 +199,7 @@ router.get("/:workflowId/sessions", async (req, res) => {
  * Runs the compiled workflow, streaming SSE events tagged with agentId.
  */
 router.post("/run", async (req, res) => {
+  assertInProcessAllowed("run a workflow");
   if (!currentWorkflow) {
     res.status(400).json({ error: "No compiled workflow. Call POST /workflows/compile first." });
     return;
@@ -263,55 +211,7 @@ router.post("/run", async (req, res) => {
     return;
   }
 
-  // SSE setup
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-  res.flushHeaders();
-
-  let closed = false;
-  res.on("close", () => {
-    closed = true;
-    console.log("[workflow/run] client disconnected — aborting all active agents");
-    for (const agent of currentWorkflow!.getAvailableAgents()) {
-      agent.abort().catch(() => {});
-    }
-  });
-
-  const send = (payload: object) => {
-    if (!closed) res.write(`data: ${JSON.stringify(payload)}\n\n`);
-  };
-
-  const sendEvent = (agentId: string, event: any) => {
-    handleEventWithClient(event, (payload) => {
-      send({ ...payload, agentId });
-    });
-  };
-
-  // Wire tool approval callbacks so the frontend can approve/reject interface tool calls
-  for (const level of currentWorkflow.executionQueue.levels) {
-    for (const node of level) {
-      const agent = currentWorkflow.getAgentById(node.id);
-      if (agent) {
-        const nodeId = node.id;
-        agent.onToolApprovalRequired((toolCallId, toolName, args) => {
-          send({ type: "tool_approval_required", agentId: nodeId, toolCallId, name: toolName, args });
-        });
-      }
-    }
-  }
-
-  try {
-    console.log(`[workflow/run] Starting workflow with message: "${message.slice(0, 100)}..."`);
-    await runWorkflow(message, currentWorkflow, sendEvent);
-    send({ type: "workflow_done" });
-    console.log("[workflow/run] Workflow completed");
-  } catch (err: any) {
-    console.error("[workflow/run] error:", err);
-    send({ type: "error", message: err?.message ?? String(err) });
-  } finally {
-    res.end();
-  }
+  await streamWorkflowRun(currentWorkflow, message, res);
 });
 
 /**
