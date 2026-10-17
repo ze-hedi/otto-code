@@ -39,6 +39,14 @@ export interface AgentDocument {
   updated_at: Date;
 }
 
+export interface InterfaceConfig {
+  description?: string;
+  promptSnippet?: string;
+  promptGuidelines?: string[];
+  /** Per-parameter description overrides, keyed by param name (e.g. "task", "agent", "result", "route") */
+  paramDescriptions?: Record<string, string>;
+}
+
 export interface WorkflowDocument {
   workflow_id: string;
   name: string;
@@ -55,6 +63,7 @@ export interface WorkflowDocument {
   };
   /** Whether this workflow has been successfully compiled at least once. */
   compiled?: boolean;
+  interfaceConfigs?: Record<string, InterfaceConfig>;
   created_at: Date;
   updated_at: Date;
 }

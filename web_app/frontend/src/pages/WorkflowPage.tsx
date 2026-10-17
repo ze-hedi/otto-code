@@ -3,6 +3,8 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { WorkflowChatPanel } from './WorkflowChatPanel';
 import { AgentFormContent } from '../components/AgentFormContent';
 import type { AgentFormData } from '../components/AgentFormContent';
+import { InterfaceFormContent } from '../components/InterfaceFormContent';
+import type { InterfaceConfigData } from '../components/InterfaceFormContent';
 import './WorkflowPage.css';
 
 /* ── Types ─────────────────────────────────────────── */
@@ -118,6 +120,10 @@ export function WorkflowPage() {
   const [showCreateAgentModal, setShowCreateAgentModal] = useState(false);
   const [viewAgentData, setViewAgentData] = useState<{ name: string; data: AgentFormData } | null>(null);
 
+  const [interfaceConfigs, setInterfaceConfigs] = useState<Record<string, InterfaceConfigData>>({});
+  const [interfaceDefaults, setInterfaceDefaults] = useState<Record<string, InterfaceConfigData>>({});
+  const [editingInterface, setEditingInterface] = useState<{ type: string; name: string } | null>(null);
+
   // Session chosen on the workflows list page: a session uuid or "new"
   const [searchParams] = useSearchParams();
   const [sessionParam, setSessionParam] = useState<string>(searchParams.get('session') ?? 'new');
@@ -135,6 +141,12 @@ export function WorkflowPage() {
           setProjectPath(playground);
         } catch {}
       }
+
+      // Load interface defaults
+      try {
+        const defRes = await fetch('http://localhost:4000/workflows/interface-defaults');
+        if (defRes.ok) setInterfaceDefaults(await defRes.json());
+      } catch {}
 
       let loadedAgents: AgentItem[] = [];
       try {
@@ -187,6 +199,7 @@ export function WorkflowPage() {
           setNodes(restoredNodes);
           setConnections(restoredConns);
           setWorkflowName(wf.name);
+          if (wf.interfaceConfigs) setInterfaceConfigs(wf.interfaceConfigs);
 
           // Check if the workflow is already compiled (e.g. navigated away and back)
           try {
@@ -396,17 +409,20 @@ export function WorkflowPage() {
   async function onNodeMouseUp(e: React.MouseEvent) {
     const start = mouseDownPos.current;
     mouseDownPos.current = null;
-    if (!start || start.type !== 'agent') return;
+    if (!start) return;
     const dx = e.clientX - start.x;
     const dy = e.clientY - start.y;
-    if (Math.abs(dx) < 5 && Math.abs(dy) < 5) {
-      // Click detected — fetch agent config and show popup
+    if (Math.abs(dx) >= 5 || Math.abs(dy) >= 5) return;
+
+    if (start.type === 'agent') {
       try {
         const res = await fetch(`http://localhost:4000/agents/${start.agentId}`);
         if (!res.ok) return;
         const doc = await res.json();
         setViewAgentData({ name: start.agentName, data: doc.config as AgentFormData });
       } catch {}
+    } else if (start.type === 'interface') {
+      setEditingInterface({ type: start.agentId, name: start.agentName });
     }
   }
 
@@ -453,6 +469,7 @@ export function WorkflowPage() {
         ? { sessionMode: 'new' }
         : { sessionMode: 'continue', sessionId: sessionParam }),
       ...(projectPath ? { playground: projectPath } : {}),
+      ...(Object.keys(interfaceConfigs).length > 0 ? { interfaceConfigs } : {}),
     };
     console.log('workflowInput', workflowInput);
 
@@ -607,8 +624,9 @@ export function WorkflowPage() {
               <div
                 key={node.id}
                 className={`wf-iface-node ${selectedNodeId === node.id ? 'selected' : ''}`}
-                style={{ left: node.x, top: node.y, width: IFACE_SIZE, height: IFACE_SIZE }}
+                style={{ left: node.x, top: node.y, width: IFACE_SIZE, height: IFACE_SIZE, cursor: 'pointer' }}
                 onMouseDown={e => onNodeMouseDown(e, node)}
+                onMouseUp={onNodeMouseUp}
               >
                 <button className="wf-node-delete" onClick={e => { e.stopPropagation(); deleteNode(node.id); }}>x</button>
                 <span className="wf-iface-icon">{node.agentIcon}</span>
@@ -707,6 +725,41 @@ export function WorkflowPage() {
                 readOnly
                 initialData={viewAgentData.data}
                 onSuccess={() => {}}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Interface config popup */}
+      {editingInterface && interfaceDefaults[editingInterface.type] && (
+        <div className="wf-error-overlay" onClick={() => setEditingInterface(null)}>
+          <div className="wf-create-agent-popup" onClick={e => e.stopPropagation()}>
+            <div className="wf-error-header">
+              <span>{editingInterface.name} Interface</span>
+              <button className="wf-error-close" onClick={() => setEditingInterface(null)}>✕</button>
+            </div>
+            <div className="wf-create-agent-body">
+              <InterfaceFormContent
+                interfaceType={editingInterface.type}
+                initialData={interfaceConfigs[editingInterface.type]}
+                defaults={interfaceDefaults[editingInterface.type]}
+                onSave={(config) => {
+                  const updated = { ...interfaceConfigs, [editingInterface.type]: config };
+                  // Remove empty configs
+                  if (Object.keys(config).length === 0) delete updated[editingInterface.type];
+                  setInterfaceConfigs(updated);
+                  setEditingInterface(null);
+                  // Persist to backend
+                  if (workflowId) {
+                    fetch(`http://localhost:4000/workflow-store/${workflowId}`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ interfaceConfigs: updated }),
+                    }).catch(() => {});
+                  }
+                }}
+                onCancel={() => setEditingInterface(null)}
               />
             </div>
           </div>

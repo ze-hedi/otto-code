@@ -14,7 +14,7 @@ const router = Router();
  */
 router.post("/", async (req, res) => {
   try {
-    const { name, description, playground, schema } = req.body as Partial<WorkflowDocument>;
+    const { name, description, playground, schema, interfaceConfigs } = req.body as Partial<WorkflowDocument>;
     if (!name) {
       res.status(400).json({ error: "name is required" });
       return;
@@ -29,6 +29,7 @@ router.post("/", async (req, res) => {
       description,
       playground,
       schema,
+      interfaceConfigs,
       created_at: new Date(),
       updated_at: new Date(),
     };
@@ -80,11 +81,12 @@ router.get("/:id", async (req, res) => {
  */
 router.put("/:id", async (req, res) => {
   try {
-    const { name, description, schema } = req.body as Partial<WorkflowDocument>;
+    const { name, description, schema, interfaceConfigs } = req.body as Partial<WorkflowDocument>;
     const patch: Partial<WorkflowDocument> = {};
     if (name !== undefined) patch.name = name;
     if (description !== undefined) patch.description = description;
     if (schema !== undefined) patch.schema = schema;
+    if (interfaceConfigs !== undefined) patch.interfaceConfigs = interfaceConfigs;
     await updateWorkflow(req.params.id, patch);
     res.json({ ok: true });
   } catch (err: any) {

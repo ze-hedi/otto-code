@@ -6,7 +6,7 @@ import { EventEmitter } from "events";
 import { AgentsStorage, InterfaceStorage } from "../../../../agents/workflow-types.js";
 import type { WorkflowSchema } from "../../../../agents/workflow-types.js";
 import { Workflow } from "../../../../agents/workflow.js";
-import { buildInterfaceStorage, buildAgentsStorage, validateInterfaceRules, runWorkflow } from "../services/workflow-manager.js";
+import { buildInterfaceStorage, buildAgentsStorage, validateInterfaceRules, runWorkflow, interfaceTools } from "../services/workflow-manager.js";
 import { handleEventWithClient } from "../../../../agents/pi-agent-utils.js";
 import { getWorkflow as getWorkflowDoc, updateWorkflow } from "../db/mongo.js";
 
@@ -106,7 +106,7 @@ function structurallyEqual(
 
 router.post("/compile", async (req, res) => {
   try {
-    const { guardrailsOnInterfaces, workflowId, sessionMode, sessionId: requestedSessionId, playground: reqPlayground, ...schema } = req.body as WorkflowSchema & {
+    const { guardrailsOnInterfaces, workflowId, sessionMode, sessionId: requestedSessionId, playground: reqPlayground, interfaceConfigs: reqInterfaceConfigs, ...schema } = req.body as WorkflowSchema & {
       guardrailsOnInterfaces?: boolean;
       workflowId?: string;
       /** "new" = create fresh session, "continue" = resume `sessionId` */
@@ -114,6 +114,7 @@ router.post("/compile", async (req, res) => {
       /** Session ID to resume (required with "continue") */
       sessionId?: string;
       playground?: string;
+      interfaceConfigs?: Record<string, import("../types.js").InterfaceConfig>;
     };
 
     // Always refresh AgentsStorage from DB to pick up agents created since page load
@@ -183,7 +184,9 @@ router.post("/compile", async (req, res) => {
     }
 
     // ── Build workflow ──────────────────────────────────────────────────────
-    currentInterfaceStorage = await buildInterfaceStorage(schema, currentAgentsStorage);
+    // Use interfaceConfigs from request body, or fall back to workflow doc
+    const interfaceConfigs = reqInterfaceConfigs ?? (workflowId ? (await getWorkflowDoc(workflowId))?.interfaceConfigs : undefined);
+    currentInterfaceStorage = await buildInterfaceStorage(schema, currentAgentsStorage, interfaceConfigs);
     console.log("[compile] InterfaceStorage saved globally");
 
     currentWorkflow = new Workflow(schema, currentAgentsStorage, currentInterfaceStorage);
@@ -247,6 +250,43 @@ router.post("/compile", async (req, res) => {
     console.error("[compile] error:", err);
     res.status(500).json({ error: err?.message ?? String(err) });
   }
+});
+
+/**
+ * GET /workflows/interface-defaults
+ * Returns the hardcoded default values for each interface type.
+ */
+router.get("/interface-defaults", (_req, res) => {
+  const paramDefaults: Record<string, Record<string, string>> = {
+    delegate: {
+      task: "a clear description of a task to be run. Be specific about expected inputs, outputs, files to create/modify, and acceptance criteria. For explorer tasks, specify the question to answer and the subfolder to explore. For verifier tasks, list every file the preceding workers touched so tests can be written for all of them.",
+      agent: "which agent to assign this task to. Use 'explorer' to survey the codebase first, then 'worker' for implementation, and 'verifier' after every implementation batch.",
+    },
+    forward: {
+      result: "the result of your work to forward to the next agent",
+    },
+    accumulate: {
+      agent: "which agent produced this result",
+      result: "the result produced by this agent to be accumulated into a single output",
+    },
+    route: {
+      route: "which agent to route to",
+      result: "the result/context to pass to the routed agent",
+    },
+  };
+
+  const defaults: Record<string, { description: string; promptSnippet?: string; promptGuidelines?: string[]; paramDescriptions: Record<string, string> }> = {};
+
+  for (const [key, tool] of interfaceTools.entries()) {
+    defaults[key] = {
+      description: tool.description,
+      promptSnippet: tool.promptSnippet,
+      promptGuidelines: tool.promptGuidelines,
+      paramDescriptions: paramDefaults[key] ?? {},
+    };
+  }
+
+  res.json(defaults);
 });
 
 /**

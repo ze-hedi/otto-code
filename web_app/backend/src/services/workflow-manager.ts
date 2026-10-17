@@ -2,13 +2,14 @@ import { AgentsStorage, InterfaceStorage, NodeType } from "../../../../agents/wo
 import type { WorkflowSchema } from "../../../../agents/workflow-types.js";
 import type { RawPiAgentConfig } from "../../../../agents/pi-agent-configs.js";
 import type { ToolInput } from "../../../../agents/pi-agent-types.js";
-import type { AgentInterface } from "../../../../agents/workflow-interface.js";
+import type { AgentInterface, ParamDescriptions } from "../../../../agents/workflow-interface.js";
 import {
   DelegationInterface,
   ForwardInterface,
   AccumulateInterface,
   RouteInterface,
 } from "../../../../agents/workflow-interface.js";
+import type { InterfaceConfig } from "../types.js";
 import { getAllAgentDocs } from "./agent-manager.js";
 import type { Workflow } from "../../../../agents/workflow.js";
 import type { AgentSessionEvent as AgentEvent } from "@mariozechner/pi-coding-agent";
@@ -153,7 +154,7 @@ export function validateInterfaceRules(schema: WorkflowSchema): string[] {
   return errors;
 }
 
-export async function buildInterfaceStorage(schema: WorkflowSchema, agentsStorage: AgentsStorage): Promise<InterfaceStorage> {
+export async function buildInterfaceStorage(schema: WorkflowSchema, agentsStorage: AgentsStorage, interfaceConfigs?: Record<string, InterfaceConfig>): Promise<InterfaceStorage> {
 
   const interfaceNodes = schema.components.filter(c => c.type === "interface");
 
@@ -187,19 +188,27 @@ export async function buildInterfaceStorage(schema: WorkflowSchema, agentsStorag
 
     const tool = { ...toolTemplate, execute: toolTemplate.execute };
 
+    // Merge user overrides onto the tool
+    const overrides = interfaceConfigs?.[ifaceNode.id];
+    if (overrides?.description) tool.description = overrides.description;
+    if (overrides?.promptSnippet) tool.promptSnippet = overrides.promptSnippet;
+    if (overrides?.promptGuidelines) tool.promptGuidelines = overrides.promptGuidelines;
+
+    const paramDescriptions: ParamDescriptions | undefined = overrides?.paramDescriptions;
+
     let agentInterface: AgentInterface;
     switch (ifaceNode.id) {
       case "delegate":
-        agentInterface = new DelegationInterface(tool, inputNames, outputNames);
+        agentInterface = new DelegationInterface(tool, inputNames, outputNames, paramDescriptions);
         break;
       case "forward":
-        agentInterface = new ForwardInterface(tool, inputNames, outputNames);
+        agentInterface = new ForwardInterface(tool, inputNames, outputNames, paramDescriptions);
         break;
       case "accumulate":
-        agentInterface = new AccumulateInterface(tool, inputNames, outputNames);
+        agentInterface = new AccumulateInterface(tool, inputNames, outputNames, paramDescriptions);
         break;
       case "route":
-        agentInterface = new RouteInterface(tool, inputNames, outputNames);
+        agentInterface = new RouteInterface(tool, inputNames, outputNames, paramDescriptions);
         break;
       default:
         throw new Error(`Unknown interface type: ${ifaceNode.id}`);
