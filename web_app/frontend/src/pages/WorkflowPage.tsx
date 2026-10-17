@@ -123,6 +123,8 @@ export function WorkflowPage() {
   const [interfaceConfigs, setInterfaceConfigs] = useState<Record<string, InterfaceConfigData>>({});
   const [interfaceDefaults, setInterfaceDefaults] = useState<Record<string, InterfaceConfigData>>({});
   const [editingInterface, setEditingInterface] = useState<{ type: string; name: string } | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [chatCollapsed, setChatCollapsed] = useState(false);
 
   // Session chosen on the workflows list page: a session uuid or "new"
   const [searchParams] = useSearchParams();
@@ -533,7 +535,15 @@ export function WorkflowPage() {
       <div className={`wf-body ${compiled ? 'wf-body-split' : ''}`}>
         <div className={`wf-graph-side ${compiled ? 'wf-graph-side-half' : ''}`}>
         {/* Sidebar */}
-        <div className="wf-sidebar">
+        <div className={`wf-sidebar ${sidebarCollapsed ? 'wf-sidebar-collapsed' : ''}`}>
+          <button
+            className="wf-sidebar-toggle"
+            onClick={() => setSidebarCollapsed(c => !c)}
+            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {sidebarCollapsed ? '▶' : '◀'}
+          </button>
+          {!sidebarCollapsed && <>
           <div className="wf-sidebar-title">Agents</div>
           <div className="wf-sidebar-list">
             {agents.map(a => (
@@ -579,6 +589,7 @@ export function WorkflowPage() {
               </div>
             ))}
           </div>
+          </>}
         </div>
 
         {/* Canvas */}
@@ -658,12 +669,23 @@ export function WorkflowPage() {
 
         {/* Chat panel (right side, shown after compilation) */}
         {compiled && chatAgentId && (
-          <WorkflowChatPanel
-            agentId={chatAgentId}
-            agentName={agents.find(a => a.id === chatAgentId)?.name ?? chatAgentId}
-            allAgents={nodes.filter(n => n.type === 'agent').map(n => ({ id: n.agentId, name: n.agentName }))}
-            onSelectAgent={setChatAgentId}
-          />
+          chatCollapsed ? (
+            <div className="wf-chat-collapsed">
+              <button
+                className="wf-chat-toggle"
+                onClick={() => setChatCollapsed(false)}
+                title="Expand chat"
+              >◀</button>
+            </div>
+          ) : (
+            <WorkflowChatPanel
+              agentId={chatAgentId}
+              agentName={agents.find(a => a.id === chatAgentId)?.name ?? chatAgentId}
+              allAgents={nodes.filter(n => n.type === 'agent').map(n => ({ id: n.agentId, name: n.agentName }))}
+              onSelectAgent={setChatAgentId}
+              onCollapse={() => setChatCollapsed(true)}
+            />
+          )
         )}
       </div>
 

@@ -84,6 +84,31 @@
   gap: 0;
 }
 
+/* ── Chat collapse strip ──────────────────────────── */
+
+.wf-chat-collapsed {
+  flex: 0 0 40px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.wf-chat-toggle {
+  background: none;
+  border: none;
+  color: var(--text-light);
+  cursor: pointer;
+  padding: 8px;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.wf-chat-toggle:hover {
+  color: var(--text);
+}
+
 /* ── Workflow Chat Panel ───────────────────────────── */
 
 .wf-chat-panel {
@@ -180,6 +205,30 @@
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+}
+
+.wf-sidebar-collapsed {
+  width: 40px;
+  min-width: 40px;
+  align-items: center;
+}
+
+.wf-sidebar-toggle {
+  background: none;
+  border: none;
+  color: var(--text-light);
+  cursor: pointer;
+  padding: 8px;
+  font-size: 12px;
+  align-self: flex-end;
+}
+
+.wf-sidebar-toggle:hover {
+  color: var(--text);
+}
+
+.wf-sidebar-collapsed .wf-sidebar-toggle {
+  align-self: center;
 }
 
 .wf-sidebar-title {

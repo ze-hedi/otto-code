@@ -31,11 +31,12 @@ interface WorkflowChatPanelProps {
   agentName: string
   allAgents: { id: string; name: string }[]
   onSelectAgent: (agentId: string) => void
+  onCollapse?: () => void
 }
 
 /* ── Component ─────────────────────────────────────── */
 
-export function WorkflowChatPanel({ agentId, agentName, allAgents, onSelectAgent }: WorkflowChatPanelProps) {
+export function WorkflowChatPanel({ agentId, agentName, allAgents, onSelectAgent, onCollapse }: WorkflowChatPanelProps) {
   // Per-agent message state: keyed by agentId
   const [agentMessages, setAgentMessages] = useState<Record<string, ChatMessage[]>>({})
   // Track which agents are currently streaming
@@ -413,6 +414,9 @@ export function WorkflowChatPanel({ agentId, agentName, allAgents, onSelectAgent
     <div className="wf-chat-panel">
       {/* Agent selector top bar */}
       <div className="wf-chat-topbar">
+        {onCollapse && (
+          <button className="wf-chat-toggle" onClick={onCollapse} title="Collapse chat">▶</button>
+        )}
         <div className="wf-chat-topbar-tabs">
           {allAgents.map(a => (
             <button
