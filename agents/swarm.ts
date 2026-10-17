@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { Type } from "@sinclair/typebox";
 import { createInterface } from "readline";
 import { RawPiAgent } from "./raw-pi-agent.js";
-import { Meeting } from "./meeting.js";
+import { Meeting, type MeetingOptions } from "./meeting.js";
 import { createMcpBridge, type McpBridge } from "./mcp-bridge.js";
 import type { RawPiAgentConfig } from "./pi-agent-configs.js";
 import type { EventCallback, ToolInput } from "./pi-agent-types.js";
@@ -205,7 +205,7 @@ export class Swarm {
     return `You are a coordinator agent. You receive user requests and delegate them to the appropriate specialist agent.\n\n# Available Specialists\n${agentLines.join("\n")}\n\nYour job has two phases:\n1. First, clarify the user's request by asking questions if needed.\n2. Then, synthesize a clear goal paragraph that captures what needs to be discussed and decided by the team.`;
   }
 
-  async run(userInput: string, maxRounds: number = 5, onEvent?: EventCallback): Promise<void> {
+  async run(userInput: string, maxRounds: number = 5, onEvent?: EventCallback, meetingOptions?: MeetingOptions): Promise<void> {
     const sessionKey = `swarm-${randomUUID()}`;
 
     // Phase 0: Connect to MCP + create project
@@ -261,6 +261,7 @@ export class Swarm {
         ...this.agents,
       ],
       this.synthesizedGoal,
+      meetingOptions,
     );
 
     const transcript = await meeting.run(maxRounds, onEvent);

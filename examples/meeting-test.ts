@@ -48,6 +48,8 @@ async function main() {
       { agent: designer, name: "Designer", description: "Product designer focused on UX" },
     ],
     "Decide whether to build the MVP with a no-code tool or custom code.",
+    // Run with `--jev` to let Jev pick the next speaker (needs OPENROUTER_API_KEY)
+    { router: process.argv.includes("--jev") ? "jev" : "round-robin" },
   );
 
   const transcript = await meeting.run(20, handleEvent);
@@ -60,7 +62,7 @@ async function main() {
 
   console.log("\n=== Transcript ===");
   for (const turn of transcript.turns) {
-    console.log(`\n[Round ${turn.round}] ${turn.agentName}:`);
+    console.log(`\n[Round ${turn.round}] ${turn.agentName} (${turn.routedBy}${turn.confidence !== undefined ? `, ${turn.confidence.toFixed(2)}` : ""}):`);
     console.log(turn.message);
   }
 
