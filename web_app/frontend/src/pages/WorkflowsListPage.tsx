@@ -10,6 +10,12 @@ interface SavedWorkflow {
   schema?: { components?: { type: string }[] }
 }
 
+interface WorkflowSession {
+  sessionId: string
+  createdAt: string
+  agentCount: number
+}
+
 function timeAgo(date: string): string {
   const seconds = Math.floor((Date.now() - new Date(date).getTime()) / 1000)
   if (seconds < 60) return 'just now'
@@ -33,6 +39,10 @@ export function WorkflowsListPage() {
   const [newName, setNewName] = useState('')
   const [newDesc, setNewDesc] = useState('')
   const [creating, setCreating] = useState(false)
+
+  const [sessionTarget, setSessionTarget] = useState<SavedWorkflow | null>(null)
+  const [sessions, setSessions] = useState<WorkflowSession[]>([])
+  const [sessionsLoading, setSessionsLoading] = useState(false)
 
   const [toDelete, setToDelete] = useState<SavedWorkflow | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -60,6 +70,21 @@ export function WorkflowsListPage() {
     }
     load()
   }, [projectId])
+
+  async function openSessionsPopup(wf: SavedWorkflow) {
+    setSessionTarget(wf)
+    setSessions([])
+    setSessionsLoading(true)
+    try {
+      const res = await fetch(`http://localhost:4000/workflows/${wf.workflow_id}/sessions`)
+      if (res.ok) setSessions((await res.json()).sessions ?? [])
+    } catch {}
+    setSessionsLoading(false)
+  }
+
+  function openWorkflow(wf: SavedWorkflow, session: string) {
+    navigate(`/projects/${projectId}/workflows/${wf.workflow_id}?session=${encodeURIComponent(session)}`)
+  }
 
   async function createWorkflow() {
     if (!newName.trim() || creating) return
@@ -135,7 +160,7 @@ export function WorkflowsListPage() {
             <div
               key={wf.workflow_id}
               className="wfl-card"
-              onClick={() => navigate(`/projects/${projectId}/workflows/${wf.workflow_id}`)}
+              onClick={() => openSessionsPopup(wf)}
             >
               <div className="wfl-card-header">
                 <span className="wfl-card-name">{wf.name}</span>
@@ -181,6 +206,33 @@ export function WorkflowsListPage() {
               <button className="wfl-primary-btn" onClick={createWorkflow} disabled={!newName.trim() || creating}>
                 {creating ? 'Creating...' : 'Create'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {sessionTarget && (
+        <div className="wfl-overlay" onClick={() => setSessionTarget(null)}>
+          <div className="wfl-modal" onClick={e => e.stopPropagation()}>
+            <h2>{sessionTarget.name} — sessions</h2>
+            {sessionsLoading && <p>Loading sessions...</p>}
+            {!sessionsLoading && sessions.length === 0 && <p>No saved sessions yet</p>}
+            {sessions.map(s => (
+              <div
+                key={s.sessionId}
+                className="wfl-card"
+                onClick={() => openWorkflow(sessionTarget, s.sessionId)}
+              >
+                <span className="wfl-card-name">{new Date(s.createdAt).toLocaleString()}</span>
+                <div className="wfl-card-footer">
+                  <span>{s.agentCount} agent{s.agentCount !== 1 ? 's' : ''}</span>
+                  <span>{timeAgo(s.createdAt)}</span>
+                </div>
+              </div>
+            ))}
+            <div className="wfl-modal-actions">
+              <button className="wfl-secondary-btn" onClick={() => setSessionTarget(null)}>Cancel</button>
+              <button className="wfl-primary-btn" onClick={() => openWorkflow(sessionTarget, 'new')}>New session</button>
             </div>
           </div>
         </div>

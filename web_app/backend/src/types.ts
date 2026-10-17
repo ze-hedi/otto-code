@@ -53,8 +53,6 @@ export interface WorkflowDocument {
     agentIds: string[];
     connections: { from: string; to: string }[];
   };
-  /** The currently active session ID within this workflow. */
-  activeSessionId?: string;
   /** Whether this workflow has been successfully compiled at least once. */
   compiled?: boolean;
   created_at: Date;

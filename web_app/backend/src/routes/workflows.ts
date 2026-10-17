@@ -88,9 +88,9 @@ router.post("/compile", async (req, res) => {
     const { guardrailsOnInterfaces, workflowId, sessionMode, sessionId: requestedSessionId, playground: reqPlayground, ...schema } = req.body as WorkflowSchema & {
       guardrailsOnInterfaces?: boolean;
       workflowId?: string;
-      /** "new" = create fresh session, "continue" = reuse activeSessionId */
+      /** "new" = create fresh session, "continue" = resume `sessionId` */
       sessionMode?: "new" | "continue";
-      /** Explicit session ID to resume (when user picks from the dropdown) */
+      /** Session ID to resume (required with "continue") */
       sessionId?: string;
       playground?: string;
     };
@@ -127,36 +127,36 @@ router.post("/compile", async (req, res) => {
       const workflowDoc = await getWorkflowDoc(workflowId);
       const previousStructure = workflowDoc?.lastCompiledSchema;
 
-      if (!previousStructure) {
-        // First compile ever — create new session
-        workflowSessionId = uuidv4();
-        console.log("[compile] First compile — new session:", workflowSessionId);
-      } else if (!structurallyEqual(previousStructure, currentStructure)) {
-        // Structure changed — wipe old sessions, create new session
-        const playground = [...currentAgentsStorage.getAll().values()].find(c => c.playground)?.playground;
-        if (playground) {
-          const workflowDir = path.join(playground, ".otto-sessions", `workflow-${workflowId}`);
-          if (fs.existsSync(workflowDir)) {
-            fs.rmSync(workflowDir, { recursive: true, force: true });
-            console.log(`[compile] Structure changed — wiped sessions: ${workflowDir}`);
-          }
-        }
-        workflowSessionId = uuidv4();
-        console.log("[compile] Structure changed — new session:", workflowSessionId);
-      } else if (sessionMode === "new") {
-        // Same structure, user explicitly wants a new session
-        workflowSessionId = uuidv4();
-        console.log("[compile] Same structure, user chose new session:", workflowSessionId);
-      } else {
-        // Same structure, continue existing session (use explicit ID if provided, else active)
-        workflowSessionId = requestedSessionId ?? workflowDoc?.activeSessionId;
-        console.log("[compile] Same structure, continuing session:", workflowSessionId);
+      if (sessionMode !== "new" && sessionMode !== "continue") {
+        res.status(400).json({ error: 'sessionMode ("new" | "continue") is required' });
+        return;
       }
 
-      // Persist the compiled schema and active session
+      if (
+        sessionMode === "continue" &&
+        previousStructure &&
+        structurallyEqual(previousStructure, currentStructure)
+      ) {
+        // Same structure: resume the session the user picked
+        const playground = workflowDoc?.playground
+          ?? [...currentAgentsStorage.getAll().values()].find(c => c.playground)?.playground;
+        const sessionDir = requestedSessionId && playground
+          ? path.join(playground, ".otto-sessions", `workflow-${workflowId}`, path.basename(requestedSessionId))
+          : undefined;
+        if (!sessionDir || !fs.existsSync(sessionDir)) {
+          res.status(400).json({ error: "sessionId does not match an existing session" });
+          return;
+        }
+        workflowSessionId = path.basename(requestedSessionId!);
+        console.log("[compile] Continuing session:", workflowSessionId);
+      } else {
+        // New session requested, first compile, or structure changed (old sessions are kept)
+        workflowSessionId = uuidv4();
+        console.log("[compile] New session:", workflowSessionId);
+      }
+
       await updateWorkflow(workflowId, {
         lastCompiledSchema: currentStructure,
-        activeSessionId: workflowSessionId,
         compiled: true,
       });
     }
@@ -215,13 +215,13 @@ router.get("/:workflowId/sessions", async (req, res) => {
 
     const playground = workflowDoc.playground;
     if (!playground) {
-      res.json({ sessions: [], activeSessionId: null });
+      res.json({ sessions: [] });
       return;
     }
 
     const workflowDir = path.join(playground, ".otto-sessions", `workflow-${workflowId}`);
     if (!fs.existsSync(workflowDir)) {
-      res.json({ sessions: [], activeSessionId: workflowDoc.activeSessionId ?? null });
+      res.json({ sessions: [] });
       return;
     }
 
@@ -237,9 +237,9 @@ router.get("/:workflowId/sessions", async (req, res) => {
           agentCount: agentFiles.length,
         };
       })
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
-    res.json({ sessions: entries, activeSessionId: workflowDoc.activeSessionId ?? null });
+    res.json({ sessions: entries });
   } catch (err: any) {
     console.error("[workflows/sessions] error:", err);
     res.status(500).json({ error: err?.message ?? String(err) });
