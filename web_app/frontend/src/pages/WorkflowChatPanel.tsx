@@ -51,6 +51,28 @@ export function WorkflowChatPanel({ agentId, agentName, allAgents, onSelectAgent
 
   const messages = agentMessages[agentId] ?? []
 
+  // Load existing session messages for all agents on mount
+  useEffect(() => {
+    let cancelled = false
+    async function loadHistory() {
+      const loaded: Record<string, ChatMessage[]> = {}
+      await Promise.all(allAgents.map(async (a) => {
+        try {
+          const res = await fetch(`http://localhost:4000/workflows/agent-messages?agentId=${encodeURIComponent(a.id)}`)
+          if (res.ok) {
+            const msgs = await res.json()
+            if (msgs.length > 0) loaded[a.id] = msgs
+          }
+        } catch { /* ignore */ }
+      }))
+      if (!cancelled && Object.keys(loaded).length > 0) {
+        setAgentMessages(prev => ({ ...loaded, ...prev }))
+      }
+    }
+    loadHistory()
+    return () => { cancelled = true }
+  }, [allAgents])
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [agentMessages, agentId])

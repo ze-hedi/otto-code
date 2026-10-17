@@ -169,6 +169,34 @@ router.post("/compile", async (req, res) => {
     currentWorkflow.buildExecutionQueue(guardrailsOnInterfaces ?? false, workflowId, workflowSessionId);
     console.log("[compile] Workflow built and execution queue ready");
 
+    // ── Load existing session JSONL files when resuming ────────────────────
+    if (sessionMode === "continue" && workflowId && workflowSessionId) {
+      const playground = currentAgentsStorage
+        ? [...currentAgentsStorage.getAll().values()].find(c => c.playground)?.playground
+        : undefined;
+      if (playground) {
+        const sessionDir = path.join(playground, ".otto-sessions", `workflow-${workflowId}`, workflowSessionId);
+        if (fs.existsSync(sessionDir)) {
+          const jsonlFiles = fs.readdirSync(sessionDir).filter(f => f.endsWith(".jsonl"));
+          for (const agentNode of currentWorkflow.executionQueue.levels.flat()) {
+            const agent = currentWorkflow.getAgentById(agentNode.id);
+            if (!agent) continue;
+            const agentConfig = currentAgentsStorage!.getAgentByID(agentNode.id);
+            const safeName = (agentConfig?.name ?? agentNode.id).replace(/[^a-zA-Z0-9_-]/g, "_");
+            const expectedFile = `${safeName}-main.jsonl`;
+            if (jsonlFiles.includes(expectedFile)) {
+              try {
+                await agent.loadSession(path.join(sessionDir, expectedFile));
+                console.log(`[compile] Loaded session for agent "${agentNode.id}" from ${expectedFile}`);
+              } catch (err) {
+                console.warn(`[compile] Failed to load session for "${agentNode.id}":`, err);
+              }
+            }
+          }
+        }
+      }
+    }
+
     const executionQueue = currentWorkflow.executionQueue;
     const levelsSummary = executionQueue.levels.map((level, i) =>
       ({ level: i, agents: level.map(n => n.id) })
@@ -376,6 +404,80 @@ router.post("/chat-agent", async (req, res) => {
     res.end();
   }
 });
+
+/**
+ * GET /workflows/agent-messages?agentId=<id>
+ * Returns the conversation history for a workflow agent with a loaded session.
+ */
+router.get("/agent-messages", async (req, res) => {
+  if (!currentWorkflow) {
+    res.json([]);
+    return;
+  }
+  const agentId = req.query.agentId as string | undefined;
+  if (!agentId) {
+    res.status(400).json({ error: "agentId query parameter is required" });
+    return;
+  }
+  const agent = currentWorkflow.getAgentById(agentId);
+  if (!agent) {
+    res.json([]);
+    return;
+  }
+  try {
+    const rawMessages = await agent.getMessages();
+    const transformed = transformWorkflowMessages(rawMessages);
+    res.json(transformed);
+  } catch (err: any) {
+    console.error(`[workflow/agent-messages] error:`, err);
+    res.json([]);
+  }
+});
+
+function transformWorkflowMessages(rawMessages: any[]): any[] {
+  const out: any[] = [];
+  const toolResults = new Map<string, { content: string; isError: boolean }>();
+  for (const msg of rawMessages) {
+    if (msg.role === "toolResult") {
+      const text = Array.isArray(msg.content)
+        ? msg.content.map((c: any) => c.text ?? "").join("\n")
+        : String(msg.content ?? "");
+      const trimmed = text.length > 1500 ? text.slice(0, 1500) + "\n... (truncated)" : text;
+      toolResults.set(msg.toolCallId, { content: trimmed, isError: !!msg.isError });
+    }
+  }
+  for (const msg of rawMessages) {
+    if (msg.role === "user") {
+      const text = typeof msg.content === "string"
+        ? msg.content
+        : Array.isArray(msg.content)
+          ? msg.content.map((c: any) => c.text ?? "").join("\n")
+          : "";
+      out.push({ role: "user", content: text, parts: [] });
+    } else if (msg.role === "assistant") {
+      const parts: any[] = [];
+      for (const block of msg.content ?? []) {
+        if (block.type === "thinking") {
+          parts.push({ type: "thinking", content: block.thinking });
+        } else if (block.type === "text") {
+          parts.push({ type: "text", content: block.text });
+        } else if (block.type === "toolCall") {
+          const tr = toolResults.get(block.id);
+          parts.push({
+            type: "tool",
+            name: block.name,
+            input: JSON.stringify(block.arguments, null, 2),
+            result: tr?.content,
+            isError: tr?.isError,
+            status: "done",
+          });
+        }
+      }
+      out.push({ role: "assistant", content: "", parts });
+    }
+  }
+  return out;
+}
 
 /**
  * POST /workflows/tool-approve
