@@ -51,10 +51,13 @@ export function WorkflowChatPanel({ agentId, agentName, allAgents, onSelectAgent
 
   const messages = agentMessages[agentId] ?? []
 
-  // Load existing session messages for all agents on mount
+  // Load existing session messages and reconnect to running workflow on mount
   useEffect(() => {
     let cancelled = false
-    async function loadHistory() {
+    const controller = new AbortController()
+
+    async function loadAndReconnect() {
+      // 1. Load message history for all agents
       const loaded: Record<string, ChatMessage[]> = {}
       await Promise.all(allAgents.map(async (a) => {
         try {
@@ -65,12 +68,66 @@ export function WorkflowChatPanel({ agentId, agentName, allAgents, onSelectAgent
           }
         } catch { /* ignore */ }
       }))
-      if (!cancelled && Object.keys(loaded).length > 0) {
+      if (cancelled) return
+      if (Object.keys(loaded).length > 0) {
         setAgentMessages(prev => ({ ...loaded, ...prev }))
       }
+
+      // 2. Check if workflow is currently running — if so, resubscribe to events
+      try {
+        const statusRes = await fetch('http://localhost:4000/workflows/status')
+        if (!statusRes.ok || cancelled) return
+        const status = await statusRes.json()
+        if (!status.busy || cancelled) return
+
+        // Workflow is running — subscribe to events stream
+        setWorkflowRunning(true)
+        const eventsRes = await fetch('http://localhost:4000/workflows/events', {
+          signal: controller.signal,
+        })
+        if (!eventsRes.ok || cancelled) return
+
+        const reader = eventsRes.body!.getReader()
+        const decoder = new TextDecoder()
+        let buf = ''
+
+        while (!cancelled) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buf += decoder.decode(value, { stream: true })
+
+          while (buf.includes('\n')) {
+            const idx = buf.indexOf('\n')
+            const line = buf.slice(0, idx)
+            buf = buf.slice(idx + 1)
+            if (!line.startsWith('data: ')) continue
+            let ev: any
+            try { ev = JSON.parse(line.slice(6)) } catch { continue }
+
+            if (ev.type === 'workflow_done' || ev.type === 'workflow_idle') {
+              setWorkflowDone(ev.type === 'workflow_done')
+              setWorkflowRunning(false)
+              setActiveAgents(new Set())
+              return
+            }
+
+            applyEvent(ev)
+          }
+        }
+      } catch (err: any) {
+        if (err.name !== 'AbortError') console.warn('[reconnect] error:', err)
+      }
+      if (!cancelled) {
+        setWorkflowRunning(false)
+        setActiveAgents(new Set())
+      }
     }
-    loadHistory()
-    return () => { cancelled = true }
+
+    loadAndReconnect()
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
   }, [allAgents])
 
   useEffect(() => {

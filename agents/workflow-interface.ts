@@ -28,6 +28,9 @@ export class AgentInterface {
     public getResults(): [string, string][] {
         return this.predResults ;
     }
+    public clearResults(): void {
+        this.predResults = [] ;
+    }
     public getTool() : ToolInput {
         return this.toolForSuccessors_ ;
     }

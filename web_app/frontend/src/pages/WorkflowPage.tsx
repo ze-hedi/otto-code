@@ -185,8 +185,23 @@ export function WorkflowPage() {
           setNodes(restoredNodes);
           setConnections(restoredConns);
           setWorkflowName(wf.name);
-          // Nothing to compile on a brand-new empty workflow
-          if (restoredNodes.length > 0) setTimeout(() => setShowGuardrailsModal(true), 50);
+
+          // Check if the workflow is already compiled (e.g. navigated away and back)
+          try {
+            const statusRes = await fetch('http://localhost:4000/workflows/status');
+            const status = statusRes.ok ? await statusRes.json() : { compiled: false, busy: false };
+            if (status.compiled) {
+              // Already compiled — skip guardrails modal, go straight to chat
+              setCompiled(true);
+              const firstAgentId = restoredNodes.find(n => n.type === 'agent')?.agentId;
+              if (firstAgentId) setChatAgentId(firstAgentId);
+            } else if (restoredNodes.length > 0) {
+              setTimeout(() => setShowGuardrailsModal(true), 50);
+            }
+          } catch {
+            // Fallback: show guardrails modal as before
+            if (restoredNodes.length > 0) setTimeout(() => setShowGuardrailsModal(true), 50);
+          }
         } catch {
           navigate(projectId ? `/projects/${projectId}/workflows` : '/');
         }

@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { Router } from "express";
 import { v4 as uuidv4 } from "uuid";
+import { EventEmitter } from "events";
 import { AgentsStorage, InterfaceStorage } from "../../../../agents/workflow-types.js";
 import type { WorkflowSchema } from "../../../../agents/workflow-types.js";
 import { Workflow } from "../../../../agents/workflow.js";
@@ -16,6 +17,26 @@ const router = Router();
 let currentAgentsStorage: AgentsStorage | null = null;
 let currentInterfaceStorage: InterfaceStorage | null = null;
 let currentWorkflow: Workflow | null = null;
+
+// ── Runtime busy state (not persisted) ───────────────────────────────────────
+let workflowBusy = false;
+let workflowEmitter: EventEmitter | null = null;
+
+function markWorkflowBusy(): EventEmitter {
+  workflowBusy = true;
+  workflowEmitter = new EventEmitter();
+  workflowEmitter.setMaxListeners(20);
+  return workflowEmitter;
+}
+
+function markWorkflowIdle() {
+  workflowBusy = false;
+  if (workflowEmitter) {
+    workflowEmitter.emit("done");
+    workflowEmitter.removeAllListeners();
+    workflowEmitter = null;
+  }
+}
 
 export function getAgentsStorage(): AgentsStorage | null {
   return currentAgentsStorage;
@@ -229,6 +250,54 @@ router.post("/compile", async (req, res) => {
 });
 
 /**
+ * GET /workflows/status
+ * Returns runtime compiled/busy state (not persisted — in-memory only).
+ */
+router.get("/status", (_req, res) => {
+  res.json({ compiled: currentWorkflow !== null, busy: workflowBusy });
+});
+
+/**
+ * GET /workflows/events
+ * SSE reconnection endpoint. If workflow is busy, subscribes to the emitter.
+ * If idle, sends workflow_idle and closes immediately.
+ */
+router.get("/events", (_req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+
+  if (!workflowBusy || !workflowEmitter) {
+    res.write(`data: ${JSON.stringify({ type: "workflow_idle" })}\n\n`);
+    res.end();
+    return;
+  }
+
+  const emitter = workflowEmitter;
+
+  const onEvent = (payload: object) => {
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    (res.socket as any)?.flush?.();
+    (res as any).flush?.();
+  };
+
+  const onDone = () => {
+    res.write(`data: ${JSON.stringify({ type: "workflow_idle" })}\n\n`);
+    res.end();
+  };
+
+  emitter.on("event", onEvent);
+  emitter.once("done", onDone);
+
+  res.on("close", () => {
+    emitter.off("event", onEvent);
+    emitter.off("done", onDone);
+  });
+});
+
+/**
  * GET /workflows/:workflowId/sessions
  * Lists all session subdirectories for a given workflow.
  */
@@ -297,13 +366,12 @@ router.post("/run", async (req, res) => {
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders();
 
+  const emitter = markWorkflowBusy();
+
   let closed = false;
   res.on("close", () => {
     closed = true;
-    console.log("[workflow/run] client disconnected — aborting all active agents");
-    for (const agent of currentWorkflow!.getAvailableAgents()) {
-      agent.abort().catch(() => {});
-    }
+    console.log("[workflow/run] client disconnected — workflow continues running");
   });
 
   const send = (payload: object) => {
@@ -312,7 +380,9 @@ router.post("/run", async (req, res) => {
 
   const sendEvent = (agentId: string, event: any) => {
     handleEventWithClient(event, (payload) => {
-      send({ ...payload, agentId });
+      const tagged = { ...payload, agentId };
+      send(tagged);
+      emitter.emit("event", tagged);
     });
   };
 
@@ -323,7 +393,9 @@ router.post("/run", async (req, res) => {
       if (agent) {
         const nodeId = node.id;
         agent.onToolApprovalRequired((toolCallId, toolName, args) => {
-          send({ type: "tool_approval_required", agentId: nodeId, toolCallId, name: toolName, args });
+          const payload = { type: "tool_approval_required", agentId: nodeId, toolCallId, name: toolName, args };
+          send(payload);
+          emitter.emit("event", payload);
         });
       }
     }
@@ -338,6 +410,7 @@ router.post("/run", async (req, res) => {
     console.error("[workflow/run] error:", err);
     send({ type: "error", message: err?.message ?? String(err) });
   } finally {
+    markWorkflowIdle();
     res.end();
   }
 });
@@ -375,32 +448,50 @@ router.post("/chat-agent", async (req, res) => {
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders();
 
+  const emitter = markWorkflowBusy();
+
   let closed = false;
   res.on("close", () => {
     closed = true;
-    agent.abort().catch(() => {});
+    console.log("[workflow/chat-agent] client disconnected — workflow continues running");
   });
 
   const send = (payload: object) => {
     if (!closed) res.write(`data: ${JSON.stringify(payload)}\n\n`);
   };
 
-  agent.onToolApprovalRequired((toolCallId, toolName, args) => {
-    send({ type: "tool_approval_required", agentId, toolCallId, name: toolName, args });
-  });
+  const sendEvent = (eventAgentId: string, event: any) => {
+    handleEventWithClient(event, (payload) => {
+      const tagged = { ...payload, agentId: eventAgentId };
+      send(tagged);
+      emitter.emit("event", tagged);
+    });
+  };
+
+  // Wire tool approval callbacks for all agents (downstream agents may also need approval)
+  for (const level of currentWorkflow.executionQueue.levels) {
+    for (const node of level) {
+      const a = currentWorkflow.getAgentById(node.id);
+      if (a) {
+        const nodeId = node.id;
+        a.onToolApprovalRequired((toolCallId, toolName, args) => {
+          const payload = { type: "tool_approval_required", agentId: nodeId, toolCallId, name: toolName, args };
+          send(payload);
+          emitter.emit("event", payload);
+        });
+      }
+    }
+  }
 
   try {
-    console.log(`[workflow/chat-agent] Chatting with agent "${agentId}": "${message.slice(0, 100)}..."`);
-    await agent.chat(message, (event) => {
-      handleEventWithClient(event, (payload) => {
-        send({ ...payload, agentId });
-      });
-    });
+    console.log(`[workflow/chat-agent] Running workflow from agent "${agentId}": "${message.slice(0, 100)}..."`);
+    await runWorkflow(message, currentWorkflow, sendEvent, agentId);
     send({ type: "workflow_done" });
   } catch (err: any) {
     console.error(`[workflow/chat-agent] error:`, err);
     send({ type: "error", message: err?.message ?? String(err) });
   } finally {
+    markWorkflowIdle();
     res.end();
   }
 });

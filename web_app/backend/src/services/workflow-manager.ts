@@ -220,21 +220,47 @@ export async function runWorkflow(
   message: string,
   workflow: Workflow,
   sendEvent: (agentId: string, event: AgentEvent) => void,
+  startAgentId?: string,
 ): Promise<void> {
-  const { levels, predecessors } = workflow.executionQueue;
+  const { levels, predecessors, successors } = workflow.executionQueue;
   const interfaceStorage = workflow.getInterfaceStorage();
 
-  // Level 0: send user message to all first-level agents concurrently
-  const level0Tasks = levels[0].map((node) => {
+  // Determine the starting level
+  let startLevel = 0;
+  if (startAgentId) {
+    const idx = levels.findIndex((level) => level.some((n) => n.id === startAgentId));
+    if (idx === -1) throw new Error(`Agent "${startAgentId}" not found in execution queue`);
+    startLevel = idx;
+
+    // Clear interface results from the starting level onward so downstream
+    // agents don't pick up stale data from a previous run
+    for (let i = startLevel; i < levels.length; i++) {
+      for (const node of levels[i]) {
+        const succs = successors.get(node.id) ?? [];
+        for (const succ of succs) {
+          if (succ.type === NodeType.interface) {
+            interfaceStorage.getInterfaceByID(succ.id).clearResults();
+          }
+        }
+      }
+    }
+  }
+
+  // Run the starting level
+  const startLevelNodes = startAgentId
+    ? levels[startLevel].filter((n) => n.id === startAgentId)
+    : levels[startLevel];
+
+  const startTasks = startLevelNodes.map((node) => {
     const agent = workflow.getAgentById(node.id);
     if (!agent) throw new Error(`No agent built for ${node.id}`);
-    console.log(`[workflow] Starting level-0 agent: ${node.id}`);
+    console.log(`[workflow] Starting level-${startLevel} agent: ${node.id}`);
     return agent.chat(message, (event) => sendEvent(node.id, event));
   });
-  await Promise.all(level0Tasks);
+  await Promise.all(startTasks);
 
-  // Levels 1..N: gather results from predecessor interfaces, then launch
-  for (let i = 1; i < levels.length; i++) {
+  // Levels (startLevel+1)..N: gather results from predecessor interfaces, then launch
+  for (let i = startLevel + 1; i < levels.length; i++) {
     console.log(`[workflow] Starting level ${i}`);
     const tasks: Promise<void>[] = [];
 

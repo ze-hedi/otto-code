@@ -44,6 +44,8 @@ export function WorkflowsListPage() {
   const [sessions, setSessions] = useState<WorkflowSession[]>([])
   const [sessionsLoading, setSessionsLoading] = useState(false)
 
+  const [popupBusy, setPopupBusy] = useState(false)
+
   const [toDelete, setToDelete] = useState<SavedWorkflow | null>(null)
   const [deleting, setDeleting] = useState(false)
 
@@ -75,9 +77,17 @@ export function WorkflowsListPage() {
     setSessionTarget(wf)
     setSessions([])
     setSessionsLoading(true)
+    setPopupBusy(false)
     try {
-      const res = await fetch(`http://localhost:4000/workflows/${wf.workflow_id}/sessions`)
-      if (res.ok) setSessions((await res.json()).sessions ?? [])
+      const [sessionsRes, statusRes] = await Promise.all([
+        fetch(`http://localhost:4000/workflows/${wf.workflow_id}/sessions`),
+        fetch('http://localhost:4000/workflows/status'),
+      ])
+      if (sessionsRes.ok) setSessions((await sessionsRes.json()).sessions ?? [])
+      if (statusRes.ok) {
+        const status = await statusRes.json()
+        setPopupBusy(status.busy)
+      }
     } catch {}
     setSessionsLoading(false)
   }
@@ -215,8 +225,18 @@ export function WorkflowsListPage() {
         <div className="wfl-overlay" onClick={() => setSessionTarget(null)}>
           <div className="wfl-modal" onClick={e => e.stopPropagation()}>
             <h2>{sessionTarget.name} — sessions</h2>
+            {popupBusy && (
+              <div
+                className="wfl-card"
+                style={{ borderLeft: '3px solid #f59e0b', cursor: 'pointer', background: 'rgba(245, 158, 11, 0.08)' }}
+                onClick={() => openWorkflow(sessionTarget, 'new')}
+              >
+                <span className="wfl-card-name">Workflow is running...</span>
+                <div className="wfl-card-footer"><span>Go to workflow &rarr;</span></div>
+              </div>
+            )}
             {sessionsLoading && <p>Loading sessions...</p>}
-            {!sessionsLoading && sessions.length === 0 && <p>No saved sessions yet</p>}
+            {!sessionsLoading && sessions.length === 0 && !popupBusy && <p>No saved sessions yet</p>}
             {sessions.map(s => (
               <div
                 key={s.sessionId}
