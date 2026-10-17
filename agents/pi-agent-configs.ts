@@ -67,4 +67,7 @@ export type RawPiAgentConfig = Omit<PiAgentConfig, "systemPromptSuffix"> & {
   systemPrompt?: string;
   /** When set, session JSONL files are written to .otto-sessions/workflow-<workflowId>/ */
   workflowId?: string;
+  /** When set inside a workflow, session files go into a sub-directory per session:
+   *  .otto-sessions/workflow-<workflowId>/<workflowSessionId>/ */
+  workflowSessionId?: string;
 }& {};

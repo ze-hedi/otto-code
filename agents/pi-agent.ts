@@ -377,7 +377,12 @@ export class PiAgent {
   private async _createSession(key?: string): Promise<AgentSession> {
     const sessionKey = key ?? this._activeSessionKey;
     const sessionDir = this.config.workflowId
-      ? path.join(this.config.playground, ".otto-sessions", `workflow-${this.config.workflowId}`)
+      ? path.join(
+          this.config.playground,
+          ".otto-sessions",
+          `workflow-${this.config.workflowId}`,
+          ...(this.config.workflowSessionId ? [this.config.workflowSessionId] : []),
+        )
       : path.join(this.config.playground, ".otto-sessions");
     fs.mkdirSync(sessionDir, { recursive: true });
 

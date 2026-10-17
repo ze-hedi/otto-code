@@ -46,7 +46,7 @@ export class Workflow {
     public get executionQueue(): ExecutionQueueResult { return this.ExecutionQueue_ ; }
 
     //this ethod will allow building the underlying agent objects
-    public buildWorfklowAgents(guardrailsOnInterfaces: boolean = false, workflowId?: string): void
+    public buildWorfklowAgents(guardrailsOnInterfaces: boolean = false, workflowId?: string, workflowSessionId?: string): void
     {
         for (const node of this.components_) {
             if (node.type === NodeType.agent) {
@@ -95,6 +95,9 @@ export class Workflow {
                         if (workflowId) {
                             agentConfig.workflowId = workflowId ;
                         }
+                        if (workflowSessionId) {
+                            agentConfig.workflowSessionId = workflowSessionId ;
+                        }
                         const agent = new RawPiAgent(agentConfig) ;
                         console.log(`built ${node.id} agent successfuly !! `) ;
                         this.agents_.set(node.id,agent) ;
@@ -117,6 +120,7 @@ export class Workflow {
     public buildExecutionQueue(
         guardrailsOnInterfaces: boolean = false,
         workflowId?: string,
+        workflowSessionId?: string,
         nodes: WorkflowNode[] = this.components_,
         connections: WorkflowEdge[] = this.connections_,
     ) {
@@ -198,7 +202,7 @@ export class Workflow {
 
         }
             console.log("~~~~~~~~~~~~ started bbuilding the underlying agent ")  ;
-            this.buildWorfklowAgents(guardrailsOnInterfaces, workflowId) ;
+            this.buildWorfklowAgents(guardrailsOnInterfaces, workflowId, workflowSessionId) ;
          
         }
         

@@ -116,6 +116,24 @@ export function WorkflowPage() {
   const [projectPath, setProjectPath] = useState<string | undefined>(undefined);
   const [showCreateAgentModal, setShowCreateAgentModal] = useState(false);
 
+  // Session management
+  const [showSessionModal, setShowSessionModal] = useState(false);
+  const [pendingGuardrails, setPendingGuardrails] = useState(false);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<{ sessionId: string; createdAt: string; agentCount: number }[]>([]);
+
+  async function fetchSessions() {
+    if (!workflowId) return;
+    try {
+      const res = await fetch(`http://localhost:4000/workflows/${workflowId}/sessions`);
+      if (res.ok) {
+        const data = await res.json();
+        setSessions(data.sessions ?? []);
+        setActiveSessionId(data.activeSessionId ?? null);
+      }
+    } catch {}
+  }
+
   // Load project path, build AgentsStorage, then restore active workflow if any
   useEffect(() => {
     const load = async () => {
@@ -181,6 +199,7 @@ export function WorkflowPage() {
           setNodes(restoredNodes);
           setConnections(restoredConns);
           setWorkflowName(wf.name);
+          if (wf.compiled) setCompiled(true);
           // Nothing to compile on a brand-new empty workflow
           if (restoredNodes.length > 0) setTimeout(() => setShowGuardrailsModal(true), 50);
         } catch {
@@ -397,13 +416,50 @@ export function WorkflowPage() {
     };
   }
 
-  async function compileWorkflow(guardrailsOnInterfaces: boolean) {
+  /**
+   * After guardrails choice, decide whether to show session modal or compile directly.
+   * - First compile ever or structure changed → compile directly (backend handles it)
+   * - Same structure with existing sessions → ask user: new session or continue
+   */
+  async function handlePostGuardrails(guardrailsOnInterfaces: boolean) {
     setShowGuardrailsModal(false);
+    setPendingGuardrails(guardrailsOnInterfaces);
+
+    // If no workflowId, it's a new unsaved workflow — compile directly
+    if (!workflowId) {
+      await compileWorkflow(guardrailsOnInterfaces, undefined);
+      return;
+    }
+
+    // Check if there are existing sessions (meaning it was compiled before with same structure)
+    try {
+      const res = await fetch(`http://localhost:4000/workflows/${workflowId}/sessions`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.sessions.length > 0) {
+          // There are existing sessions — ask user what to do
+          setSessions(data.sessions);
+          setActiveSessionId(data.activeSessionId ?? null);
+          setShowSessionModal(true);
+          return;
+        }
+      }
+    } catch {}
+
+    // No existing sessions — compile directly (backend will create a new one)
+    await compileWorkflow(guardrailsOnInterfaces, undefined);
+  }
+
+  async function compileWorkflow(guardrailsOnInterfaces: boolean, sessionMode: 'new' | 'continue' | undefined) {
+    setShowSessionModal(false);
     const schema = buildSchema();
     const workflowInput = {
       ...schema,
       guardrailsOnInterfaces,
       ...(workflowId ? { workflowId } : {}),
+      ...(sessionMode ? { sessionMode } : {}),
+      ...(sessionMode === 'continue' && activeSessionId ? { sessionId: activeSessionId } : {}),
+      ...(projectPath ? { playground: projectPath } : {}),
     };
     console.log('workflowInput', workflowInput);
 
@@ -421,6 +477,7 @@ export function WorkflowPage() {
       } else {
         console.log('Compiled workflow:', data);
         setCompiled(true);
+        if (data.compiled?.sessionId) setActiveSessionId(data.compiled.sessionId);
         // Pick the first agent from the first execution level
         const firstAgentId = data.compiled?.executionLevels?.[0]?.agents?.[0];
         if (firstAgentId) setChatAgentId(firstAgentId);
@@ -432,6 +489,8 @@ export function WorkflowPage() {
             body: JSON.stringify({ schema: buildSchema() }),
           }).catch(() => {});
         }
+        // Refresh sessions list
+        fetchSessions();
       }
     } catch (err: any) {
       console.error('Failed to compile workflow:', err);
@@ -613,8 +672,50 @@ export function WorkflowPage() {
               </p>
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', padding: '0 16px 16px' }}>
-              <button className="wf-header-btn" onClick={() => compileWorkflow(false)}>No</button>
-              <button className="wf-header-btn" onClick={() => compileWorkflow(true)}>Yes</button>
+              <button className="wf-header-btn" onClick={() => handlePostGuardrails(false)}>No</button>
+              <button className="wf-header-btn" onClick={() => handlePostGuardrails(true)}>Yes</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Session choice modal */}
+      {showSessionModal && (
+        <div className="wf-error-overlay" onClick={() => setShowSessionModal(false)}>
+          <div className="wf-error-popup" onClick={e => e.stopPropagation()}>
+            <div className="wf-error-header">
+              <span>Session</span>
+              <button className="wf-error-close" onClick={() => setShowSessionModal(false)}>✕</button>
+            </div>
+            <div className="wf-error-body">
+              <p>This workflow has been compiled before. What would you like to do?</p>
+              <p style={{ fontSize: '0.85em', color: '#888', marginTop: 6 }}>
+                <strong>Continue</strong> resumes the current session with existing context.
+                <br />
+                <strong>New session</strong> starts fresh while keeping previous sessions accessible.
+              </p>
+              {sessions.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <label style={{ fontSize: '0.85em', color: '#aaa' }}>Previous sessions:</label>
+                  <select
+                    style={{ width: '100%', marginTop: 4, padding: '6px 8px', background: '#1e1e2e', color: '#ccc', border: '1px solid #444', borderRadius: 4 }}
+                    value={activeSessionId ?? ''}
+                    onChange={e => setActiveSessionId(e.target.value || null)}
+                  >
+                    {sessions.map(s => (
+                      <option key={s.sessionId} value={s.sessionId}>
+                        {new Date(s.createdAt).toLocaleString()} — {s.agentCount} agent(s)
+                        {s.sessionId === activeSessionId ? ' (active)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', padding: '0 16px 16px' }}>
+              <button className="wf-header-btn" onClick={() => setShowSessionModal(false)}>Cancel</button>
+              <button className="wf-header-btn" onClick={() => compileWorkflow(pendingGuardrails, 'continue')}>Continue</button>
+              <button className="wf-header-btn" onClick={() => compileWorkflow(pendingGuardrails, 'new')}>New Session</button>
             </div>
           </div>
         </div>

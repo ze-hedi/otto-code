@@ -1,11 +1,13 @@
 import fs from "fs";
 import path from "path";
 import { Router } from "express";
+import { v4 as uuidv4 } from "uuid";
 import { AgentsStorage, InterfaceStorage } from "../../../../agents/workflow-types.js";
 import type { WorkflowSchema } from "../../../../agents/workflow-types.js";
 import { Workflow } from "../../../../agents/workflow.js";
 import { buildInterfaceStorage, buildAgentsStorage, validateInterfaceRules, runWorkflow } from "../services/workflow-manager.js";
 import { handleEventWithClient } from "../../../../agents/pi-agent-utils.js";
+import { getWorkflow as getWorkflowDoc, updateWorkflow } from "../db/mongo.js";
 
 const router = Router();
 
@@ -59,14 +61,47 @@ router.post("/agents", async (req, res) => {
  * Body: WorkflowSchema (components + connections)
  * Builds InterfaceStorage using the existing AgentsStorage, stores it globally.
  */
+/**
+ * Extracts the structural fingerprint of a workflow schema for comparison.
+ * Only agent IDs and connections matter — positions are ignored.
+ */
+function extractStructuralSchema(schema: WorkflowSchema) {
+  const agentIds = schema.components
+    .filter(c => c.type === "agent")
+    .map(c => c.id)
+    .sort();
+  const connections = schema.connections
+    .map(c => ({ from: c.from, to: c.to }))
+    .sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to));
+  return { agentIds, connections };
+}
+
+function structurallyEqual(
+  a: { agentIds: string[]; connections: { from: string; to: string }[] },
+  b: { agentIds: string[]; connections: { from: string; to: string }[] },
+): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 router.post("/compile", async (req, res) => {
   try {
-    if (!currentAgentsStorage) {
-      res.status(400).json({ error: "AgentsStorage not initialized. Call POST /workflows/agents first." });
-      return;
-    }
+    const { guardrailsOnInterfaces, workflowId, sessionMode, sessionId: requestedSessionId, playground: reqPlayground, ...schema } = req.body as WorkflowSchema & {
+      guardrailsOnInterfaces?: boolean;
+      workflowId?: string;
+      /** "new" = create fresh session, "continue" = reuse activeSessionId */
+      sessionMode?: "new" | "continue";
+      /** Explicit session ID to resume (when user picks from the dropdown) */
+      sessionId?: string;
+      playground?: string;
+    };
 
-    const { guardrailsOnInterfaces, workflowId, ...schema } = req.body as WorkflowSchema & { guardrailsOnInterfaces?: boolean; workflowId?: string };
+    // Always refresh AgentsStorage from DB to pick up agents created since page load
+    const playgroundHint = currentAgentsStorage
+      ? [...currentAgentsStorage.getAll().values()].find(c => c.playground)?.playground
+      : undefined;
+    currentAgentsStorage = await buildAgentsStorage(
+      reqPlayground ?? playgroundHint,
+    );
 
     if (!schema.components || !schema.connections) {
       res.status(400).json({ error: "components and connections are required" });
@@ -75,6 +110,7 @@ router.post("/compile", async (req, res) => {
 
     console.log("[compile] Received workflow schema:", JSON.stringify(schema, null, 2));
     console.log("[compile] guardrailsOnInterfaces:", guardrailsOnInterfaces ?? false);
+    console.log("[compile] sessionMode:", sessionMode ?? "auto");
 
     const validationErrors = validateInterfaceRules(schema);
     if (validationErrors.length > 0) {
@@ -83,25 +119,54 @@ router.post("/compile", async (req, res) => {
       return;
     }
 
+    // ── Session management ──────────────────────────────────────────────────
+    const currentStructure = extractStructuralSchema(schema);
+    let workflowSessionId: string | undefined;
+
+    if (workflowId) {
+      const workflowDoc = await getWorkflowDoc(workflowId);
+      const previousStructure = workflowDoc?.lastCompiledSchema;
+
+      if (!previousStructure) {
+        // First compile ever — create new session
+        workflowSessionId = uuidv4();
+        console.log("[compile] First compile — new session:", workflowSessionId);
+      } else if (!structurallyEqual(previousStructure, currentStructure)) {
+        // Structure changed — wipe old sessions, create new session
+        const playground = [...currentAgentsStorage.getAll().values()].find(c => c.playground)?.playground;
+        if (playground) {
+          const workflowDir = path.join(playground, ".otto-sessions", `workflow-${workflowId}`);
+          if (fs.existsSync(workflowDir)) {
+            fs.rmSync(workflowDir, { recursive: true, force: true });
+            console.log(`[compile] Structure changed — wiped sessions: ${workflowDir}`);
+          }
+        }
+        workflowSessionId = uuidv4();
+        console.log("[compile] Structure changed — new session:", workflowSessionId);
+      } else if (sessionMode === "new") {
+        // Same structure, user explicitly wants a new session
+        workflowSessionId = uuidv4();
+        console.log("[compile] Same structure, user chose new session:", workflowSessionId);
+      } else {
+        // Same structure, continue existing session (use explicit ID if provided, else active)
+        workflowSessionId = requestedSessionId ?? workflowDoc?.activeSessionId;
+        console.log("[compile] Same structure, continuing session:", workflowSessionId);
+      }
+
+      // Persist the compiled schema and active session
+      await updateWorkflow(workflowId, {
+        lastCompiledSchema: currentStructure,
+        activeSessionId: workflowSessionId,
+        compiled: true,
+      });
+    }
+
+    // ── Build workflow ──────────────────────────────────────────────────────
     currentInterfaceStorage = await buildInterfaceStorage(schema, currentAgentsStorage);
     console.log("[compile] InterfaceStorage saved globally");
 
-    // Wipe previous session files so agents start fresh on every compile
-    if (workflowId) {
-      const firstConfig = [...currentAgentsStorage.getAll().values()].find(c => c.playground);
-      const playground = firstConfig?.playground;
-      if (playground) {
-        const sessionDir = path.join(playground, ".otto-sessions", `workflow-${workflowId}`);
-        if (fs.existsSync(sessionDir)) {
-          fs.rmSync(sessionDir, { recursive: true, force: true });
-          console.log(`[compile] Wiped session folder: ${sessionDir}`);
-        }
-      }
-    }
-
-    // Build the Workflow object and its execution queue
     currentWorkflow = new Workflow(schema, currentAgentsStorage, currentInterfaceStorage);
-    currentWorkflow.buildExecutionQueue(guardrailsOnInterfaces ?? false, workflowId);
+    currentWorkflow.buildExecutionQueue(guardrailsOnInterfaces ?? false, workflowId, workflowSessionId);
     console.log("[compile] Workflow built and execution queue ready");
 
     const executionQueue = currentWorkflow.executionQueue;
@@ -123,6 +188,7 @@ router.post("/compile", async (req, res) => {
       })),
       connections: schema.connections,
       executionLevels: levelsSummary,
+      sessionId: workflowSessionId,
     };
 
     console.log("[compile] Compiled result:", JSON.stringify(result, null, 2));
@@ -130,6 +196,52 @@ router.post("/compile", async (req, res) => {
     res.json({ ok: true, compiled: result });
   } catch (err: any) {
     console.error("[compile] error:", err);
+    res.status(500).json({ error: err?.message ?? String(err) });
+  }
+});
+
+/**
+ * GET /workflows/:workflowId/sessions
+ * Lists all session subdirectories for a given workflow.
+ */
+router.get("/:workflowId/sessions", async (req, res) => {
+  try {
+    const { workflowId } = req.params;
+    const workflowDoc = await getWorkflowDoc(workflowId);
+    if (!workflowDoc) {
+      res.status(404).json({ error: "Workflow not found" });
+      return;
+    }
+
+    const playground = workflowDoc.playground;
+    if (!playground) {
+      res.json({ sessions: [], activeSessionId: null });
+      return;
+    }
+
+    const workflowDir = path.join(playground, ".otto-sessions", `workflow-${workflowId}`);
+    if (!fs.existsSync(workflowDir)) {
+      res.json({ sessions: [], activeSessionId: workflowDoc.activeSessionId ?? null });
+      return;
+    }
+
+    const entries = fs.readdirSync(workflowDir, { withFileTypes: true })
+      .filter(d => d.isDirectory())
+      .map(d => {
+        const sessionPath = path.join(workflowDir, d.name);
+        const stat = fs.statSync(sessionPath);
+        const agentFiles = fs.readdirSync(sessionPath).filter(f => f.endsWith(".jsonl"));
+        return {
+          sessionId: d.name,
+          createdAt: stat.birthtime.toISOString(),
+          agentCount: agentFiles.length,
+        };
+      })
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+    res.json({ sessions: entries, activeSessionId: workflowDoc.activeSessionId ?? null });
+  } catch (err: any) {
+    console.error("[workflows/sessions] error:", err);
     res.status(500).json({ error: err?.message ?? String(err) });
   }
 });

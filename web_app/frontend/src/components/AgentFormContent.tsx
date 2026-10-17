@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import '../pages/CreateAgentForm.css'
 
 const MODELS = [
@@ -45,6 +45,10 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel }: Agen
   const [systemPrompt, setSystemPrompt] = useState('')
   const [thinkingLevel, setThinkingLevel] = useState<string>('off')
   const [playground, setPlayground] = useState(lockedPlayground ?? '')
+
+  useEffect(() => {
+    if (lockedPlayground) setPlayground(lockedPlayground)
+  }, [lockedPlayground])
   const [selectedTools, setSelectedTools] = useState<string[]>(['read', 'bash', 'edit', 'write'])
   const [mcpServers, setMcpServers] = useState<McpEntry[]>([])
   const [subAgents, setSubAgents] = useState<SubAgentEntry[]>([])
