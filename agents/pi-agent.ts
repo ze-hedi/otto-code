@@ -30,6 +30,7 @@ import {type EventCallback, SkillInput, ToolInput, SubAgentToolConfig , Persista
 import {PiAgentConfig} from "./pi-agent-configs"
 import { createSubAgentTool } from "./sub-agent-pattern.js";
 import { AgentInterface } from './workflow-interface.js';
+import type { FileLockRegistry } from "./file-lock.js";
 
 // ── Types extracted from AgentSessionEvent union ───────────────────────────────
 // This avoids importing from sub-packages (@mariozechner/pi-agent-core, @mariozechner/pi-ai)
@@ -46,7 +47,7 @@ export class PiAgent {
   protected modelRegistry: ModelRegistry;
   protected model: Model<Api>;
   protected config: Required<
-    Omit<PiAgentConfig, "apiKey" | "workingDir" | "playground" | "model" | "skills" | "tools" | "compaction" | "name" | "toolCallGuardrails" | "mcpServers" | "mcpConnectionTimeout" | "builtInTools">
+    Omit<PiAgentConfig, "apiKey" | "workingDir" | "playground" | "model" | "skills" | "tools" | "compaction" | "name" | "toolCallGuardrails" | "fileLock" | "mcpServers" | "mcpConnectionTimeout" | "builtInTools">
   > & {
     workingDir: string;
     playground: string;
@@ -63,6 +64,8 @@ export class PiAgent {
   protected _compaction: PiAgentConfig["compaction"];
   protected _name: string | undefined;
   protected _toolCallGuardrails: Set<string> = new Set();
+  /** Only set inside a workflow: guards `edit` against concurrent edits of one file. */
+  protected _fileLock: FileLockRegistry | undefined;
   protected _pendingApprovals: Map<string, { resolve: (approved: boolean) => void; comment?: string }> = new Map();
   /** Map of server_name → active McpBridge */
   private _mcpBridges: Map<string, McpBridge> = new Map();
@@ -119,6 +122,7 @@ export class PiAgent {
     this._name = config.name;
     this._compaction = config.compaction;
     this._toolCallGuardrails = new Set(config.toolCallGuardrails ?? []);
+    this._fileLock = config.fileLock;
     if (config.mcpServers) {
       for (const [name, url] of Object.entries(config.mcpServers)) {
         this._mcpServers.set(name, url);
@@ -461,14 +465,24 @@ export class PiAgent {
       ...(this.toolDefinitions.size > 0 ? { customTools: Array.from(this.toolDefinitions.values()) } : {}),
     });
 
-    // Install tool call guardrails hook if enabled
-    console.log(`[pi-agent] toolCallGuardrails = [${[...this._toolCallGuardrails].join(', ')}]`);
-    if (this._toolCallGuardrails.size > 0) {
-      console.log('[pi-agent] Installing beforeToolCall guardrails hook');
+    // beforeToolCall serves two features: workflow file locks and user-approval guardrails
+    if (this._fileLock || this._toolCallGuardrails.size > 0) {
       session.agent.beforeToolCall = async ({ toolCall, args }) => {
+        const toolCallId = toolCall.id;
+
+        // Workflow only: reject an edit on a file another agent is currently editing
+        if (this._fileLock && toolCall.name === "edit") {
+          const target = path.resolve(playground, String((args as any)?.path ?? (args as any)?.file_path ?? ""));
+          if (!this._fileLock.tryAcquire(target, toolCallId)) {
+            return {
+              block: true,
+              reason: `File ${target} is currently being edited by another agent. Continue with other tasks and retry this edit later.`,
+            };
+          }
+        }
+
         // Skip approval for tools not in the guardrails set
         if (!this._toolCallGuardrails.has(toolCall.name)) return undefined;
-        const toolCallId = toolCall.id;
         console.log(`[pi-agent] beforeToolCall fired for ${toolCall.name} (${toolCallId})`);
         // Notify listeners that approval is required
         this._onToolApprovalRequired?.(toolCallId, toolCall.name, args);
@@ -480,18 +494,32 @@ export class PiAgent {
           const entry = this._pendingApprovals.get(toolCallId);
           const comment = entry?.comment || 'No reason provided';
           this._pendingApprovals.delete(toolCallId);
+          this._fileLock?.release(toolCallId);
           return { block: true, reason: `Tool call rejected by user. Reason: ${comment}` };
         }
         this._pendingApprovals.delete(toolCallId);
         return undefined; // proceed with execution
       };
     }
+    if (this._fileLock) {
+      // Release in afterToolCall, and again on tool_execution_end as a safety net
+      // (release is idempotent) in case afterToolCall is skipped when a tool errors.
+      const fileLock = this._fileLock;
+      session.agent.afterToolCall = async ({ toolCall }) => {
+        fileLock.release(toolCall.id);
+        return undefined;
+      };
+      session.subscribe((event: any) => {
+        if (event.type === "tool_execution_end" && event.toolCallId) fileLock.release(event.toolCallId);
+      });
+    }
     if (this._agentInterfaces && this._agentInterfaces.length > 0 )
     {
-        session.agent.afterToolCall = async ({toolCall, args}) => {
-        console.log("########### print message after tool call ######### ") ; 
-        console.log(`called tool ${toolCall.name}`)
-      }
+        const lockAfter = session.agent.afterToolCall;
+        session.agent.afterToolCall = async (ctx) => {
+          console.log(`called tool ${ctx.toolCall.name}`) ;
+          return lockAfter ? lockAfter(ctx) : undefined ;
+        }
     }
 
     return session;

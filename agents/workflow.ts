@@ -13,6 +13,7 @@ import {
     ExecutionQueueResult,
 } from "./workflow-types";
 import { AgentInterface } from "./workflow-interface";
+import { FileLockRegistry } from "./file-lock";
 
 export class Workflow {
     private ExecutionQueue_ : ExecutionQueueResult ; 
@@ -21,6 +22,7 @@ export class Workflow {
     private agents_ : Map<string,RawPiAgent> ; 
     private agentsStorage_ : AgentsStorage ;
     private interfaceStorage_ : InterfaceStorage ;  
+    private fileLock_ : FileLockRegistry = new FileLockRegistry() ;
 
 
     constructor(workflowRecord : Record<string, any>, agentsStorage : AgentsStorage, 
@@ -89,6 +91,7 @@ export class Workflow {
 
                     if (agentConfig) {
                         agentConfig.interfaceTools = links ;
+                        agentConfig.fileLock = this.fileLock_ ;
                         if (guardrailsOnInterfaces && links.length > 0) {
                             agentConfig.toolCallGuardrails = links.map(l => l.getTool().name) ;
                         }
