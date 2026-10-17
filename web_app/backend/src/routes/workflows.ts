@@ -315,6 +315,69 @@ router.post("/run", async (req, res) => {
 });
 
 /**
+ * POST /workflows/chat-agent
+ * Body: { agentId: string, message: string }
+ * Sends a message to a specific agent in the workflow, streaming SSE events.
+ */
+router.post("/chat-agent", async (req, res) => {
+  if (!currentWorkflow) {
+    res.status(400).json({ error: "No compiled workflow. Call POST /workflows/compile first." });
+    return;
+  }
+
+  const { agentId, message } = req.body;
+  if (!agentId || typeof agentId !== "string") {
+    res.status(400).json({ error: "agentId (string) is required" });
+    return;
+  }
+  if (!message || typeof message !== "string") {
+    res.status(400).json({ error: "message (string) is required" });
+    return;
+  }
+
+  const agent = currentWorkflow.getAgentById(agentId);
+  if (!agent) {
+    res.status(404).json({ error: `No workflow agent found with id "${agentId}"` });
+    return;
+  }
+
+  // SSE setup
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+
+  let closed = false;
+  res.on("close", () => {
+    closed = true;
+    agent.abort().catch(() => {});
+  });
+
+  const send = (payload: object) => {
+    if (!closed) res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
+
+  agent.onToolApprovalRequired((toolCallId, toolName, args) => {
+    send({ type: "tool_approval_required", agentId, toolCallId, name: toolName, args });
+  });
+
+  try {
+    console.log(`[workflow/chat-agent] Chatting with agent "${agentId}": "${message.slice(0, 100)}..."`);
+    await agent.chat(message, (event) => {
+      handleEventWithClient(event, (payload) => {
+        send({ ...payload, agentId });
+      });
+    });
+    send({ type: "workflow_done" });
+  } catch (err: any) {
+    console.error(`[workflow/chat-agent] error:`, err);
+    send({ type: "error", message: err?.message ?? String(err) });
+  } finally {
+    res.end();
+  }
+});
+
+/**
  * POST /workflows/tool-approve
  * Body: { agentId: string, toolCallId: string }
  * Approves a pending interface tool call on a workflow agent.

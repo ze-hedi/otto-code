@@ -197,18 +197,17 @@ export function WorkflowChatPanel({ agentId, agentName, allAgents, onSelectAgent
     agentPartsRef.current = {}
     setActiveAgents(new Set())
 
-    // Append user message to the first agent's chat history
-    const firstAgentId = allAgents[0]?.id ?? agentId
+    // Append user message to the currently selected agent's chat history
     setAgentMessages(prev => ({
       ...prev,
-      [firstAgentId]: [...(prev[firstAgentId] ?? []), { role: 'user' as const, content: text, parts: [] }],
+      [agentId]: [...(prev[agentId] ?? []), { role: 'user' as const, content: text, parts: [] }],
     }))
 
     try {
-      const res = await fetch('http://localhost:4000/workflows/run', {
+      const res = await fetch('http://localhost:4000/workflows/chat-agent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({ agentId, message: text }),
         signal: controller.signal,
       })
       if (!res.ok) throw new Error(await res.text())
