@@ -59,15 +59,15 @@ export interface PiAgentConfig {
     /** Custom instructions appended to the summarization prompt */
     customInstructions?: string;
   };
+  /** When set, session JSONL files are written to .otto-sessions/workflow-<workflowId>/ */
+  workflowId?: string;
+  /** When set inside a workflow, session files go into a sub-directory per session:
+   *  .otto-sessions/workflow-<workflowId>/<workflowSessionId>/ */
+  workflowSessionId?: string;
 }
 
 export type RawPiAgentConfig = Omit<PiAgentConfig, "systemPromptSuffix"> & {
   /** Fully replace Pi's default system prompt. The SDK still appends project
    *  context, skills, date, and cwd after it. */
   systemPrompt?: string;
-  /** When set, session JSONL files are written to .otto-sessions/workflow-<workflowId>/ */
-  workflowId?: string;
-  /** When set inside a workflow, session files go into a sub-directory per session:
-   *  .otto-sessions/workflow-<workflowId>/<workflowSessionId>/ */
-  workflowSessionId?: string;
 }& {};

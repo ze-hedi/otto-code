@@ -46,11 +46,13 @@ export class PiAgent {
   protected modelRegistry: ModelRegistry;
   protected model: Model<Api>;
   protected config: Required<
-    Omit<PiAgentConfig, "apiKey" | "workingDir" | "playground" | "model" | "skills" | "tools" | "compaction" | "name" | "toolCallGuardrails" | "mcpServers" | "mcpConnectionTimeout" | "builtInTools">
+    Omit<PiAgentConfig, "apiKey" | "workingDir" | "playground" | "model" | "skills" | "tools" | "compaction" | "name" | "toolCallGuardrails" | "mcpServers" | "mcpConnectionTimeout" | "builtInTools" | "workflowId" | "workflowSessionId">
   > & {
     workingDir: string;
     playground: string;
     skills: SkillInput[];
+    workflowId?: string;
+    workflowSessionId?: string;
   };
   /** Map of session_key → AgentSession. The initial session is stored under "main". */
   protected _sessions: Map<string, AgentSession> = new Map();
@@ -113,6 +115,8 @@ export class PiAgent {
       workingDir: config.workingDir ?? process.cwd(),
       playground: config.playground ?? process.cwd(),
       skills: config.skills ?? [],
+      workflowId: config.workflowId,
+      workflowSessionId: config.workflowSessionId,
     };
 
     // Store optional overrides for session creation
