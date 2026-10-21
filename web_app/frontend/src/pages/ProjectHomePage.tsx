@@ -75,6 +75,19 @@ export function ProjectHomePage() {
           <h2>Workflows</h2>
           <p>Design multi-step pipelines that chain agents together.</p>
         </button>
+
+        <button
+          className="project-home-card"
+          onClick={() => navigate(`/projects/${projectId}/sleeping`)}
+        >
+          <div className="project-home-card-icon">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z" />
+            </svg>
+          </div>
+          <h2>Sleeping Mode</h2>
+          <p>Distill session histories into long-term memory.</p>
+        </button>
       </div>
     </div>
   )

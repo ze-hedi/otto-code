@@ -7,6 +7,7 @@ const MODELS = [
   'deepseek/deepseek-v4-pro',
   'openai/gpt-4o',
   'google/gemini-2.5-pro',
+  'openrouter/mistralai/mistral-large-4-0',
 ]
 
 const THINKING_LEVELS = ['off', 'low', 'medium', 'high', 'xhigh'] as const

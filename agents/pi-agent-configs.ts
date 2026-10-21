@@ -7,8 +7,10 @@ import type {
 } from "./pi-agent-types";
 
 export interface PiAgentConfig {
-  /** Agent name (used for session file naming) */
+  /** Agent name (display purposes) */
   name?: string;
+  /** Unique agent ID (used for session file naming instead of name) */
+  agentId?: string;
   /** Model provider and name, e.g., "anthropic/claude-sonnet-4-5" */
   model: string;
   /** Additional system prompt appended to Pi's default */

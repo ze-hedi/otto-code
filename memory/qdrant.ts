@@ -150,6 +150,28 @@ export class QdrantManager {
     await this.client.delete(collection, { points: ids });
   }
 
+  async scroll(
+    collection: string,
+    filter: Record<string, string>,
+    limit: number = 100
+  ): Promise<{ id: string | number; payload: PointPayload }[]> {
+    const must = Object.entries(filter).map(([key, value]) => ({
+      key,
+      match: { value },
+    }));
+
+    const results = await this.client.scroll(collection, {
+      filter: { must },
+      limit,
+      with_payload: true,
+    });
+
+    return (results.points ?? []).map((r) => ({
+      id: r.id,
+      payload: (r.payload ?? {}) as PointPayload,
+    }));
+  }
+
   async collectionExists(name: string): Promise<boolean> {
     const collections = await this.client.getCollections();
     return collections.collections.some((c) => c.name === name);

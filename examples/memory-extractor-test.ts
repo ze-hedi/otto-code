@@ -29,6 +29,7 @@ async function main() {
     agentId,
     topK: 10,
     qdrant,
+    collectionName: COLLECTION,
     extractorModel: "deepseek/deepseek-v4-pro",
   });
 

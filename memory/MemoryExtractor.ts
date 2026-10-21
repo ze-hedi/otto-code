@@ -8,13 +8,12 @@ import {
   type ExtractorAgentConfig,
 } from "./extractor_agent.js";
 
-const COLLECTION_NAME = "memories";
-
 export interface MemoryExtractorConfig {
   sessionId: string;
   agentId: string;
   topK: number;
   qdrant: QdrantManager;
+  collectionName: string;
   extractorModel?: string;
 }
 
@@ -23,6 +22,7 @@ export class MemoryExtractor {
   private agentId: string;
   private topK: number;
   private qdrant: QdrantManager;
+  private collectionName: string;
   private extractorConfig: ExtractorAgentConfig;
 
   constructor(config: MemoryExtractorConfig) {
@@ -30,6 +30,7 @@ export class MemoryExtractor {
     this.agentId = config.agentId;
     this.topK = config.topK;
     this.qdrant = config.qdrant;
+    this.collectionName = config.collectionName;
     this.extractorConfig = { model: config.extractorModel };
   }
 
@@ -41,7 +42,7 @@ export class MemoryExtractor {
 
     // 2. Search Qdrant for related existing memories
     const searchResults = await this.qdrant.search(
-      COLLECTION_NAME,
+      this.collectionName,
       query,
       this.sessionId,
       this.agentId,
@@ -77,7 +78,7 @@ export class MemoryExtractor {
       },
     }));
 
-    await this.qdrant.upsert(COLLECTION_NAME, points);
+    await this.qdrant.upsert(this.collectionName, points);
 
     return extracted;
   }

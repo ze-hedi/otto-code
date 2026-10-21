@@ -18,6 +18,7 @@ import workflowRoutes from "./routes/workflows.js";
 import workflowStoreRoutes from "./routes/workflow-store.js";
 import projectRoutes from "./routes/projects.js";
 import dashboardRoutes from "./routes/dashboards.js";
+import sleepingRoutes from "./routes/sleeping.js";
 
 const app = express();
 app.use(cors());
@@ -28,6 +29,7 @@ app.use("/workflows", workflowRoutes);
 app.use("/workflow-store", workflowStoreRoutes);
 app.use("/projects", projectRoutes);
 app.use("/dashboards", dashboardRoutes);
+app.use("/sleeping", sleepingRoutes);
 
 const PORT = process.env.PORT || 4000;
 

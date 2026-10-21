@@ -72,6 +72,7 @@ const API_KEY_ENV: Record<string, string> = {
   anthropic: "ANTHROPIC_API_KEY",
   openai: "OPENAI_API_KEY",
   google: "GOOGLE_API_KEY",
+  openrouter: "OPENROUTER_API_KEY",
 };
 
 function resolveApiKey(model: string): string | undefined {
@@ -90,6 +91,7 @@ export async function createAgent(config: SerializableAgentConfig): Promise<Agen
 
   const rawConfig: RawPiAgentConfig = {
     name: config.name,
+    agentId,
     model: config.model,
     apiKey: resolveApiKey(config.model),
     systemPrompt: config.systemPrompt,
@@ -138,6 +140,7 @@ export async function getOrActivateAgent(agentId: string): Promise<RawPiAgent | 
   const config = doc.config;
   const rawConfig: RawPiAgentConfig = {
     name: config.name,
+    agentId: doc.agent_id,
     model: config.model,
     apiKey: resolveApiKey(config.model),
     systemPrompt: config.systemPrompt,

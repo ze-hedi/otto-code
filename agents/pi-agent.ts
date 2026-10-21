@@ -46,7 +46,7 @@ export class PiAgent {
   protected modelRegistry: ModelRegistry;
   protected model: Model<Api>;
   protected config: Required<
-    Omit<PiAgentConfig, "apiKey" | "workingDir" | "playground" | "model" | "skills" | "tools" | "compaction" | "name" | "toolCallGuardrails" | "mcpServers" | "mcpConnectionTimeout" | "builtInTools" | "workflowId" | "workflowSessionId">
+    Omit<PiAgentConfig, "apiKey" | "workingDir" | "playground" | "model" | "skills" | "tools" | "compaction" | "name" | "agentId" | "toolCallGuardrails" | "mcpServers" | "mcpConnectionTimeout" | "builtInTools" | "workflowId" | "workflowSessionId">
   > & {
     workingDir: string;
     playground: string;
@@ -64,6 +64,7 @@ export class PiAgent {
   protected _provider: string = "";
   protected _compaction: PiAgentConfig["compaction"];
   protected _name: string | undefined;
+  protected _agentId: string | undefined;
   protected _toolCallGuardrails: Set<string> = new Set();
   protected _pendingApprovals: Map<string, { resolve: (approved: boolean) => void; comment?: string }> = new Map();
   /** Map of server_name → active McpBridge */
@@ -121,6 +122,7 @@ export class PiAgent {
 
     // Store optional overrides for session creation
     this._name = config.name;
+    this._agentId = config.agentId;
     this._compaction = config.compaction;
     this._toolCallGuardrails = new Set(config.toolCallGuardrails ?? []);
     if (config.mcpServers) {
@@ -390,7 +392,7 @@ export class PiAgent {
       : path.join(this.config.playground, ".otto-sessions");
     fs.mkdirSync(sessionDir, { recursive: true });
 
-    const safeName = (this._name ?? "agent").replace(/[^a-zA-Z0-9_-]/g, "_");
+    const safeName = (this._agentId ?? this._name ?? "agent").replace(/[^a-zA-Z0-9_-]/g, "_");
     const safeKey = sessionKey.replace(/[^a-zA-Z0-9_-]/g, "_");
     const filename = `${safeName}-${safeKey}.jsonl`;
     const filePath = path.join(sessionDir, filename);

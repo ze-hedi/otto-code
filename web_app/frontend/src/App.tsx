@@ -9,6 +9,7 @@ import { WorkflowsListPage } from './pages/WorkflowsListPage'
 import { WorkflowPage } from './pages/WorkflowPage'
 import { DashboardsPage } from './pages/DashboardsPage'
 import { DashboardDetailPage } from './pages/DashboardDetailPage'
+import { SleepingModePage } from './pages/SleepingModePage'
 import './App.css'
 
 function WorkflowRedirect() {
@@ -26,6 +27,7 @@ function App() {
         <Route path="/projects/:projectId/agents" element={<AgentsListPage />} />
         <Route path="/projects/:projectId/create" element={<CreateAgentForm />} />
         <Route path="/projects/:projectId/chat/:agentId" element={<ChatPage />} />
+        <Route path="/projects/:projectId/sleeping" element={<SleepingModePage />} />
         <Route path="/projects/:projectId/workflow" element={<WorkflowRedirect />} />
         <Route path="/projects/:projectId/workflows" element={<WorkflowsListPage />} />
         <Route path="/projects/:projectId/workflows/:workflowId" element={<WorkflowPage />} />
