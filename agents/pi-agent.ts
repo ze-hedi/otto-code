@@ -24,7 +24,13 @@ import {
   type ToolDefinition,
 } from "@mariozechner/pi-coding-agent";
 import { SettingsManager } from "@mariozechner/pi-coding-agent";
-import { getModel, Model, type Api, type KnownProvider, type ImageContent } from "@mariozechner/pi-ai";
+import { getModel, completeSimple, Model, type Api, type KnownProvider, type ImageContent, type Message } from "@mariozechner/pi-ai";
+import {
+  estimateTokens,
+  convertToLlm,
+  serializeConversation,
+  getLatestCompactionEntry,
+} from "@mariozechner/pi-coding-agent";
 import type { Skill } from "@mariozechner/pi-coding-agent";
 import {type EventCallback, SkillInput, ToolInput, SubAgentToolConfig , PersistantSubAgentToolConfig} from "./pi-agent-types"
 import {PiAgentConfig} from "./pi-agent-configs"
@@ -86,7 +92,10 @@ export class PiAgent {
 
 
   constructor(config: PiAgentConfig) {
-    const [provider, modelName] = config.model.split("/");
+    const i = config.model.indexOf("/") ; 
+    const provider = config.model.slice(0,i); 
+    const modelName = config.model.slice(i+1) ; 
+     
     if (!provider || !modelName) {
       throw new Error(
         `Invalid model format. Expected "provider/model-name", got: ${config.model}`
@@ -875,6 +884,177 @@ export class PiAgent {
   async getMessages(key?: string): Promise<AgentMessage[]> {
     const session = await this.getSession(key);
     return session.messages;
+  }
+
+  // ── Outer-loop Compaction ─────────────────────────────────────────────────
+
+  private static COMPACTION_SYSTEM_PROMPT =
+    `You are a context summarization assistant. Your task is to read a conversation between a user and an AI coding assistant, then produce a structured summary following the exact format specified.\n\nDo NOT continue the conversation. Do NOT respond to any questions in the conversation. ONLY output the structured summary.`;
+
+  private static SUMMARIZATION_PROMPT =
+    `The messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.
+
+Use this EXACT format:
+
+## Goal
+[What is the user trying to accomplish? Can be multiple items if the session covers different tasks.]
+
+## Constraints & Preferences
+- [Any constraints, preferences, or requirements mentioned by user]
+- [Or "(none)" if none were mentioned]
+
+## Progress
+### Done
+- [x] [Completed tasks/changes]
+
+### In Progress
+- [ ] [Current work]
+
+### Blocked
+- [Issues preventing progress, if any]
+
+## Key Decisions
+- **[Decision]**: [Brief rationale]
+
+## Next Steps
+1. [Ordered list of what should happen next]
+
+## Critical Context
+- [Any data, examples, or references needed to continue]
+- [Or "(none)" if not applicable]
+
+Keep each section concise. Preserve exact file paths, function names, and error messages.`;
+
+  private static UPDATE_SUMMARIZATION_PROMPT =
+    `The messages above are NEW conversation messages to incorporate into the existing summary provided in <previous-summary> tags.
+
+Update the existing structured summary with new information. RULES:
+- PRESERVE all existing information from the previous summary
+- ADD new progress, decisions, and context from the new messages
+- UPDATE the Progress section: move items from "In Progress" to "Done" when completed
+- UPDATE "Next Steps" based on what was accomplished
+- PRESERVE exact file paths, function names, and error messages
+- If something is no longer relevant, you may remove it
+
+Use this EXACT format:
+
+## Goal
+[Preserve existing goals, add new ones if the task expanded]
+
+## Constraints & Preferences
+- [Preserve existing, add new ones discovered]
+
+## Progress
+### Done
+- [x] [Include previously done items AND newly completed items]
+
+### In Progress
+- [ ] [Current work - update based on progress]
+
+### Blocked
+- [Current blockers - remove if resolved]
+
+## Key Decisions
+- **[Decision]**: [Brief rationale] (preserve all previous, add new)
+
+## Next Steps
+1. [Update based on current state]
+
+## Critical Context
+- [Preserve important context, add new if needed]
+
+Keep each section concise. Preserve exact file paths, function names, and error messages.`;
+
+  /**
+   * Run compaction on a session from the outer loop.
+   *
+   * Summarizes old messages via an LLM call and injects a compaction entry
+   * into the session. The next prompt() call will see:
+   *   [system] → [compaction summary as user msg] → [kept recent messages]
+   *
+   * @param options.model - Model to use for summarization (defaults to agent's model)
+   * @param options.key   - Session key (default "main")
+   */
+  async compactSession(options?: {
+    model?: Model<Api>;
+    key?: string;
+  }): Promise<{ summary: string; tokensBefore: number }> {
+    const summaryModel = options?.model ?? this.model;
+    const session = await this.getSession(options?.key);
+    const sm = session.sessionManager;
+    const entries = sm.getEntries();
+
+    // Get current messages (what the LLM sees) for token estimation
+    const { messages } = sm.buildSessionContext();
+    let tokensBefore = 0;
+    for (const msg of messages) {
+      tokensBefore += estimateTokens(msg as any);
+    }
+
+    // Find the latest compaction entry (auto or explicit — same type)
+    const prevCompaction = getLatestCompactionEntry(entries);
+    const previousSummary = prevCompaction?.summary;
+
+    // Collect all messages after the last compaction (or all messages if none)
+    const prevCompactionIdx = prevCompaction
+      ? entries.findIndex((e: any) => e.type === "compaction" && e.id === prevCompaction.id)
+      : -1;
+    const startIdx = prevCompactionIdx >= 0 ? prevCompactionIdx + 1 : 0;
+
+    const messagesToSummarize: Message[] = [];
+    for (let i = startIdx; i < entries.length; i++) {
+      const entry = entries[i] as any;
+      if (entry.type === "message") {
+        messagesToSummarize.push(entry.message);
+      }
+    }
+
+    if (messagesToSummarize.length === 0) {
+      throw new Error("Cannot compact: no messages to summarize");
+    }
+
+    // Serialize and build the summarization prompt
+    const llmMessages = convertToLlm(messagesToSummarize as any);
+    const conversationText = serializeConversation(llmMessages);
+
+    let promptText = `<conversation>\n${conversationText}\n</conversation>\n\n`;
+    if (previousSummary) {
+      promptText += `<previous-summary>\n${previousSummary}\n</previous-summary>\n\n`;
+      promptText += PiAgent.UPDATE_SUMMARIZATION_PROMPT;
+    } else {
+      promptText += PiAgent.SUMMARIZATION_PROMPT;
+    }
+
+    // Call the LLM
+    const response = await completeSimple(
+      summaryModel,
+      {
+        systemPrompt: PiAgent.COMPACTION_SYSTEM_PROMPT,
+        messages: [
+          {
+            role: "user" as const,
+            content: [{ type: "text" as const, text: promptText }],
+            timestamp: Date.now(),
+          },
+        ],
+      },
+      { maxTokens: 8192 },
+    );
+
+    if (response.stopReason === "error") {
+      throw new Error(`Compaction summarization failed: ${response.errorMessage ?? "unknown error"}`);
+    }
+
+    const summary = response.content
+      .filter((c: any) => c.type === "text")
+      .map((c: any) => c.text)
+      .join("\n");
+
+    // Pass undefined as firstKeptEntryId — everything is summarized,
+    // no messages should be kept before the compaction point.
+    sm.appendCompaction(summary, undefined, tokensBefore, undefined, true);
+
+    return { summary, tokensBefore };
   }
 }
 

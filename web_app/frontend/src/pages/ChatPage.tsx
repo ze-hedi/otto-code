@@ -16,6 +16,7 @@ type MessagePart =
   | { type: 'subagent'; toolCallId: string; toolName: string; status: 'running' | 'done'; parts: SubAgentPart[]; result?: string; isError?: boolean }
   | { type: 'tool_approval'; toolCallId: string; toolName: string; args: string; status: 'pending' | 'approved' | 'rejected' }
   | { type: 'clarification'; toolCallId: string; questions: string[]; answers: string[]; status: 'pending' | 'answered' }
+  | { type: 'compaction'; content: string }
 
 interface ChatMessage {
   role: 'user' | 'assistant'
@@ -305,6 +306,31 @@ export function ChatPage() {
     if (!text || busy) return
     setInput('')
     setBusy(true)
+
+    // ── /compact: plain JSON request, no SSE ────────────────────────────
+    if (text === '/compact') {
+      setMessages(prev => [...prev, { role: 'user', content: '/compact', parts: [] }])
+      try {
+        const res = await fetch(`http://localhost:4000/agents/${agentId}/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: text }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error ?? 'Compaction failed')
+        setMessages(prev => [
+          ...prev,
+          { role: 'assistant', content: '', parts: [{ type: 'compaction', content: data.summary }] },
+        ])
+      } catch (err: any) {
+        setMessages(prev => [
+          ...prev,
+          { role: 'assistant', content: '', parts: [{ type: 'text', content: `Compaction error: ${err.message}` }] },
+        ])
+      }
+      setBusy(false)
+      return
+    }
 
     const controller = new AbortController()
     abortRef.current = controller
@@ -604,6 +630,14 @@ export function ChatPage() {
                         <details key={j} className="part-thinking">
                           <summary>Thinking</summary>
                           <div className="thinking-content">{part.content}</div>
+                        </details>
+                      )
+                    }
+                    if (part.type === 'compaction') {
+                      return (
+                        <details key={j} className="part-compaction">
+                          <summary>Context compacted</summary>
+                          <div className="compaction-content"><Markdown>{part.content}</Markdown></div>
                         </details>
                       )
                     }

@@ -101,6 +101,7 @@
   white-space: nowrap;
 }
 
+.edit-btn,
 .delete-btn {
   background: none;
   border: none;
@@ -115,8 +116,14 @@
   transition: opacity 0.15s, color 0.15s, background 0.15s;
 }
 
+.agent-card:hover .edit-btn,
 .agent-card:hover .delete-btn {
   opacity: 1;
+}
+
+.edit-btn:hover {
+  color: var(--accent);
+  background: rgba(59, 130, 246, 0.08);
 }
 
 .delete-btn:hover {

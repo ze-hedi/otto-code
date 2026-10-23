@@ -482,6 +482,19 @@ router.post("/chat-agent", async (req, res) => {
     return;
   }
 
+  // ── /compact command: run compaction and return JSON (no SSE) ──────────
+  if (message.trim() === "/compact") {
+    try {
+      const result = await agent.compactSession();
+      console.log(`[workflow/chat-agent] compaction done for "${agentId}" — tokensBefore=${result.tokensBefore}`);
+      res.json({ type: "compaction_done", ...result });
+    } catch (err: any) {
+      console.error(`[workflow/chat-agent] compaction error:`, err);
+      res.status(500).json({ error: err?.message ?? "Compaction failed" });
+    }
+    return;
+  }
+
   // SSE setup
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -605,6 +618,8 @@ function transformWorkflowMessages(rawMessages: any[]): any[] {
         }
       }
       out.push({ role: "assistant", content: "", parts });
+    } else if (msg.role === "compactionSummary") {
+      out.push({ role: "assistant", content: "", parts: [{ type: "compaction", content: msg.summary ?? "" }] });
     }
   }
   return out;

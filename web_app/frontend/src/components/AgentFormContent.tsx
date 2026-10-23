@@ -61,9 +61,11 @@ interface AgentFormContentProps {
   onCancel?: () => void
   readOnly?: boolean
   initialData?: AgentFormData
+  /** When set, the form PUTs to update this agent instead of POSTing a new one. */
+  editAgentId?: string
 }
 
-export function AgentFormContent({ lockedPlayground, onSuccess, onCancel, readOnly, initialData }: AgentFormContentProps) {
+export function AgentFormContent({ lockedPlayground, onSuccess, onCancel, readOnly, initialData, editAgentId }: AgentFormContentProps) {
   const [name, setName] = useState(initialData?.name ?? '')
   const [description, setDescription] = useState(initialData?.description ?? '')
   const initModel = initialData?.model && MODELS.includes(initialData.model) ? initialData.model : initialData?.model ? '__custom__' : MODELS[0]
@@ -187,8 +189,11 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel, readOn
     }
 
     try {
-      const res = await fetch('http://localhost:4000/agents', {
-        method: 'POST',
+      const url = editAgentId
+        ? `http://localhost:4000/agents/${editAgentId}`
+        : 'http://localhost:4000/agents'
+      const res = await fetch(url, {
+        method: editAgentId ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
       })
@@ -199,7 +204,7 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel, readOn
       const data = await res.json()
       onSuccess(data.agent_id, name || data.agent_id, finalModel)
     } catch (err: any) {
-      setError(err.message || 'Failed to create agent')
+      setError(err.message || (editAgentId ? 'Failed to update agent' : 'Failed to create agent'))
     } finally {
       setSubmitting(false)
     }
@@ -283,13 +288,16 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel, readOn
           type="text"
           placeholder="/path/to/repo"
           value={playground}
-          onChange={e => !lockedPlayground && !ro && setPlayground(e.target.value)}
+          onChange={e => !lockedPlayground && !editAgentId && !ro && setPlayground(e.target.value)}
           className="mono"
-          readOnly={!!lockedPlayground || ro}
-          style={lockedPlayground || ro ? { opacity: 0.6, cursor: 'not-allowed' } : undefined}
+          readOnly={!!lockedPlayground || !!editAgentId || ro}
+          style={lockedPlayground || editAgentId || ro ? { opacity: 0.6, cursor: 'not-allowed' } : undefined}
         />
-        {lockedPlayground && !ro && (
+        {lockedPlayground && !editAgentId && !ro && (
           <p className="field-hint">Locked to the project playground directory.</p>
+        )}
+        {editAgentId && !ro && (
+          <p className="field-hint">Playground cannot be changed after creation.</p>
         )}
       </div>
 
@@ -542,7 +550,7 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel, readOn
             </button>
           )}
           <button type="submit" className="submit-btn" disabled={submitting}>
-            {submitting ? 'Creating...' : 'Create Agent'}
+            {submitting ? (editAgentId ? 'Saving...' : 'Creating...') : (editAgentId ? 'Save Changes' : 'Create Agent')}
           </button>
         </div>
       )}

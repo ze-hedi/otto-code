@@ -173,6 +173,28 @@ export async function getAllAgentDocs(playground?: string): Promise<AgentDocumen
   return getCollection().find(filter).toArray();
 }
 
+export async function updateAgent(agentId: string, config: SerializableAgentConfig): Promise<AgentDocument | null> {
+  const doc = await getCollection().findOne({ agent_id: agentId });
+  if (!doc) return null;
+
+  // Preserve the original playground — not editable
+  const merged: SerializableAgentConfig = { ...config, playground: doc.config.playground };
+
+  // Tear down the old in-memory agent so it gets re-hydrated with the new config
+  const agent = activeAgents.get(agentId);
+  if (agent) {
+    await agent.disconnectMcp().catch(() => {});
+    activeAgents.delete(agentId);
+  }
+
+  await getCollection().updateOne(
+    { agent_id: agentId },
+    { $set: { config: merged, updated_at: new Date() } },
+  );
+
+  return getCollection().findOne({ agent_id: agentId });
+}
+
 export async function deleteAgent(agentId: string): Promise<boolean> {
   const agent = activeAgents.get(agentId);
   if (agent) {

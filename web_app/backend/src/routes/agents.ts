@@ -2,7 +2,7 @@ import { Router } from "express";
 import fs from "fs";
 import path from "path";
 import readline from "readline";
-import { createAgent, deleteAgent, getActiveAgent, getOrActivateAgent, getAgentDoc, getAllAgentDocs, getSessionKey, setSessionKey, markBusy, markIdle, getAgentBusyState, getAgentEmitter, setClarificationCallback, resolveClarification } from "../services/agent-manager.js";
+import { createAgent, updateAgent, deleteAgent, getActiveAgent, getOrActivateAgent, getAgentDoc, getAllAgentDocs, getSessionKey, setSessionKey, markBusy, markIdle, getAgentBusyState, getAgentEmitter, setClarificationCallback, resolveClarification } from "../services/agent-manager.js";
 import { handleEventWithClient } from "../../../../agents/pi-agent-utils.js";
 import type { SerializableAgentConfig } from "../types.js";
 
@@ -33,6 +33,22 @@ router.get("/", async (req, res) => {
 
 router.get("/:id", async (req, res) => {
   const doc = await getAgentDoc(req.params.id);
+  if (!doc) {
+    res.status(404).json({ error: "Agent not found" });
+    return;
+  }
+  res.json(doc);
+});
+
+// ── Update agent ──────────────────────────────────────────────────────────
+
+router.put("/:id", async (req, res) => {
+  const config: SerializableAgentConfig = req.body;
+  if (!config.model) {
+    res.status(400).json({ error: "model is required" });
+    return;
+  }
+  const doc = await updateAgent(req.params.id, config);
   if (!doc) {
     res.status(404).json({ error: "Agent not found" });
     return;
@@ -90,8 +106,7 @@ router.get("/:id/sessions", async (req, res) => {
     return;
   }
 
-  const safeName = (doc.config.name ?? "agent").replace(/[^a-zA-Z0-9_-]/g, "_");
-  const prefix = `${safeName}-`;
+  const prefix = `${doc.agent_id}-`;
 
   const files = fs.readdirSync(sessionDir).filter(
     (f) => f.startsWith(prefix) && f.endsWith(".jsonl"),
@@ -151,8 +166,7 @@ router.delete("/:id/sessions/:sessionKey", async (req, res) => {
   }
 
   const sessionDir = path.join(playground, ".otto-sessions");
-  const safeName = (doc.config.name ?? "agent").replace(/[^a-zA-Z0-9_-]/g, "_");
-  const filename = `${safeName}-${req.params.sessionKey}.jsonl`;
+  const filename = `${doc.agent_id}-${req.params.sessionKey}.jsonl`;
   const filePath = path.join(sessionDir, filename);
 
   if (!fs.existsSync(filePath)) {
@@ -254,6 +268,20 @@ router.post("/:id/chat", async (req, res) => {
   console.log(`[chat] message: "${message}"`);
   if (!message) {
     res.status(400).json({ error: "message is required" });
+    return;
+  }
+
+  // ── /compact command: run compaction and return JSON (no SSE) ──────────
+  if (message.trim() === "/compact") {
+    const sessionKey = getSessionKey(req.params.id);
+    try {
+      const result = await agent.compactSession({ key: sessionKey });
+      console.log(`[chat] compaction done — tokensBefore=${result.tokensBefore}`);
+      res.json({ type: "compaction_done", ...result });
+    } catch (err: any) {
+      console.error("[chat] compaction error:", err);
+      res.status(500).json({ error: err?.message ?? "Compaction failed" });
+    }
     return;
   }
 
@@ -418,7 +446,7 @@ router.get("/:id/events", (req, res) => {
 // ── Message history endpoint ────────────────────────────────────────────────
 
 interface ChatPart {
-  type: "thinking" | "text" | "tool";
+  type: "thinking" | "text" | "tool" | "compaction";
   content?: string;
   name?: string;
   input?: string;
@@ -476,8 +504,10 @@ function transformMessages(rawMessages: any[]): ChatMsg[] {
         }
       }
       out.push({ role: "assistant", content: "", parts });
+    } else if (msg.role === "compactionSummary") {
+      out.push({ role: "assistant", content: "", parts: [{ type: "compaction", content: msg.summary ?? "" }] });
     }
-    // skip toolResult, bashExecution, compactionSummary, etc.
+    // skip toolResult, bashExecution, etc.
   }
 
   return out;
