@@ -48,6 +48,7 @@ async function processSSEStream(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   parts: MessagePart[],
   updateMessage: () => void,
+  onSubagentDone?: (toolCallId: string) => void,
 ) {
   const decoder = new TextDecoder()
   let buf = ''
@@ -177,6 +178,7 @@ async function processSSEStream(
             sa.result = resultStr.length > 1500 ? resultStr.slice(0, 1500) + '\n... (truncated)' : resultStr
             sa.isError = ev.isError
             sa.status = 'done'
+            onSubagentDone?.(ev.toolCallId)
             matched = true
           }
         }
@@ -211,8 +213,20 @@ export function ChatPage() {
   const [agentConfig, setAgentConfig] = useState<AgentConfig | null>(null)
   const [showDetails, setShowDetails] = useState(false)
   const [showStats, setShowStats] = useState(false)
+  const [collapsedSubagents, setCollapsedSubagents] = useState<Set<string>>(new Set())
   const bottomRef = useRef<HTMLDivElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+
+  const collapseSubagent = (toolCallId: string) => {
+    setCollapsedSubagents(prev => { const next = new Set(prev); next.add(toolCallId); return next })
+  }
+  const toggleSubagent = (toolCallId: string) => {
+    setCollapsedSubagents(prev => {
+      const next = new Set(prev)
+      next.has(toolCallId) ? next.delete(toolCallId) : next.add(toolCallId)
+      return next
+    })
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -268,7 +282,7 @@ export function ChatPage() {
           // Subscribe to the event stream for remaining events
           const eventsRes = await fetch(`http://localhost:4000/agents/${agentId}/events`, { signal: controller.signal })
           if (eventsRes.ok && eventsRes.body) {
-            await processSSEStream(eventsRes.body.getReader(), parts, updateMessage)
+            await processSSEStream(eventsRes.body.getReader(), parts, updateMessage, collapseSubagent)
           }
 
           setBusy(false)
@@ -364,7 +378,7 @@ export function ChatPage() {
         throw new Error(errText)
       }
 
-      await processSSEStream(res.body!.getReader(), parts, updateMessage)
+      await processSSEStream(res.body!.getReader(), parts, updateMessage, collapseSubagent)
     } catch (err: any) {
       if (err.name !== 'AbortError') {
         parts.push({ type: 'text', content: `Error: ${err.message}` })
@@ -750,9 +764,11 @@ export function ChatPage() {
                       )
                     }
                     if (part.type === 'subagent') {
+                      const isCollapsed = collapsedSubagents.has(part.toolCallId)
                       return (
                         <div key={j} className={`part-subagent ${part.status}`}>
-                          <div className="subagent-header">
+                          <div className="subagent-header" onClick={() => toggleSubagent(part.toolCallId)}>
+                            <span className="subagent-chevron">{isCollapsed ? '▶' : '▼'}</span>
                             <span className="subagent-icon">⚡</span>
                             <span className="tool-name">{part.toolName}</span>
                             {part.status === 'running' && <span className="tool-spinner" />}
@@ -762,7 +778,7 @@ export function ChatPage() {
                               </span>
                             )}
                           </div>
-                          <div className="subagent-stream" ref={el => { if (el && part.status === 'running') el.scrollTop = el.scrollHeight }}>
+                          {!isCollapsed && <div className="subagent-stream" ref={el => { if (el && part.status === 'running') el.scrollTop = el.scrollHeight }}>
                             {part.parts.length === 0 && part.status === 'running' && (
                               <div className="typing-indicator">
                                 <span /><span /><span />
@@ -807,7 +823,7 @@ export function ChatPage() {
                               }
                               return null
                             })}
-                          </div>
+                          </div>}
                         </div>
                       )
                     }

@@ -334,6 +334,13 @@
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.subagent-chevron {
+  font-size: 10px;
+  color: var(--text-light);
 }
 
 .subagent-icon {
