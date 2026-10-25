@@ -4,8 +4,8 @@ import { readFileSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { createInterface } from "readline";
-import { RawPiAgent, RawPiAgentConfig } from "../agents/raw-pi-agent";
-import { handleEvent } from "../agents/pi-agent-utils";
+import { RawPiAgent, RawPiAgentConfig } from "../agents/core/raw-pi-agent";
+import { handleEvent } from "../agents/core/pi-agent-utils";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const systemPrompt = readFileSync(resolve(__dirname, "web-research-sys-prompt.md"), "utf-8");

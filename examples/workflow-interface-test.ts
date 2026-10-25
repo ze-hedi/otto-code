@@ -15,12 +15,12 @@ The mechanism of workflow is as follow :
         - We identify these agents by an id that we will use to add tthe agent in the workflow
 */
 
-import { ToolInput } from "../agents/pi-agent-types"
-import { RawPiAgentConfig } from "../agents/pi-agent-configs"
+import { ToolInput } from "../agents/core/pi-agent-types"
+import { RawPiAgentConfig } from "../agents/core/pi-agent-configs"
 import { Type } from "@sinclair/typebox"
-import { AgentsStorage, InterfaceStorage} from "../agents/workflow-types";
-import { DelegationInterface, AgentInterface } from "../agents/workflow-interface";
-import { Workflow } from "../agents/workflow";
+import { AgentsStorage, InterfaceStorage} from "../agents/workflow/workflow-types";
+import { DelegationInterface, AgentInterface } from "../agents/workflow/workflow-interface";
+import { Workflow } from "../agents/workflow/workflow";
 import { config } from "dotenv";
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";

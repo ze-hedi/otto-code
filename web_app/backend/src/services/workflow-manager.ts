@@ -1,17 +1,17 @@
-import { AgentsStorage, InterfaceStorage, NodeType } from "../../../../agents/workflow-types.js";
-import type { WorkflowSchema } from "../../../../agents/workflow-types.js";
-import type { RawPiAgentConfig } from "../../../../agents/pi-agent-configs.js";
-import type { ToolInput } from "../../../../agents/pi-agent-types.js";
-import type { AgentInterface, ParamDescriptions } from "../../../../agents/workflow-interface.js";
+import { AgentsStorage, InterfaceStorage, NodeType } from "../../../../agents/workflow/workflow-types.js";
+import type { WorkflowSchema } from "../../../../agents/workflow/workflow-types.js";
+import type { RawPiAgentConfig } from "../../../../agents/core/pi-agent-configs.js";
+import type { ToolInput } from "../../../../agents/core/pi-agent-types.js";
+import type { AgentInterface, ParamDescriptions } from "../../../../agents/workflow/workflow-interface.js";
 import {
   DelegationInterface,
   ForwardInterface,
   AccumulateInterface,
   RouteInterface,
-} from "../../../../agents/workflow-interface.js";
+} from "../../../../agents/workflow/workflow-interface.js";
 import type { InterfaceConfig } from "../types.js";
 import { getAllAgentDocs } from "./agent-manager.js";
-import type { Workflow } from "../../../../agents/workflow.js";
+import type { Workflow } from "../../../../agents/workflow/workflow.js";
 import type { AgentSessionEvent as AgentEvent } from "@mariozechner/pi-coding-agent";
 
 // ── Hardcoded interface tools (same pattern as workflow-interface-test.ts) ────

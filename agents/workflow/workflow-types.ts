@@ -1,4 +1,4 @@
-import { RawPiAgentConfig } from "./pi-agent-configs";
+import { RawPiAgentConfig } from "../core/pi-agent-configs";
 import { AgentInterface } from "./workflow-interface";
 
 

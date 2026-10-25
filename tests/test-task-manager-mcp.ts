@@ -1,8 +1,8 @@
 import dotenv from "dotenv";
 dotenv.config({ path: ".env" });
-import { RawPiAgent } from "../agents/raw-pi-agent.js";
-import type { RawPiAgentConfig } from "../agents/pi-agent-configs.js";
-import { handleEvent } from "../agents/pi-agent-utils.js";
+import { RawPiAgent } from "../agents/core/raw-pi-agent.js";
+import type { RawPiAgentConfig } from "../agents/core/pi-agent-configs.js";
+import { handleEvent } from "../agents/core/pi-agent-utils.js";
 
 const config: RawPiAgentConfig = {
   model: "deepseek/deepseek-v4-pro",

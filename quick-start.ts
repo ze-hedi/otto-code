@@ -2,7 +2,7 @@
 // quick-start.ts
 // Minimal example: PR reviewer that reviews staged git changes
 
-import { PiAgent } from "./agents/pi-agent";
+import { PiAgent } from "./agents/core/pi-agent";
 
 const agent = new PiAgent({
   model: "anthropic/claude-sonnet-4-5",

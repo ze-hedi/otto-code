@@ -2,8 +2,8 @@ import { v4 as uuidv4 } from "uuid";
 import { EventEmitter } from "events";
 import { Collection } from "mongodb";
 import { Type } from "@sinclair/typebox";
-import { RawPiAgent } from "../../../../agents/raw-pi-agent.js";
-import type { RawPiAgentConfig, ToolInput } from "../../../../agents/pi-agent-configs.js";
+import { RawPiAgent } from "../../../../agents/core/raw-pi-agent.js";
+import type { RawPiAgentConfig, ToolInput } from "../../../../agents/core/pi-agent-configs.js";
 import { getDb } from "../db/mongo.js";
 import type { AgentDocument, SerializableAgentConfig } from "../types.js";
 

@@ -1,4 +1,4 @@
-import type { ToolInput } from "./pi-agent-types";
+import type { ToolInput } from "../core/pi-agent-types";
 import { Type } from "@sinclair/typebox";
 
 export enum Agent2AgentLink {

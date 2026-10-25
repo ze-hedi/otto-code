@@ -3,11 +3,11 @@ import path from "path";
 import { Router } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { EventEmitter } from "events";
-import { AgentsStorage, InterfaceStorage } from "../../../../agents/workflow-types.js";
-import type { WorkflowSchema } from "../../../../agents/workflow-types.js";
-import { Workflow } from "../../../../agents/workflow.js";
+import { AgentsStorage, InterfaceStorage } from "../../../../agents/workflow/workflow-types.js";
+import type { WorkflowSchema } from "../../../../agents/workflow/workflow-types.js";
+import { Workflow } from "../../../../agents/workflow/workflow.js";
 import { buildInterfaceStorage, buildAgentsStorage, validateInterfaceRules, runWorkflow, interfaceTools } from "../services/workflow-manager.js";
-import { handleEventWithClient } from "../../../../agents/pi-agent-utils.js";
+import { handleEventWithClient } from "../../../../agents/core/pi-agent-utils.js";
 import { getWorkflow as getWorkflowDoc, updateWorkflow } from "../db/mongo.js";
 
 const router = Router();

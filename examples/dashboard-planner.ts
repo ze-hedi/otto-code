@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { createInterface } from "readline";
-import { RawPiAgent, RawPiAgentConfig } from "../agents/raw-pi-agent";
-import { handleEvent } from "../agents/pi-agent-utils";
+import { RawPiAgent, RawPiAgentConfig } from "../agents/core/raw-pi-agent";
+import { handleEvent } from "../agents/core/pi-agent-utils";
 
 const systemPrompt = `You are a project planner and dashboard manager. Your role is to help users organize, plan, and track projects through a structured dashboard.
 

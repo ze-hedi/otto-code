@@ -1,5 +1,5 @@
-import { Workflow } from "../agents/workflow.js";
-import { NodeType } from "../agents/workflow-types.js";
+import { Workflow } from "../agents/workflow/workflow.js";
+import { NodeType } from "../agents/workflow/workflow-types.js";
 
 const input = {
   components: [

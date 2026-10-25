@@ -11,7 +11,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { Type } from "typebox";
-import type { McpBridge, McpToolEntry } from "./mcp-bridge.js";
+import type { McpBridge, McpToolEntry } from "../integrations/mcp-bridge.js";
 import {
   AuthStorage,
   createAgentSession,
@@ -35,7 +35,7 @@ import type { Skill } from "@mariozechner/pi-coding-agent";
 import {type EventCallback, SkillInput, ToolInput, SubAgentToolConfig , PersistantSubAgentToolConfig} from "./pi-agent-types"
 import {PiAgentConfig} from "./pi-agent-configs"
 import { createSubAgentTool } from "./sub-agent-pattern.js";
-import { AgentInterface } from './workflow-interface.js';
+import { AgentInterface } from '../workflow/workflow-interface.js';
 
 // ── Types extracted from AgentSessionEvent union ───────────────────────────────
 // This avoids importing from sub-packages (@mariozechner/pi-agent-core, @mariozechner/pi-ai)
@@ -633,7 +633,7 @@ export class PiAgent {
     // Store/update the endpoint mapping
     this._mcpServers.set(serverName, url);
 
-    const { createMcpBridge } = await import("./mcp-bridge.js");
+    const { createMcpBridge } = await import("../integrations/mcp-bridge.js");
     const bridge = await createMcpBridge(url, this._mcpConnectionTimeout);
     this._mcpBridges.set(serverName, bridge);
 

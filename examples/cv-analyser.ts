@@ -3,10 +3,10 @@ import fs from "fs";
 import path from "path";
 import {Type} from "typebox" ;
 import { createInterface } from "readline";
-import { RawPiAgent } from "../agents/raw-pi-agent.js";
+import { RawPiAgent } from "../agents/core/raw-pi-agent.js";
 import type { ImageContent } from "@mariozechner/pi-ai";
-import { handleEvent } from "../agents/pi-agent-utils";
-import {createSubAgentTool} from "../agents/sub-agent-pattern"
+import { handleEvent } from "../agents/core/pi-agent-utils";
+import {createSubAgentTool} from "../agents/core/sub-agent-pattern"
 
 
 const systemPrompt = `You are a CV/resume analysis agent. Your job is to analyze a candidate's CV provided as an image and produce a structured summary.

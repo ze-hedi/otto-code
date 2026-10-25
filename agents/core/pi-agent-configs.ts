@@ -1,4 +1,4 @@
-import type { AgentInterface } from "./workflow-interface";
+import type { AgentInterface } from "../workflow/workflow-interface";
 import type {
   SkillInput,
   ToolInput,

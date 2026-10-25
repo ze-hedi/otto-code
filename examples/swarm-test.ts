@@ -1,6 +1,6 @@
-import { RawPiAgent } from "../agents/raw-pi-agent";
-import { Swarm } from "../agents/swarm";
-import { handleEvent } from "../agents/pi-agent-utils";
+import { RawPiAgent } from "../agents/core/raw-pi-agent";
+import { Swarm } from "../agents/orchestration/swarm";
+import { handleEvent } from "../agents/core/pi-agent-utils";
 import { config } from "dotenv";
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";

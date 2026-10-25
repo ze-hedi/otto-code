@@ -10,11 +10,7 @@
     "resolveJsonModule": true,
     "outDir": "./dist",
     "declaration": true,
-    "sourceMap": true,
-    "paths": {
-      "@agents/*": ["../../agents/*"]
-    },
-    "baseUrl": "."
+    "sourceMap": true
   },
   "include": ["src/**/*.ts", "../../agents/**/*.ts"],
   "exclude": ["node_modules", "dist"]

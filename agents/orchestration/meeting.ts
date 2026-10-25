@@ -1,6 +1,6 @@
 import { Type } from "typebox";
-import { RawPiAgent } from "./raw-pi-agent.js";
-import type { EventCallback, ToolInput } from "./pi-agent-types.js";
+import { RawPiAgent } from "../core/raw-pi-agent.js";
+import type { EventCallback, ToolInput } from "../core/pi-agent-types.js";
 
 export interface MeetingTurn {
   round: number;
