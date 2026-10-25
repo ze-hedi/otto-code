@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 import "dotenv/config";
-import { PiAgent } from "../agents/pi-agent";
+import { PiAgent } from "../agents/core/pi-agent";
 
 async function main() {
   const gc = globalThis.gc;

@@ -1,7 +1,7 @@
-import { RawPiAgent } from "./raw-pi-agent";
-import type { RawPiAgentConfig } from "./pi-agent-configs";
-import { ToolInput } from "./pi-agent-types";
-import { handleEvent } from "./pi-agent-utils";
+import { RawPiAgent } from "../core/raw-pi-agent";
+import type { RawPiAgentConfig } from "../core/pi-agent-configs";
+import { ToolInput } from "../core/pi-agent-types";
+import { handleEvent } from "../core/pi-agent-utils";
 import {
     AgentsStorage,
     InterfaceStorage,

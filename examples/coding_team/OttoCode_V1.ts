@@ -11,16 +11,16 @@ a first version of OttoCode agent that is composed of the following
 */ 
 
 import { Type } from "@sinclair/typebox";
-import { RawPiAgent } from "../../agents/raw-pi-agent";
-import { RawPiAgentConfig, ToolInput } from "../../agents/pi-agent-configs";
-import { PiAgentConfig } from "../../agents/pi-agent-configs";
+import { RawPiAgent } from "../../agents/core/raw-pi-agent";
+import { RawPiAgentConfig, ToolInput } from "../../agents/core/pi-agent-configs";
+import { PiAgentConfig } from "../../agents/core/pi-agent-configs";
 import { config } from "dotenv";
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 import { createInterface } from "readline";
 import { readFileSync } from "fs";
-import { handleEvent } from "../../agents/pi-agent-utils";
-import { PiAgent } from "../../agents/pi-agent";
+import { handleEvent } from "../../agents/core/pi-agent-utils";
+import { PiAgent } from "../../agents/core/pi-agent";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, "../../.env") });

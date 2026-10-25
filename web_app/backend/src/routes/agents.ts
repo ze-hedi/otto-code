@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import readline from "readline";
 import { createAgent, updateAgent, deleteAgent, getActiveAgent, getOrActivateAgent, getAgentDoc, getAllAgentDocs, getSessionKey, setSessionKey, markBusy, markIdle, getAgentBusyState, getAgentEmitter, setClarificationCallback, resolveClarification } from "../services/agent-manager.js";
-import { handleEventWithClient } from "../../../../agents/pi-agent-utils.js";
+import { handleEventWithClient } from "../../../../agents/core/pi-agent-utils.js";
 import type { SerializableAgentConfig } from "../types.js";
 
 const router = Router();

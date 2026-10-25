@@ -1,6 +1,6 @@
 import { Type } from "@sinclair/typebox";
-import { RawPiAgent } from "../agents/raw-pi-agent.js";
-import { ToolInput } from "../agents/pi-agent-types.js";
+import { RawPiAgent } from "../agents/core/raw-pi-agent.js";
+import { ToolInput } from "../agents/core/pi-agent-types.js";
 import { readFileSync } from "fs";
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";

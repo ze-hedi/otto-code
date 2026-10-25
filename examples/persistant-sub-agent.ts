@@ -1,13 +1,13 @@
 
 import { Type } from "@sinclair/typebox";
-import { RawPiAgent } from "../agents/raw-pi-agent";
-import {RawPiAgentConfig, SubAgentToolConfig, ToolInput} from "../agents/pi-agent-configs" ; 
-import {handleEvent} from "../agents/pi-agent-utils"; 
+import { RawPiAgent } from "../agents/core/raw-pi-agent";
+import {RawPiAgentConfig, SubAgentToolConfig, ToolInput} from "../agents/core/pi-agent-configs" ; 
+import {handleEvent} from "../agents/core/pi-agent-utils"; 
 import {config} from "dotenv"  ; 
 import {dirname, resolve} from "path"; 
 import {fileURLToPath} from "url"; 
 import { createInterface } from "readline";
-import { PiAgentConfig, PersistantSubAgentToolConfig } from "../agents/pi-agent-configs";
+import { PiAgentConfig, PersistantSubAgentToolConfig } from "../agents/core/pi-agent-configs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url)) ; 
 config({path:resolve(__dirname,"../.env")}) ; 

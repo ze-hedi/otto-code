@@ -1,6 +1,6 @@
-import {RawPiAgent} from "../agents/raw-pi-agent.ts"
-import { SubAgentToolConfig} from "../agents/pi-agent-configs.ts"
-import {handleEvent} from "../agents/pi-agent-utils"; 
+import {RawPiAgent} from "../agents/core/raw-pi-agent.ts"
+import { SubAgentToolConfig} from "../agents/core/pi-agent-configs.ts"
+import {handleEvent} from "../agents/core/pi-agent-utils"; 
 import {fileURLToPath} from "url"; 
 import {config} from "dotenv"  ; 
 import {dirname, resolve} from "path"; 

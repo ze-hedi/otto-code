@@ -2,8 +2,8 @@
 // Examples using the PiAgent class
 
 import "dotenv/config";
-import { PiAgent } from "../agents/pi-agent";
-import { handleEvent } from "../agents/pi-agent-utils";
+import { PiAgent } from "../agents/core/pi-agent";
+import { handleEvent } from "../agents/core/pi-agent-utils";
 
 // ============================================================================
 // Example 1: Basic usage with event streaming

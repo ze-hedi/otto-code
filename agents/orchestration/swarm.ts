@@ -1,11 +1,11 @@
 import { randomUUID } from "crypto";
 import { Type } from "@sinclair/typebox";
 import { createInterface } from "readline";
-import { RawPiAgent } from "./raw-pi-agent.js";
+import { RawPiAgent } from "../core/raw-pi-agent.js";
 import { Meeting } from "./meeting.js";
-import { createMcpBridge, type McpBridge } from "./mcp-bridge.js";
-import type { RawPiAgentConfig } from "./pi-agent-configs.js";
-import type { EventCallback, ToolInput } from "./pi-agent-types.js";
+import { createMcpBridge, type McpBridge } from "../integrations/mcp-bridge.js";
+import type { RawPiAgentConfig } from "../core/pi-agent-configs.js";
+import type { EventCallback, ToolInput } from "../core/pi-agent-types.js";
 
 function ask(question: string): Promise<string> {
   const rl = createInterface({ input: process.stdin, output: process.stdout });

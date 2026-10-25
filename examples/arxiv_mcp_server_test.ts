@@ -1,9 +1,9 @@
 import { config as loadEnv } from "dotenv";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import { RawPiAgent } from "../agents/raw-pi-agent";
-import { RawPiAgentConfig } from "../agents/pi-agent-configs";
-import { handleEvent } from "../agents/pi-agent-utils";
+import { RawPiAgent } from "../agents/core/raw-pi-agent";
+import { RawPiAgentConfig } from "../agents/core/pi-agent-configs";
+import { handleEvent } from "../agents/core/pi-agent-utils";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 loadEnv({ path: resolve(__dirname, "../.env") });
