@@ -15,7 +15,7 @@ These two files define the configuration and type surface shared across the agen
 
 - `PiAgentConfig` is the public config interface consumed by `PiAgent`. Its fields control the model, system prompt suffix, thinking level, working directory/playground, skills, custom tools, workflow interfaces, tool guardrails, MCP servers, built-in tools, sub-agents, compaction, and session file layout.
 - `RawPiAgentConfig` derives from `PiAgentConfig`: it drops `systemPromptSuffix` and adds a full `systemPrompt` override.
-- `pi-agent-types.ts` provides `SkillInput`, `ToolInput`, `PersistantSubAgentToolConfig`, `SubAgentToolConfig`, and `EventCallback`.
+- `pi-agent-types.ts` provides `ToolInput`, `PersistantSubAgentToolConfig`, `SubAgentToolConfig`, and `EventCallback`.
 
 ## Key code
 
@@ -23,7 +23,6 @@ These two files define the configuration and type surface shared across the agen
   - `PiAgentConfig` — full agent configuration, including `mcpServers`, `builtInTools`, `subAgents`, `persistantSubAgents`, `compaction`, `workflowId`, and `workflowSessionId`.
   - `RawPiAgentConfig` — `Omit<PiAgentConfig, "systemPromptSuffix">` plus a full `systemPrompt`.
 - `agents/pi-agent-types.ts`
-  - `SkillInput` — a named skill plus its raw markdown content.
   - `ToolInput` — a tool's name, label, description, TypeBox schema, prompt hints, execution mode, `terminate` flag, and `execute` handler.
   - `SubAgentToolConfig` — config for a volatile (stateless) sub-agent tool.
   - `PersistantSubAgentToolConfig` — config for a persistent (stateful) sub-agent tool.

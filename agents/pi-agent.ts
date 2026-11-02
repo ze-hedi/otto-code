@@ -8,7 +8,6 @@ import { EnvHttpProxyAgent, setGlobalDispatcher } from 'undici';
 setGlobalDispatcher(new EnvHttpProxyAgent());
 
 import fs from "fs";
-import os from "os";
 import path from "path";
 import { Type } from "typebox";
 import type { McpBridge, McpToolEntry } from "./mcp-bridge.js";
@@ -31,8 +30,7 @@ import {
   serializeConversation,
   getLatestCompactionEntry,
 } from "@mariozechner/pi-coding-agent";
-import type { Skill } from "@mariozechner/pi-coding-agent";
-import {type EventCallback, SkillInput, ToolInput, SubAgentToolConfig , PersistantSubAgentToolConfig} from "./pi-agent-types"
+import {type EventCallback, ToolInput, SubAgentToolConfig , PersistantSubAgentToolConfig} from "./pi-agent-types"
 import {PiAgentConfig} from "./pi-agent-configs"
 import { createSubAgentTool } from "./sub-agent-pattern.js";
 import { AgentInterface } from './workflow-interface.js';
@@ -56,7 +54,7 @@ export class PiAgent {
   > & {
     workingDir: string;
     playground: string;
-    skills: SkillInput[];
+    skills: string[];
     workflowId?: string;
     workflowSessionId?: string;
   };
@@ -64,7 +62,6 @@ export class PiAgent {
   protected _sessions: Map<string, AgentSession> = new Map();
   /** Session key that key-less calls resolve to. Address other sessions by passing their key. */
   protected _activeSessionKey: string = "main";
-  protected skillsTmpDir: string | null = null;
   protected toolDefinitions: Map<string, ToolDefinition> = new Map();
   private _hasApiKey: boolean = false;
   protected _provider: string = "";
@@ -124,7 +121,7 @@ export class PiAgent {
       thinkingLevel: config.thinkingLevel ?? "medium",
       workingDir: config.workingDir ?? process.cwd(),
       playground: config.playground ?? process.cwd(),
-      skills: config.skills ?? [],
+      skills: (config.skills ?? []).map((p) => path.resolve(p)),
       workflowId: config.workflowId,
       workflowSessionId: config.workflowSessionId,
     };
@@ -351,43 +348,6 @@ export class PiAgent {
     return this._sessions.get(this._activeSessionKey) ?? null;
   }
 
-  protected _writeSkillsToTmp(): { tmpDir: string; skills: Skill[] } {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-agent-skills-"));
-    const skills: Skill[] = [];
-
-    for (const input of this.config.skills) {
-      const safeName =
-        input.name
-          .toLowerCase()
-          .replace(/[\s_]+/g, "-")
-          .replace(/[^a-z0-9-]/g, "")
-          .replace(/^-+|-+$/g, "") || "skill";
-
-      const filePath = path.join(tmpDir, `${safeName}.md`);
-      fs.writeFileSync(filePath, input.content, "utf-8");
-
-      const descMatch = input.content.match(/^description:\s*(.+)$/m);
-      const description = descMatch ? descMatch[1].trim() : input.name;
-
-      skills.push({
-        name: safeName,
-        description,
-        filePath,
-        baseDir: tmpDir,
-        disableModelInvocation: false,
-        sourceInfo: {
-          path: filePath,
-          source: "otto-agent",
-          scope: "temporary",
-          origin: "top-level",
-          baseDir: tmpDir,
-        },
-      });
-    }
-
-    return { tmpDir, skills };
-  }
-
   /** Build a disk-persisted session under `<playground>/.otto-sessions/` and store it under `key`. */
   private async _createSession(key?: string): Promise<AgentSession> {
     const sessionKey = key ?? this._activeSessionKey;
@@ -446,12 +406,10 @@ export class PiAgent {
     }
 
     if (this.config.skills.length > 0) {
-      const { tmpDir, skills: injectedSkills } = this._writeSkillsToTmp();
-      this.skillsTmpDir = tmpDir;
-      loaderOptions.skillsOverride = (base) => ({
-        skills: [...base.skills, ...injectedSkills],
-        diagnostics: base.diagnostics,
-      });
+      for (const p of this.config.skills) {
+        if (!fs.existsSync(p)) throw new Error(`Skill path does not exist: ${p}`);
+      }
+      loaderOptions.additionalSkillPaths = this.config.skills;
     }
 
     const resourceLoader = new DefaultResourceLoader(loaderOptions);

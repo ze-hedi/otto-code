@@ -1,6 +1,5 @@
 import type { AgentInterface } from "./workflow-interface";
 import type {
-  SkillInput,
   ToolInput,
   SubAgentToolConfig,
   PersistantSubAgentToolConfig,
@@ -23,8 +22,8 @@ export interface PiAgentConfig {
   workingDir?: string;
   /** Repository/directory the agent will operate in (cwd for file and shell tools) */
   playground?: string;
-  /** Skills to inject into the agent session */
-  skills?: SkillInput[];
+  /** Skill folders (each containing SKILL.md) or parent folders of several; relative paths resolve from process cwd */
+  skills?: string[];
   /** Custom tools to register at construction time */
   tools?: ToolInput[];
   /** interfaces tools: when we are on graph mode  */

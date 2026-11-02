@@ -3,13 +3,6 @@ import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
 
 // ── Public API types ───────────────────────────────────────────────────────────
 
-export interface SkillInput {
-  /** Skill name (used as the file stem and skill identifier) */
-  name: string;
-  /** Raw markdown content of the skill file */
-  content: string;
-}
-
 /** Simplified tool input for users of PiAgent wrapper */
 export interface ToolInput {
   /** Tool name for LLM calls (e.g., "search_database") */

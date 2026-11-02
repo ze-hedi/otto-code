@@ -6,14 +6,7 @@ const SYSTEM_PROMPT = `
 You are a helpful assistant. Keep answers short and direct.
 `.trim();
 
-const SKILL = {
-  name: "list-files",
-  content: `---
-description: List files in the current directory
----
-When asked to list files, use the Bash tool to run \`ls -la\`.
-`,
-};
+const SKILL = "tests/fixtures/skills/list-files";
 
 async function main() {
   const agent = new PiAgent({
