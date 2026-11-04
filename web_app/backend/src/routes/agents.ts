@@ -45,6 +45,24 @@ router.post("/", async (req, res) => {
   });
 });
 
+/** Lists skill folders (those containing SKILL.md) under <playground>/.skills. Empty if the folder doesn't exist. */
+router.get("/skills", (req, res) => {
+  const playground = req.query.playground as string | undefined;
+  if (!playground || !path.isAbsolute(playground)) {
+    res.json([]);
+    return;
+  }
+  const skillsDir = path.join(playground, ".skills");
+  if (!fs.existsSync(skillsDir)) {
+    res.json([]);
+    return;
+  }
+  const skills = fs.readdirSync(skillsDir, { withFileTypes: true })
+    .filter((d) => d.isDirectory() && fs.existsSync(path.join(skillsDir, d.name, "SKILL.md")))
+    .map((d) => ({ name: d.name, path: path.join(skillsDir, d.name) }));
+  res.json(skills);
+});
+
 router.get("/", async (req, res) => {
   const playground = req.query.playground as string | undefined;
   const agents = await getAllAgentDocs(playground);

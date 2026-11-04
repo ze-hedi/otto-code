@@ -28,6 +28,7 @@ interface SubAgentEntry {
   systemPrompt: string
   builtInTools: string[]
   playground: string
+  skills: string
   promptSnippet: string
   promptGuidelines: string
 }
@@ -39,6 +40,7 @@ export interface AgentFormData {
   systemPrompt?: string
   thinkingLevel?: string
   playground?: string
+  skills?: string[]
   builtInTools?: string[]
   mcpServers?: Record<string, string>
   toolCallGuardrails?: string[]
@@ -50,6 +52,7 @@ export interface AgentFormData {
     systemPrompt: string
     builtInTools?: string[]
     playground?: string
+    skills?: string[]
     promptSnippet?: string
     promptGuidelines?: string[]
   }>
@@ -65,6 +68,51 @@ interface AgentFormContentProps {
   editAgentId?: string
 }
 
+/** Chip picker for skill folders found in <playground>/.skills. Value is newline-separated absolute paths. */
+function SkillPicker({ playground, value, onChange, readOnly }: {
+  playground: string
+  value: string
+  onChange: (v: string) => void
+  readOnly?: boolean
+}) {
+  const [available, setAvailable] = useState<{ name: string; path: string }[]>([])
+
+  useEffect(() => {
+    if (!playground) { setAvailable([]); return }
+    fetch(`http://localhost:4000/agents/skills?playground=${encodeURIComponent(playground)}`)
+      .then(r => r.json())
+      .then(setAvailable)
+      .catch(() => setAvailable([]))
+  }, [playground])
+
+  const selected = value.split('\n').map(l => l.trim()).filter(Boolean)
+  // keep already-selected paths visible even if they are not in <playground>/.skills
+  const options = [
+    ...available,
+    ...selected.filter(p => !available.some(a => a.path === p)).map(p => ({ name: p.split('/').pop() || p, path: p })),
+  ]
+  const toggle = (p: string) =>
+    onChange((selected.includes(p) ? selected.filter(x => x !== p) : [...selected, p]).join('\n'))
+
+  if (options.length === 0) return <p className="field-hint">No skills available (no .skills/ folder in the playground).</p>
+  return (
+    <div className="chip-group">
+      {options.map(o => (
+        <button
+          key={o.path}
+          type="button"
+          title={o.path}
+          className={`chip ${selected.includes(o.path) ? 'active' : ''}`}
+          onClick={() => !readOnly && toggle(o.path)}
+          style={readOnly ? { pointerEvents: 'none' } : undefined}
+        >
+          {o.name}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export function AgentFormContent({ lockedPlayground, onSuccess, onCancel, readOnly, initialData, editAgentId }: AgentFormContentProps) {
   const [name, setName] = useState(initialData?.name ?? '')
   const [description, setDescription] = useState(initialData?.description ?? '')
@@ -78,6 +126,7 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel, readOn
   useEffect(() => {
     if (lockedPlayground) setPlayground(lockedPlayground)
   }, [lockedPlayground])
+  const [skills, setSkills] = useState(initialData?.skills?.join('\n') ?? '')
   const [selectedTools, setSelectedTools] = useState<string[]>(initialData?.builtInTools ?? ['read', 'bash', 'edit', 'write'])
   const [mcpServers, setMcpServers] = useState<McpEntry[]>(
     initialData?.mcpServers
@@ -89,7 +138,7 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel, readOn
       ? Object.entries(initialData.subAgents).map(([key, sa]) => ({
           key, name: sa.name, description: sa.description ?? '', model: sa.model,
           systemPrompt: sa.systemPrompt, builtInTools: sa.builtInTools ?? [],
-          playground: sa.playground ?? '', promptSnippet: sa.promptSnippet ?? '',
+          playground: sa.playground ?? '', skills: sa.skills?.join('\n') ?? '', promptSnippet: sa.promptSnippet ?? '',
           promptGuidelines: sa.promptGuidelines?.join('\n') ?? '',
         }))
       : []
@@ -123,7 +172,7 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel, readOn
   const addSubAgent = () => {
     setSubAgents(prev => [...prev, {
       key: '', name: '', description: '', model: MODELS[0],
-      systemPrompt: '', builtInTools: ['read', 'bash'], playground: '',
+      systemPrompt: '', builtInTools: ['read', 'bash'], playground: '', skills: '',
       promptSnippet: '', promptGuidelines: '',
     }])
   }
@@ -144,6 +193,8 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel, readOn
     }))
   }
 
+  const parsePaths = (text: string) => text.split('\n').map(l => l.trim()).filter(Boolean)
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
@@ -163,6 +214,7 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel, readOn
       ...(systemPrompt && { systemPrompt }),
       thinkingLevel,
       ...(playground && { playground }),
+      ...(parsePaths(skills).length > 0 && { skills: parsePaths(skills) }),
       builtInTools: selectedTools,
       ...(guardrails && { toolCallGuardrails: ['bash', 'write', 'edit'] }),
       ...(extraTools.includes('clarify') && { clarificationTool: true }),
@@ -180,6 +232,7 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel, readOn
                 systemPrompt: s.systemPrompt,
                 builtInTools: s.builtInTools,
                 ...(s.playground && { playground: s.playground }),
+                ...(parsePaths(s.skills).length > 0 && { skills: parsePaths(s.skills) }),
                 ...(s.promptSnippet && { promptSnippet: s.promptSnippet }),
                 ...(guidelines.length > 0 && { promptGuidelines: guidelines }),
               }]
@@ -299,6 +352,12 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel, readOn
         {editAgentId && !ro && (
           <p className="field-hint">Playground cannot be changed after creation.</p>
         )}
+      </div>
+
+      {/* Skills */}
+      <div className="field">
+        <label htmlFor="af-skills">Skills</label>
+        <SkillPicker playground={playground} value={skills} onChange={setSkills} readOnly={ro} />
       </div>
 
       {/* Thinking Level */}
@@ -492,6 +551,10 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel, readOn
                       readOnly={ro}
                       style={disabledStyle}
                     />
+                  </div>
+                  <div className="field">
+                    <label>Skills</label>
+                    <SkillPicker playground={sa.playground || playground} value={sa.skills} onChange={v => updateSubAgent(i, 'skills', v)} readOnly={ro} />
                   </div>
                   <div className="field">
                     <label>Built-in Tools</label>
