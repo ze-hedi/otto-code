@@ -107,7 +107,7 @@ export class PiAgent {
     }
     this.modelRegistry = ModelRegistry.create(this.authStorage);
 
-    const model = getModel(provider as any, modelName as any);
+    const model = this.modelRegistry.find(provider, modelName) ?? getModel(provider as any, modelName as any);
     if (!model) {
       throw new Error(
         `Model not found: ${config.model}. Check provider and model name.`
