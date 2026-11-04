@@ -45,6 +45,8 @@ export interface SubAgentToolConfig {
   systemPrompt: string;
   builtInTools?: string[];
   playground?: string;
+  /** Skill folders (each containing SKILL.md) or parent folders of several */
+  skills?: string[];
   parameters?: TSchema;
   promptSnippet?: string;
   promptGuidelines?: string[];

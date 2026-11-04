@@ -8,11 +8,31 @@ import type { SerializableAgentConfig } from "../types.js";
 
 const router = Router();
 
+/** Returns an error message if any skill path (agent or subagent) is not an existing absolute path. */
+function validateSkillPaths(config: SerializableAgentConfig): string | null {
+  const entries: [string, string[] | undefined][] = [
+    ["skills", config.skills],
+    ...Object.entries(config.subAgents ?? {}).map(([key, sa]) => [`subAgents.${key}.skills`, sa.skills] as [string, string[] | undefined]),
+  ];
+  for (const [where, paths] of entries) {
+    for (const p of paths ?? []) {
+      if (!path.isAbsolute(p)) return `${where}: path must be absolute: ${p}`;
+      if (!fs.existsSync(p)) return `${where}: path does not exist: ${p}`;
+    }
+  }
+  return null;
+}
+
 router.post("/", async (req, res) => {
   const config: SerializableAgentConfig = req.body;
 
   if (!config.model) {
     res.status(400).json({ error: "model is required" });
+    return;
+  }
+  const skillError = validateSkillPaths(config);
+  if (skillError) {
+    res.status(400).json({ error: skillError });
     return;
   }
 
@@ -46,6 +66,11 @@ router.put("/:id", async (req, res) => {
   const config: SerializableAgentConfig = req.body;
   if (!config.model) {
     res.status(400).json({ error: "model is required" });
+    return;
+  }
+  const skillError = validateSkillPaths(config);
+  if (skillError) {
+    res.status(400).json({ error: skillError });
     return;
   }
   const doc = await updateAgent(req.params.id, config);

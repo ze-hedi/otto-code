@@ -5,6 +5,7 @@ export interface SerializableSubAgentConfig {
   systemPrompt: string;
   builtInTools?: string[];
   playground?: string;
+  skills?: string[];
   promptSnippet?: string;
   promptGuidelines?: string[];
 }
@@ -16,6 +17,7 @@ export interface SerializableAgentConfig {
   systemPrompt?: string;
   playground?: string;
   workingDir?: string;
+  skills?: string[];
   builtInTools?: string[];
   mcpServers?: Record<string, string>;
   mcpConnectionTimeout?: number;

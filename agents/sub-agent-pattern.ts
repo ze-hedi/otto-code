@@ -83,6 +83,7 @@ export function createSubAgentTool(config: SubAgentToolConfig): ToolInput {
         sessionMode: "memory",
         builtInTools: config.builtInTools,
         playground: config.playground,
+        skills: config.skills,
       });
 
       try {
