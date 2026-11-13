@@ -2,8 +2,9 @@ import { Router } from "express";
 import fs from "fs";
 import path from "path";
 import readline from "readline";
-import { createAgent, updateAgent, deleteAgent, getActiveAgent, getOrActivateAgent, getAgentDoc, getAllAgentDocs, getSessionKey, setSessionKey, markBusy, markIdle, getAgentBusyState, getAgentEmitter, setClarificationCallback, resolveClarification } from "../services/agent-manager.js";
+import { createAgent, updateAgent, deleteAgent, getActiveAgent, getOrActivateAgent, getAgentDoc, getAllAgentDocs, getSessionKey, setSessionKey, markBusy, markIdle, getAgentBusyState, getBusyAgentIds, getAgentEmitter, setClarificationCallback, resolveClarification } from "../services/agent-manager.js";
 import { handleEventWithClient } from "../../../../agents/pi-agent-utils.js";
+import { createMcpBridge } from "../../../../agents/mcp-bridge.js";
 import type { SerializableAgentConfig } from "../types.js";
 
 const router = Router();
@@ -45,6 +46,26 @@ router.post("/", async (req, res) => {
   });
 });
 
+/** Connects to an MCP server and returns its tools, so the form can verify the server is reachable. */
+router.post("/mcp-check", async (req, res) => {
+  const url = req.body?.url as string | undefined;
+  if (!url) {
+    res.status(400).json({ error: "url is required" });
+    return;
+  }
+  try {
+    const bridge = await Promise.race([
+      createMcpBridge(url),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timed out after 10s")), 10000)),
+    ]);
+    const tools = bridge.tools.map(({ name, description }) => ({ name, description }));
+    await bridge.close().catch(() => {});
+    res.json({ tools });
+  } catch (err) {
+    res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 /** Lists skill folders (those containing SKILL.md) under <playground>/.skills. Empty if the folder doesn't exist. */
 router.get("/skills", (req, res) => {
   const playground = req.query.playground as string | undefined;
@@ -67,6 +88,16 @@ router.get("/", async (req, res) => {
   const playground = req.query.playground as string | undefined;
   const agents = await getAllAgentDocs(playground);
   res.json(agents);
+});
+
+// Must stay above "/:id" or "running" is treated as an agent id.
+router.get("/running", async (_req, res) => {
+  const docs = await Promise.all(getBusyAgentIds().map((id) => getAgentDoc(id)));
+  res.json(
+    docs.flatMap((d) =>
+      d ? [{ agent_id: d.agent_id, name: d.config.name ?? "Unnamed Agent", playground: d.config.playground }] : [],
+    ),
+  );
 });
 
 router.get("/:id", async (req, res) => {

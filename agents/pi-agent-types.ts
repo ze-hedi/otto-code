@@ -47,6 +47,12 @@ export interface SubAgentToolConfig {
   playground?: string;
   /** Skill folders (each containing SKILL.md) or parent folders of several */
   skills?: string[];
+  /** MCP server endpoints for the sub-agent. Map of server_name → endpoint URL. */
+  mcpServers?: Record<string, string>;
+  /** Custom tools given to the sub-agent */
+  tools?: ToolInput[];
+  /** Per-call setup: build the first message and extra tools from the call's params */
+  prepare?: (params: any) => { task: string; tools?: ToolInput[] };
   parameters?: TSchema;
   promptSnippet?: string;
   promptGuidelines?: string[];

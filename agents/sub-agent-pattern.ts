@@ -70,20 +70,36 @@ export function createSubAgentTool(config: SubAgentToolConfig): ToolInput {
     promptSnippet: config.promptSnippet,
     promptGuidelines: config.promptGuidelines,
     executionMode: "parallel",
-    execute: async (_toolCallId, params, _signal, onUpdate) => {
-      const entries = Object.entries(params as Record<string, unknown>);
-      const task = entries.map(([k, v]) => {
-        const val = Array.isArray(v) ? v.join(", ") : String(v);
-        return `${k}: ${val}`;
-      }).join("\n\n");
+    execute: async (toolCallId, params, _signal, onUpdate) => {
+      let task: string;
+      let tools = config.tools;
+      try {
+        if (config.prepare) {
+          const prepared = config.prepare(params);
+          task = prepared.task;
+          tools = [...(config.tools ?? []), ...(prepared.tools ?? [])];
+        } else {
+          task = Object.entries(params as Record<string, unknown>).map(([k, v]) => {
+            const val = Array.isArray(v) ? v.join(", ") : String(v);
+            return `${k}: ${val}`;
+          }).join("\n\n");
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { content: [{ type: "text", text: `Error: invalid sub-agent input: ${msg}` }], isError: true };
+      }
 
       const agent = new RawPiAgent({
+        name: config.name,
+        // one session file per call: a shared file would leak history between calls and collide in parallel
+        agentId: `${config.name}-${toolCallId}`,
         model: config.model,
         systemPrompt: config.systemPrompt,
-        sessionMode: "memory",
         builtInTools: config.builtInTools,
         playground: config.playground,
         skills: config.skills,
+        mcpServers: config.mcpServers,
+        tools,
       });
 
       try {
@@ -113,6 +129,8 @@ export function createSubAgentTool(config: SubAgentToolConfig): ToolInput {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         return { content: [{ type: "text", text: `Error: subagent didn't get launched ${msg}` }], isError: true };
+      } finally {
+        await agent.disconnectMcp().catch(() => {});
       }
     },
   };

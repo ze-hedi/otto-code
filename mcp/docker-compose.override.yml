@@ -8,3 +8,7 @@ services:
   tavily:
     volumes:
       - ./servers/tavily/src:/app/src:ro
+
+  semantic-scholar:
+    volumes:
+      - ./servers/semantic-scholar/src:/app/src:ro

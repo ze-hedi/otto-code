@@ -452,3 +452,95 @@
 .chat-link:hover {
   background: var(--accent-hover);
 }
+
+/* ── MCP server check ───────────────────────────────── */
+
+.mcp-check-btn {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.mcp-check-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.mcp-popup-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.25);
+  z-index: 90;
+}
+
+.mcp-popup {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 520px;
+  max-width: 90vw;
+  max-height: 70vh;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 10px);
+  box-shadow: var(--shadow-md);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+}
+
+.mcp-popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.mcp-popup-header h3 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text);
+}
+
+.mcp-popup-close {
+  background: none;
+  border: none;
+  font-size: 22px;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.mcp-popup-body {
+  padding: 16px 20px;
+  overflow-y: auto;
+}
+
+.mcp-popup-ok { color: #16a34a; margin: 0 0 12px; }
+.mcp-popup-error { color: #dc2626; margin: 0; word-break: break-word; }
+
+.mcp-tool-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mcp-tool-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mcp-tool-list span {
+  font-size: 13px;
+  color: var(--text-secondary, #666);
+}

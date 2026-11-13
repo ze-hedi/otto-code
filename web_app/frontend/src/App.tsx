@@ -11,6 +11,7 @@ import { WorkflowPage } from './pages/WorkflowPage'
 import { DashboardsPage } from './pages/DashboardsPage'
 import { DashboardDetailPage } from './pages/DashboardDetailPage'
 import { SleepingModePage } from './pages/SleepingModePage'
+import { Sidebar } from './components/Sidebar'
 import './App.css'
 
 function WorkflowRedirect() {
@@ -20,7 +21,10 @@ function WorkflowRedirect() {
 
 function App() {
   return (
-    <div className="app">
+    <div className="app-shell">
+      <Sidebar />
+      <div className="app-main">
+      <div className="app">
       <Routes>
         <Route path="/" element={<ProjectsPage />} />
         <Route path="/projects/new" element={<CreateProjectForm />} />
@@ -36,6 +40,8 @@ function App() {
         <Route path="/dashboards" element={<DashboardsPage />} />
         <Route path="/dashboards/:dashboardId" element={<DashboardDetailPage />} />
       </Routes>
+      </div>
+      </div>
     </div>
   )
 }

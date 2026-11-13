@@ -12,3 +12,7 @@ upstreams:
   - name: github
     prefix: github
     url: http://github-mcp:8082/
+
+  - name: semantic-scholar
+    prefix: s2
+    url: http://semantic-scholar:8000/mcp/

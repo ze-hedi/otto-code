@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import '../pages/CreateAgentForm.css'
+import McpCheckButton from './McpCheckButton'
 
 const MODELS = [
   'anthropic/claude-sonnet-4-5',
@@ -32,6 +33,7 @@ interface SubAgentEntry {
   builtInTools: string[]
   playground: string
   skills: string
+  mcpServers: McpEntry[]
   promptSnippet: string
   promptGuidelines: string
 }
@@ -56,6 +58,7 @@ export interface AgentFormData {
     builtInTools?: string[]
     playground?: string
     skills?: string[]
+    mcpServers?: Record<string, string>
     promptSnippet?: string
     promptGuidelines?: string[]
   }>
@@ -141,7 +144,9 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel, readOn
       ? Object.entries(initialData.subAgents).map(([key, sa]) => ({
           key, name: sa.name, description: sa.description ?? '', model: sa.model,
           systemPrompt: sa.systemPrompt, builtInTools: sa.builtInTools ?? [],
-          playground: sa.playground ?? '', skills: sa.skills?.join('\n') ?? '', promptSnippet: sa.promptSnippet ?? '',
+          playground: sa.playground ?? '', skills: sa.skills?.join('\n') ?? '',
+          mcpServers: Object.entries(sa.mcpServers ?? {}).map(([name, url]) => ({ name, url })),
+          promptSnippet: sa.promptSnippet ?? '',
           promptGuidelines: sa.promptGuidelines?.join('\n') ?? '',
         }))
       : []
@@ -175,7 +180,7 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel, readOn
   const addSubAgent = () => {
     setSubAgents(prev => [...prev, {
       key: '', name: '', description: '', model: MODELS[0],
-      systemPrompt: '', builtInTools: ['read', 'bash'], playground: '', skills: '',
+      systemPrompt: '', builtInTools: ['read', 'bash'], playground: '', skills: '', mcpServers: [],
       promptSnippet: '', promptGuidelines: '',
     }])
   }
@@ -196,6 +201,24 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel, readOn
     }))
   }
 
+  const updateSubAgentMcp = (index: number, mcpIndex: number, field: 'name' | 'url', value: string) => {
+    setSubAgents(prev => prev.map((entry, i) => i !== index ? entry : {
+      ...entry,
+      mcpServers: entry.mcpServers.map((m, j) => j === mcpIndex ? { ...m, [field]: value } : m),
+    }))
+  }
+
+  const addSubAgentMcp = (index: number) => {
+    setSubAgents(prev => prev.map((entry, i) => i === index ? { ...entry, mcpServers: [...entry.mcpServers, { name: '', url: '' }] } : entry))
+  }
+
+  const removeSubAgentMcp = (index: number, mcpIndex: number) => {
+    setSubAgents(prev => prev.map((entry, i) => i === index ? { ...entry, mcpServers: entry.mcpServers.filter((_, j) => j !== mcpIndex) } : entry))
+  }
+
+  const toMcpMap = (entries: McpEntry[]) =>
+    Object.fromEntries(entries.filter(m => m.name && m.url).map(m => [m.name, m.url]))
+
   const parsePaths = (text: string) => text.split('\n').map(l => l.trim()).filter(Boolean)
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -205,10 +228,7 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel, readOn
 
     const finalModel = model === '__custom__' ? customModel : model
 
-    const mcpMap: Record<string, string> = {}
-    for (const entry of mcpServers) {
-      if (entry.name && entry.url) mcpMap[entry.name] = entry.url
-    }
+    const mcpMap = toMcpMap(mcpServers)
 
     const config: Record<string, unknown> = {
       model: finalModel,
@@ -228,6 +248,7 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel, readOn
             .filter(s => s.key && s.name && s.model && s.systemPrompt)
             .map(s => {
               const guidelines = s.promptGuidelines.split('\n').map(l => l.trim()).filter(Boolean)
+              const saMcp = toMcpMap(s.mcpServers)
               return [s.key, {
                 name: s.name,
                 description: s.description,
@@ -236,6 +257,7 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel, readOn
                 builtInTools: s.builtInTools,
                 ...(s.playground && { playground: s.playground }),
                 ...(parsePaths(s.skills).length > 0 && { skills: parsePaths(s.skills) }),
+                ...(Object.keys(saMcp).length > 0 && { mcpServers: saMcp }),
                 ...(s.promptSnippet && { promptSnippet: s.promptSnippet }),
                 ...(guidelines.length > 0 && { promptGuidelines: guidelines }),
               }]
@@ -469,6 +491,7 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel, readOn
                   readOnly={ro}
                   style={disabledStyle}
                 />
+                <McpCheckButton name={entry.name} url={entry.url} />
                 {!ro && <button type="button" className="remove-btn" onClick={() => removeMcp(i)}>&times;</button>}
               </div>
             ))}
@@ -558,6 +581,33 @@ export function AgentFormContent({ lockedPlayground, onSuccess, onCancel, readOn
                   <div className="field">
                     <label>Skills</label>
                     <SkillPicker playground={sa.playground || playground} value={sa.skills} onChange={v => updateSubAgent(i, 'skills', v)} readOnly={ro} />
+                  </div>
+                  <div className="field">
+                    <label>MCP Servers</label>
+                    {sa.mcpServers.map((entry, j) => (
+                      <div key={j} className="mcp-row">
+                        <input
+                          type="text"
+                          placeholder="Server name"
+                          value={entry.name}
+                          onChange={e => updateSubAgentMcp(i, j, 'name', e.target.value)}
+                          readOnly={ro}
+                          style={disabledStyle}
+                        />
+                        <input
+                          type="text"
+                          placeholder="http://localhost:3001/mcp"
+                          value={entry.url}
+                          onChange={e => updateSubAgentMcp(i, j, 'url', e.target.value)}
+                          className="mono"
+                          readOnly={ro}
+                          style={disabledStyle}
+                        />
+                        <McpCheckButton name={entry.name} url={entry.url} />
+                        {!ro && <button type="button" className="remove-btn" onClick={() => removeSubAgentMcp(i, j)}>&times;</button>}
+                      </div>
+                    ))}
+                    {!ro && <button type="button" className="add-btn" onClick={() => addSubAgentMcp(i)}>+ Add MCP Server</button>}
                   </div>
                   <div className="field">
                     <label>Built-in Tools</label>

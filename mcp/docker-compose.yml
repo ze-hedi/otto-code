@@ -37,6 +37,8 @@ services:
         condition: service_started
       github-mcp:
         condition: service_started
+      semantic-scholar:
+        condition: service_started
     networks:
       mcp-net:
         ipv4_address: 172.28.0.10
@@ -59,6 +61,16 @@ services:
     networks:
       mcp-net:
         ipv4_address: 172.28.0.21
+    restart: unless-stopped
+
+  semantic-scholar:
+    build: ./servers/semantic-scholar
+    env_file: .env
+    environment:
+      PYTHONUNBUFFERED: "1"
+    networks:
+      mcp-net:
+        ipv4_address: 172.28.0.22
     restart: unless-stopped
 
   github-mcp:

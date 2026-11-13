@@ -232,6 +232,10 @@ export function getAgentBusyState(agentId: string): { busy: boolean; sessionKey:
   return { busy: !!sk, sessionKey: sk ?? null };
 }
 
+export function getBusyAgentIds(): string[] {
+  return [...busyAgents.keys()];
+}
+
 export function getAgentEmitter(agentId: string): EventEmitter | undefined {
   return agentEmitters.get(agentId);
 }
