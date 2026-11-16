@@ -22,12 +22,17 @@ export function createPersistentSubAgentTool(config: PersistantSubAgentToolConfi
     promptSnippet: config.promptSnippet,
     promptGuidelines: config.promptGuidelines,
     executionMode: "sequential",
-    execute: async (_toolCallId, params) => {
+    execute: async (_toolCallId, params, signal) => {
       const entries = Object.entries(params as Record<string, unknown>);
       const task = entries.map(([k, v]) => {
         const val = Array.isArray(v) ? v.join(", ") : String(v);
         return `${k}: ${val}`;
       }).join("\n\n");
+
+      if (signal?.aborted) return { content: [{ type: "text", text: "Aborted" }], isError: true };
+      // the parent's abort must stop the sub-agent's current turn too
+      const onAbort = () => { agent.abort().catch(() => {}); };
+      signal?.addEventListener("abort", onAbort, { once: true });
 
       try {
         await agent.chat(task);
@@ -51,6 +56,8 @@ export function createPersistentSubAgentTool(config: PersistantSubAgentToolConfi
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         return { content: [{ type: "text", text: `Error: ${msg}` }], isError: true };
+      } finally {
+        signal?.removeEventListener("abort", onAbort);
       }
     },
   };
@@ -70,7 +77,7 @@ export function createSubAgentTool(config: SubAgentToolConfig): ToolInput {
     promptSnippet: config.promptSnippet,
     promptGuidelines: config.promptGuidelines,
     executionMode: "parallel",
-    execute: async (toolCallId, params, _signal, onUpdate) => {
+    execute: async (toolCallId, params, signal, onUpdate) => {
       let task: string;
       let tools = config.tools;
       try {
@@ -102,6 +109,14 @@ export function createSubAgentTool(config: SubAgentToolConfig): ToolInput {
         tools,
       });
 
+      if (signal?.aborted) {
+        await agent.disconnectMcp().catch(() => {});
+        return { content: [{ type: "text", text: "Aborted" }], isError: true };
+      }
+      // volatile sub-agent lives only in this call, so the parent's abort must reach it here
+      const onAbort = () => { agent.abort().catch(() => {}); };
+      signal?.addEventListener("abort", onAbort, { once: true });
+
       try {
         await agent.execute(task, undefined, onUpdate ? (event) => {
           onUpdate({
@@ -130,6 +145,7 @@ export function createSubAgentTool(config: SubAgentToolConfig): ToolInput {
         const msg = err instanceof Error ? err.message : String(err);
         return { content: [{ type: "text", text: `Error: subagent didn't get launched ${msg}` }], isError: true };
       } finally {
+        signal?.removeEventListener("abort", onAbort);
         await agent.disconnectMcp().catch(() => {});
       }
     },

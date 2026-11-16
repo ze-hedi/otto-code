@@ -54,7 +54,8 @@ export function AgentsListPage() {
   const [agents, setAgents] = useState<AgentDoc[]>([])
   const [project, setProject] = useState<ProjectDoc | null>(null)
   const [loading, setLoading] = useState(true)
-  const [popup, setPopup] = useState<{ agentId: string; agentName: string } | null>(null)
+  const [popup, setPopup] = useState<{ agent: AgentDoc; agentId: string; agentName: string } | null>(null)
+  const [popupMode, setPopupMode] = useState<'choose' | 'sessions'>('choose')
   const [sessions, setSessions] = useState<SessionInfo[]>([])
   const [sessionsLoading, setSessionsLoading] = useState(false)
   const [popupBusy, setPopupBusy] = useState(false)
@@ -89,8 +90,16 @@ export function AgentsListPage() {
     }
   }
 
+  const openAgentPopup = (agent: AgentDoc) => {
+    setPopup({ agent, agentId: agent.agent_id, agentName: agent.config.name || 'Unnamed Agent' })
+    setPopupMode('choose')
+  }
+
+  // TODO: wire to GEPA tuning
+  const tuneAgent = (_agentId: string) => {}
+
   const openSessionsPopup = async (agent: AgentDoc) => {
-    setPopup({ agentId: agent.agent_id, agentName: agent.config.name || 'Unnamed Agent' })
+    setPopupMode('sessions')
     setSessions([])
     setSessionsLoading(true)
     setPopupBusy(false)
@@ -173,7 +182,7 @@ export function AgentsListPage() {
           <div
             key={agent.agent_id}
             className="agent-card"
-            onClick={() => openSessionsPopup(agent)}
+            onClick={() => openAgentPopup(agent)}
           >
             <div className="card-header">
               <span className="card-name">
@@ -228,9 +237,27 @@ export function AgentsListPage() {
           <div className="popup-backdrop" onClick={closePopup} />
           <div className="popup-modal">
             <div className="popup-header">
+              {popupMode === 'sessions' && (
+                <button className="popup-back" onClick={() => setPopupMode('choose')} title="Back">
+                  &larr;
+                </button>
+              )}
               <h3>{popup.agentName}</h3>
               <button className="popup-close" onClick={closePopup}>&times;</button>
             </div>
+            {popupMode === 'choose' && (
+              <div className="popup-body popup-choices">
+                <button className="popup-choice" onClick={() => openSessionsPopup(popup.agent)}>
+                  <span className="popup-choice-title">Sessions</span>
+                  <span className="popup-choice-desc">Resume a previous session or start a new chat</span>
+                </button>
+                <button className="popup-choice" onClick={() => tuneAgent(popup.agentId)}>
+                  <span className="popup-choice-title">Tune the agent</span>
+                  <span className="popup-choice-desc">Optimize the agent from its past sessions</span>
+                </button>
+              </div>
+            )}
+            {popupMode === 'sessions' && (
             <div className="popup-body">
               {popupBusy && (
                 <div
@@ -284,6 +311,7 @@ export function AgentsListPage() {
                 </div>
               ))}
             </div>
+            )}
           </div>
         </>
       )}
