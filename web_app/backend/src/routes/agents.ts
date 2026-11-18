@@ -7,8 +7,8 @@ import { createAgent, updateAgent, deleteAgent, getActiveAgent, getOrActivateAge
 import { handleEventWithClient } from "../../../../agents/pi-agent-utils.js";
 import { createMcpBridge } from "../../../../agents/mcp-bridge.js";
 import { SUMMARIZER_DEFAULT_MODEL, SUMMARIZER_SYSTEM_PROMPT } from "../../../../observability_tool/summarizer_agent.js";
-import { TAXONOMY_DEFAULT_MODEL, TAXONOMY_SYSTEM_PROMPT } from "../../../../observability_tool/taxonomy_agent.js";
-import { createTaxonomyTools } from "../../../../observability_tool/taxonomy-tools.js";
+import { ASSIGNER_DEFAULT_MODEL, ASSIGNER_SYSTEM_PROMPT, TAXONOMY_DEFAULT_MODEL, TAXONOMY_SYSTEM_PROMPT } from "../../../../observability_tool/taxonomy_agent.js";
+import { createAssignerTools, createTaxonomyTools } from "../../../../observability_tool/taxonomy-tools.js";
 import type { SerializableAgentConfig } from "../types.js";
 
 const router = Router();
@@ -379,7 +379,7 @@ router.get("/:id/taxonomy/config", async (req, res) => {
     if (n) sessionsWithErrors++;
   }
 
-  const taxonomyTools = createTaxonomyTools("", new Set());
+  const describe = (tools: { name: string; description: string }[]) => tools.map((t) => ({ name: t.name, description: t.description }));
   res.json({
     errorNotes,
     sessionsWithErrors,
@@ -395,10 +395,19 @@ router.get("/:id/taxonomy/config", async (req, res) => {
       {
         key: "taxonomy",
         name: "Taxonomy agent",
-        role: "Groups the summarized errors into failure categories.",
+        role: "Orchestrator: discovers the failure categories, then delegates assignment.",
         defaultModel: TAXONOMY_DEFAULT_MODEL,
         systemPrompt: TAXONOMY_SYSTEM_PROMPT,
-        tools: taxonomyTools.map((t) => ({ name: t.name, description: t.description })),
+        tools: describe(createTaxonomyTools("", new Set())),
+      },
+      {
+        key: "assigner",
+        name: "Assigner",
+        role: "Volatile sub-agent of the taxonomy agent: labels batches of ~20 errors, up to 3 in parallel.",
+        parent: "taxonomy",
+        defaultModel: ASSIGNER_DEFAULT_MODEL,
+        systemPrompt: ASSIGNER_SYSTEM_PROMPT,
+        tools: describe(createAssignerTools("", new Set())),
       },
     ],
   });

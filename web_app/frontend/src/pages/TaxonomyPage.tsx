@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { MODELS } from '../models'
 import './TaxonomyPage.css'
@@ -11,6 +11,8 @@ interface PipelineAgent {
   name: string
   role: string
   defaultModel: string
+  /** Set for sub-agents: the key of the agent that spawns them. */
+  parent?: string
   systemPrompt: string
   tools: { name: string; description: string }[]
 }
@@ -52,11 +54,16 @@ function ModelPicker({ value, onChange }: { value: string; onChange: (m: string)
   )
 }
 
-function AgentCard({ agent, model, onModelChange }: { agent: PipelineAgent; model: string; onModelChange: (m: string) => void }) {
+function AgentCard({ agent, model, onModelChange, children }: {
+  agent: PipelineAgent
+  model: string
+  onModelChange: (m: string) => void
+  children?: ReactNode
+}) {
   const [showPrompt, setShowPrompt] = useState(false)
   return (
-    <div className="tax-card">
-      <h3>{agent.name}</h3>
+    <div className={agent.parent ? 'tax-card tax-subcard' : 'tax-card'}>
+      <h3>{agent.name}{agent.parent && <span className="tax-badge">volatile sub-agent</span>}</h3>
       <p className="tax-role">{agent.role}</p>
 
       <label>Model</label>
@@ -75,6 +82,7 @@ function AgentCard({ agent, model, onModelChange }: { agent: PipelineAgent; mode
         {showPrompt ? 'Hide' : 'Show'} system prompt
       </button>
       {showPrompt && <pre className="tax-prompt">{agent.systemPrompt}</pre>}
+      {children}
     </div>
   )
 }
@@ -119,10 +127,14 @@ export function TaxonomyPage() {
       {config && (
         <>
           <div className="tax-pipeline">
-            {config.agents.map((a, i) => (
+            {config.agents.filter(a => !a.parent).map((a, i) => (
               <div key={a.key} className="tax-step">
                 {i > 0 && <div className="tax-arrow">&rarr;</div>}
-                <AgentCard agent={a} model={models[a.key] ?? a.defaultModel} onModelChange={m => setModel(a.key, m)} />
+                <AgentCard agent={a} model={models[a.key] ?? a.defaultModel} onModelChange={m => setModel(a.key, m)}>
+                  {config.agents.filter(sub => sub.parent === a.key).map(sub => (
+                    <AgentCard key={sub.key} agent={sub} model={models[sub.key] ?? sub.defaultModel} onModelChange={m => setModel(sub.key, m)} />
+                  ))}
+                </AgentCard>
               </div>
             ))}
           </div>
