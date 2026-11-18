@@ -95,8 +95,9 @@ export function AgentsListPage() {
     setPopupMode('choose')
   }
 
-  // TODO: wire to GEPA tuning
-  const tuneAgent = (_agentId: string) => {}
+  const openObservability = (agentId: string) => {
+    navigate(`/projects/${projectId}/agents/${agentId}/observability`)
+  }
 
   const openSessionsPopup = async (agent: AgentDoc) => {
     setPopupMode('sessions')
@@ -251,9 +252,9 @@ export function AgentsListPage() {
                   <span className="popup-choice-title">Sessions</span>
                   <span className="popup-choice-desc">Resume a previous session or start a new chat</span>
                 </button>
-                <button className="popup-choice" onClick={() => tuneAgent(popup.agentId)}>
-                  <span className="popup-choice-title">Tune the agent</span>
-                  <span className="popup-choice-desc">Optimize the agent from its past sessions</span>
+                <button className="popup-choice" onClick={() => openObservability(popup.agentId)}>
+                  <span className="popup-choice-title">Observability</span>
+                  <span className="popup-choice-desc">Inspect past sessions: tool calls, thinking, tokens</span>
                 </button>
               </div>
             )}

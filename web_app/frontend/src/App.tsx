@@ -6,6 +6,8 @@ import { AgentsListPage } from './pages/AgentsListPage'
 import { CreateAgentForm } from './pages/CreateAgentForm'
 import { EditAgentForm } from './pages/EditAgentForm'
 import { ChatPage } from './pages/ChatPage'
+import { ObservabilityPage } from './pages/ObservabilityPage'
+import { TaxonomyPage } from './pages/TaxonomyPage'
 import { WorkflowsListPage } from './pages/WorkflowsListPage'
 import { WorkflowPage } from './pages/WorkflowPage'
 import { DashboardsPage } from './pages/DashboardsPage'
@@ -32,6 +34,8 @@ function App() {
         <Route path="/projects/:projectId/agents" element={<AgentsListPage />} />
         <Route path="/projects/:projectId/create" element={<CreateAgentForm />} />
         <Route path="/projects/:projectId/agents/:agentId/edit" element={<EditAgentForm />} />
+        <Route path="/projects/:projectId/agents/:agentId/observability" element={<ObservabilityPage />} />
+        <Route path="/projects/:projectId/agents/:agentId/taxonomy" element={<TaxonomyPage />} />
         <Route path="/projects/:projectId/chat/:agentId" element={<ChatPage />} />
         <Route path="/projects/:projectId/sleeping" element={<SleepingModePage />} />
         <Route path="/projects/:projectId/workflow" element={<WorkflowRedirect />} />

@@ -2,9 +2,13 @@ import { Router } from "express";
 import fs from "fs";
 import path from "path";
 import readline from "readline";
+import crypto from "crypto";
 import { createAgent, updateAgent, deleteAgent, getActiveAgent, getOrActivateAgent, getAgentDoc, getAllAgentDocs, getSessionKey, setSessionKey, markBusy, markIdle, getAgentBusyState, getBusyAgentIds, getAgentEmitter, setClarificationCallback, resolveClarification } from "../services/agent-manager.js";
 import { handleEventWithClient } from "../../../../agents/pi-agent-utils.js";
 import { createMcpBridge } from "../../../../agents/mcp-bridge.js";
+import { SUMMARIZER_DEFAULT_MODEL, SUMMARIZER_SYSTEM_PROMPT } from "../../../../observability_tool/summarizer_agent.js";
+import { TAXONOMY_DEFAULT_MODEL, TAXONOMY_SYSTEM_PROMPT } from "../../../../observability_tool/taxonomy_agent.js";
+import { createTaxonomyTools } from "../../../../observability_tool/taxonomy-tools.js";
 import type { SerializableAgentConfig } from "../types.js";
 
 const router = Router();
@@ -256,6 +260,172 @@ router.delete("/:id/sessions/:sessionKey", async (req, res) => {
 
   fs.unlinkSync(filePath);
   res.json({ ok: true });
+});
+
+// ── Read session entries (observability) ──────────────────────────────────
+
+function readJsonl(filePath: string): unknown[] {
+  return fs.readFileSync(filePath, "utf-8")
+    .split("\n")
+    .filter((l) => l.trim())
+    .map((l) => {
+      try { return JSON.parse(l); } catch { return { type: "unparseable", raw: l }; }
+    });
+}
+
+router.get("/:id/sessions/:sessionKey/entries", async (req, res) => {
+  const doc = await getAgentDoc(req.params.id);
+  if (!doc?.config.playground) {
+    res.status(404).json({ error: "Agent or playground not found" });
+    return;
+  }
+  // basename guard: sessionKey must not escape the sessions dir
+  const filename = `${doc.agent_id}-${req.params.sessionKey}.jsonl`;
+  if (path.basename(filename) !== filename) {
+    res.status(400).json({ error: "Invalid session key" });
+    return;
+  }
+  const filePath = path.join(doc.config.playground, ".otto-sessions", filename);
+  if (!fs.existsSync(filePath)) {
+    res.status(404).json({ error: "Session file not found" });
+    return;
+  }
+  res.json(readJsonl(filePath));
+});
+
+// ── Session notes (error analysis + known-good responses for eval sets) ──
+// Stored next to the session: .otto-sessions/.notes/<agent_id>-<sessionKey>-notes.jsonl
+
+const NOTE_KINDS = ["error", "good"] as const;
+type NoteKind = (typeof NOTE_KINDS)[number];
+
+interface SessionNote {
+  id: string;
+  entryId: string;
+  kind: NoteKind;
+  text: string;
+  createdAt: string;
+}
+
+async function notesPath(agentId: string, sessionKey: string): Promise<string | null> {
+  const doc = await getAgentDoc(agentId);
+  if (!doc?.config.playground) return null;
+  const filename = `${doc.agent_id}-${sessionKey}-notes.jsonl`;
+  if (path.basename(filename) !== filename) return null;
+  return path.join(doc.config.playground, ".otto-sessions", ".notes", filename);
+}
+
+router.get("/:id/sessions/:sessionKey/notes", async (req, res) => {
+  const filePath = await notesPath(req.params.id, req.params.sessionKey);
+  if (!filePath) {
+    res.status(404).json({ error: "Agent or session not found" });
+    return;
+  }
+  res.json(fs.existsSync(filePath) ? readJsonl(filePath) : []);
+});
+
+router.post("/:id/sessions/:sessionKey/notes", async (req, res) => {
+  const filePath = await notesPath(req.params.id, req.params.sessionKey);
+  const { entryId, text, kind } = req.body ?? {};
+  if (!filePath) {
+    res.status(404).json({ error: "Agent or session not found" });
+    return;
+  }
+  if (typeof entryId !== "string" || typeof text !== "string" || !text.trim()) {
+    res.status(400).json({ error: "entryId and text are required" });
+    return;
+  }
+  if (!NOTE_KINDS.includes(kind)) {
+    res.status(400).json({ error: `kind must be one of: ${NOTE_KINDS.join(", ")}` });
+    return;
+  }
+  const note: SessionNote = { id: crypto.randomUUID(), entryId, kind, text: text.trim(), createdAt: new Date().toISOString() };
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.appendFileSync(filePath, JSON.stringify(note) + "\n");
+  res.json(note);
+});
+
+router.delete("/:id/sessions/:sessionKey/notes/:noteId", async (req, res) => {
+  const filePath = await notesPath(req.params.id, req.params.sessionKey);
+  if (!filePath || !fs.existsSync(filePath)) {
+    res.status(404).json({ error: "Notes not found" });
+    return;
+  }
+  const remaining = (readJsonl(filePath) as SessionNote[]).filter((n) => n.id !== req.params.noteId);
+  fs.writeFileSync(filePath, remaining.map((n) => JSON.stringify(n) + "\n").join(""));
+  res.json({ ok: true });
+});
+
+// ── Taxonomy (axial coding over error notes) ──────────────────────────────
+// The two agents are hardcoded in observability_tool/; this only describes them.
+
+router.get("/:id/taxonomy/config", async (req, res) => {
+  const doc = await getAgentDoc(req.params.id);
+  if (!doc?.config.playground) {
+    res.status(404).json({ error: "Agent not found" });
+    return;
+  }
+
+  const notesDir = path.join(doc.config.playground, ".otto-sessions", ".notes");
+  const notesFiles = fs.existsSync(notesDir)
+    ? fs.readdirSync(notesDir).filter((f) => f.startsWith(`${doc.agent_id}-`) && f.endsWith("-notes.jsonl"))
+    : [];
+  let errorNotes = 0;
+  let sessionsWithErrors = 0;
+  for (const f of notesFiles) {
+    // Older notes predate kinds and are treated as errors.
+    const n = (readJsonl(path.join(notesDir, f)) as SessionNote[]).filter((note) => (note.kind ?? "error") === "error").length;
+    errorNotes += n;
+    if (n) sessionsWithErrors++;
+  }
+
+  const taxonomyTools = createTaxonomyTools("", new Set());
+  res.json({
+    errorNotes,
+    sessionsWithErrors,
+    agents: [
+      {
+        key: "summarizer",
+        name: "Summarizer",
+        role: "Compacts the conversation before each flagged error.",
+        defaultModel: SUMMARIZER_DEFAULT_MODEL,
+        systemPrompt: SUMMARIZER_SYSTEM_PROMPT,
+        tools: [],
+      },
+      {
+        key: "taxonomy",
+        name: "Taxonomy agent",
+        role: "Groups the summarized errors into failure categories.",
+        defaultModel: TAXONOMY_DEFAULT_MODEL,
+        systemPrompt: TAXONOMY_SYSTEM_PROMPT,
+        tools: taxonomyTools.map((t) => ({ name: t.name, description: t.description })),
+      },
+    ],
+  });
+});
+
+// Volatile sub-agents write `${name}-${toolCallId}-<key>.jsonl`; find it by tool call id.
+router.get("/:id/subagent-sessions/:toolCallId/entries", async (req, res) => {
+  const doc = await getAgentDoc(req.params.id);
+  const toolCallId = req.params.toolCallId;
+  if (!doc?.config.playground || toolCallId.includes("/") || toolCallId.includes("..")) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+  const playgrounds = new Set([
+    doc.config.playground,
+    ...Object.values(doc.config.subAgents ?? {}).map((sa: any) => sa.playground).filter(Boolean),
+  ]);
+  for (const pg of playgrounds) {
+    const dir = path.join(pg, ".otto-sessions");
+    if (!fs.existsSync(dir)) continue;
+    const match = fs.readdirSync(dir).find((f) => f.includes(`-${toolCallId}-`) && f.endsWith(".jsonl"));
+    if (match) {
+      res.json(readJsonl(path.join(dir, match)));
+      return;
+    }
+  }
+  res.status(404).json({ error: "No sub-agent session for this tool call" });
 });
 
 // ── Load a session from disk ──────────────────────────────────────────────

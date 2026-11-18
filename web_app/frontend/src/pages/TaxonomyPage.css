@@ -1,0 +1,169 @@
+.tax-page {
+  width: 100%;
+  max-width: 1100px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tax-page h2 {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 8px 0 0;
+}
+
+.tax-muted {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.tax-error {
+  color: #c0392b;
+  font-size: 13px;
+}
+
+/* ── Pipeline ───────────────────────────────────────── */
+
+.tax-pipeline {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.tax-step {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.tax-arrow {
+  font-size: 22px;
+  color: var(--text-muted);
+}
+
+.tax-card {
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tax-card h3 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--text);
+}
+
+.tax-role {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.tax-card label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+
+.tax-model {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tax-model select,
+.tax-model input {
+  padding: 6px 8px;
+  font-size: 13px;
+  font-family: var(--font);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.tax-tools {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.tax-link {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0;
+  margin-top: 8px;
+  color: var(--accent);
+  font-family: var(--font);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.tax-prompt {
+  margin: 0;
+  max-height: 300px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: 12px;
+  background: var(--accent-light);
+  border-radius: 6px;
+  padding: 10px;
+}
+
+/* ── Run ────────────────────────────────────────────── */
+
+.tax-run {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 14px;
+  color: var(--text);
+}
+
+.tax-run button {
+  padding: 8px 16px;
+  font-family: var(--font);
+  font-size: 13px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+.tax-run button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 800px) {
+  .tax-pipeline,
+  .tax-step {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .tax-arrow {
+    transform: rotate(90deg);
+    align-self: center;
+  }
+}
